@@ -1,4 +1,4 @@
-# Soyl Forms
+# Soyl Forms.
 
 Typeform-style form SaaS: beautiful one-question-at-a-time forms, public links,
 embeds, QR sharing, response analytics, Razorpay billing in INR, and a
