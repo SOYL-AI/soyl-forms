@@ -1,0 +1,83 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  @apply bg-white text-ink font-sans antialiased;
+}
+
+/* Respondent step transition: subtle rise + fade, ~220ms per spec (180–300ms). */
+@layer components {
+  .step-animated {
+    animation: step-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  @keyframes step-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .progress-animated {
+    transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+/* Honor users who prefer reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  .step-animated {
+    animation: none;
+  }
+  .progress-animated {
+    transition: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Creator-chosen form themes (data attributes set by FormRenderer). */
+.renderer-themed[data-font="sans"] h1 {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.renderer-themed[data-buttons="pill"] button[role="option"] {
+  border-radius: 9999px;
+}
+/* Themed surfaces inherit the creator's text color at readable opacities. */
+.renderer-themed h1 {
+  color: inherit;
+}
+.renderer-themed .text-ink-soft {
+  color: inherit;
+  opacity: 0.75;
+}
+.renderer-themed .text-ink-faint {
+  color: inherit;
+  opacity: 0.55;
+}
+
+/* Visible keyboard focus everywhere. */
+:focus-visible {
+  outline: 2px solid theme("colors.brand.600");
+  outline-offset: 2px;
+  border-radius: 4px;
+}
