@@ -104,7 +104,7 @@ export default async function SuperAdminOverview() {
   return (
     <div className="space-y-8 pb-10">
       <div>
-        <h1 className="font-display text-3xl tracking-tight text-white font-bold">Platform overview</h1>
+        <h1 className="font-display text-3xl tracking-tight text-foreground font-bold">Platform overview</h1>
         <p className="mt-1 text-sm text-ink-soft">Real-time metrics and health status of the SOYL Forms platform.</p>
       </div>
 
@@ -113,39 +113,39 @@ export default async function SuperAdminOverview() {
         {cards.map((card) => {
           const Icon = card.icon;
           return (
-            <div key={card.label} className="relative overflow-hidden rounded-2xl border border-white/10 bg-paper-deep/30 p-5 shadow-glass backdrop-blur-md transition-all hover:bg-white/5">
+            <div key={card.label} className="relative overflow-hidden rounded-2xl border border-ink/10 bg-paper p-5 shadow-sm transition-all hover:bg-paper-deep">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-semibold tracking-wide text-ink-soft">{card.label}</p>
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10">
-                  <Icon className="h-5 w-5 text-brand-400" />
+                  <Icon className="h-5 w-5 text-brand-500" />
                 </div>
               </div>
-              <p className="mt-4 font-display text-3xl text-white font-bold">{card.value}</p>
-              <p className="mt-1 text-xs text-brand-400">{card.subtext}</p>
+              <p className="mt-4 font-display text-3xl text-foreground font-bold">{card.value}</p>
+              <p className="mt-1 text-xs text-brand-600 dark:text-brand-400">{card.subtext}</p>
             </div>
           );
         })}
       </div>
 
       {/* Chart Section */}
-      <div className="rounded-3xl border border-white/10 bg-paper-deep/30 p-6 shadow-glass backdrop-blur-md">
-        <h2 className="text-lg font-bold text-white mb-6">Response Volume (30 Days)</h2>
+      <div className="rounded-3xl border border-ink/10 bg-paper p-6 shadow-sm">
+        <h2 className="text-lg font-bold text-foreground mb-6">Response Volume (30 Days)</h2>
         <ActivityChart data={chartData} />
       </div>
 
       {/* Secondary Metrics */}
       <div>
-        <h3 className="text-base font-bold text-white mb-4">System Health</h3>
+        <h3 className="text-base font-bold text-foreground mb-4">System Health</h3>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {secondaryCards.map((card) => {
             const Icon = card.icon;
             return (
-              <div key={card.label} className="rounded-xl border border-white/5 bg-paper p-4">
+              <div key={card.label} className="rounded-xl border border-ink/10 bg-paper p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <Icon className="h-4 w-4 text-ink-faint" />
                   <p className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">{card.label}</p>
                 </div>
-                <p className="font-display text-2xl text-white font-semibold">{card.value}</p>
+                <p className="font-display text-2xl text-foreground font-semibold">{card.value}</p>
               </div>
             );
           })}

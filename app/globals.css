@@ -2,8 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
+@layer base {
+  :root {
+    --background: #FBFAF7;
+    --foreground: #1C1917;
+    --paper: #FFFFFF;
+    --paper-deep: #F3EFE7;
+    --ink: #1C1917;
+    --ink-soft: #57534E;
+    --ink-faint: #A8A29E;
+  }
+
+  .dark {
+    --background: #09090b;
+    --foreground: #fafafa;
+    --paper: #18181b;
+    --paper-deep: #27272a;
+    --ink: #fafafa;
+    --ink-soft: #a1a1aa;
+    --ink-faint: #52525b;
+  }
 }
 
 html {
