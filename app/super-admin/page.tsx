@@ -1,7 +1,23 @@
 import { getServiceSupabase } from "@/lib/supabase/admin";
+import { ActivityChart } from "./DashboardCharts";
+import { 
+  Users, 
+  Building2, 
+  FileText, 
+  MessageSquare, 
+  CreditCard, 
+  HardDrive, 
+  AlertCircle, 
+  Ban 
+} from "lucide-react";
 
 function dayStart(daysAgo: number): string {
   return new Date(Date.now() - daysAgo * 86400000).toISOString();
+}
+
+function formatDateKey(dateStr: string): string {
+  const d = new Date(dateStr);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 export default async function SuperAdminOverview() {
@@ -23,6 +39,7 @@ export default async function SuperAdminOverview() {
     { data: deliveries },
     { count: suspendedWs },
     { count: closedForms },
+    { data: recentSubmissions }
   ] = await Promise.all([
     admin.from("profiles").select("id", { count: "exact", head: true }),
     admin.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", dayStart(7)),
@@ -36,11 +53,11 @@ export default async function SuperAdminOverview() {
     admin.from("webhook_deliveries").select("http_status").gte("id", "00000000-0000-0000-0000-000000000000").limit(500),
     admin.from("workspaces").select("id", { count: "exact", head: true }).eq("status", "suspended"),
     admin.from("forms").select("id", { count: "exact", head: true }).eq("status", "closed"),
+    admin.from("submissions").select("submitted_at").gte("submitted_at", dayStart(30))
   ]);
 
   const plans = (subs ?? []) as Array<{ plan_code: string; status: string; billing_interval: string | null }>;
   const paid = plans.filter((s) => (s.status === "active" || s.status === "authenticated"));
-  // MRR estimate: monthly price, yearly spread over 12.
   let mrr = 0;
   for (const s of paid) {
     if (s.plan_code === "starter") mrr += s.billing_interval === "yearly" ? Math.round(199000 / 12) : 19900;
@@ -50,37 +67,95 @@ export default async function SuperAdminOverview() {
   const dl = (deliveries ?? []) as Array<{ http_status: number | null }>;
   const failedDl = dl.filter((d) => d.http_status === null || d.http_status >= 400).length;
 
-  const cards: Array<[string, string]> = [
-    ["Users", (users ?? 0).toLocaleString("en-IN")],
-    ["New users · 7d", (users7d ?? 0).toLocaleString("en-IN")],
-    ["Active workspaces", (workspaces ?? 0).toLocaleString("en-IN")],
-    ["Live forms", (publishedForms ?? 0).toLocaleString("en-IN")],
-    ["Responses · today", (subsToday ?? 0).toLocaleString("en-IN")],
-    ["Responses · 7d", (subs7d ?? 0).toLocaleString("en-IN")],
-    ["Responses · 30d", (subs30d ?? 0).toLocaleString("en-IN")],
-    ["Paying workspaces", paid.length.toLocaleString("en-IN")],
-    ["MRR estimate", `₹${Math.round(mrr / 100).toLocaleString("en-IN")}`],
-    ["Storage used", `${(storageBytes / 1024 / 1024).toFixed(1)} MB`],
-    ["Webhook failures (sample)", `${failedDl}/${dl.length}`],
-    ["Suspended: ws / forms", `${suspendedWs ?? 0} / ${closedForms ?? 0}`],
+  // Process chart data
+  const chartMap = new Map<string, number>();
+  for (let i = 29; i >= 0; i--) {
+    chartMap.set(formatDateKey(dayStart(i)), 0);
+  }
+  
+  const rawSubmissions = (recentSubmissions ?? []) as { submitted_at: string }[];
+  rawSubmissions.forEach(sub => {
+    const key = formatDateKey(sub.submitted_at);
+    if (chartMap.has(key)) {
+      chartMap.set(key, (chartMap.get(key) || 0) + 1);
+    }
+  });
+
+  const chartData = Array.from(chartMap.entries()).map(([date, responses]) => ({
+    date,
+    responses
+  }));
+
+  const cards = [
+    { label: "Total Users", value: (users ?? 0).toLocaleString("en-IN"), icon: Users, subtext: `+${users7d ?? 0} this week` },
+    { label: "Active Workspaces", value: (workspaces ?? 0).toLocaleString("en-IN"), icon: Building2, subtext: "Platform wide" },
+    { label: "Live Forms", value: (publishedForms ?? 0).toLocaleString("en-IN"), icon: FileText, subtext: "Currently published" },
+    { label: "MRR Estimate", value: `₹${Math.round(mrr / 100).toLocaleString("en-IN")}`, icon: CreditCard, subtext: `${paid.length} paying` },
+  ];
+
+  const secondaryCards = [
+    { label: "Responses Today", value: (subsToday ?? 0).toLocaleString("en-IN"), icon: MessageSquare },
+    { label: "Responses 7d", value: (subs7d ?? 0).toLocaleString("en-IN"), icon: MessageSquare },
+    { label: "Storage Used", value: `${(storageBytes / 1024 / 1024).toFixed(1)} MB`, icon: HardDrive },
+    { label: "Webhook Failures", value: `${failedDl}/${dl.length}`, icon: AlertCircle },
+    { label: "Suspended / Closed", value: `${suspendedWs ?? 0} / ${closedForms ?? 0}`, icon: Ban },
   ];
 
   return (
-    <div>
-      <h1 className="font-display text-3xl tracking-tight">Platform overview</h1>
-      <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-        {cards.map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-ink/10 bg-white px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">{label}</p>
-            <p className="font-display text-2xl">{value}</p>
-          </div>
-        ))}
+    <div className="space-y-8 pb-10">
+      <div>
+        <h1 className="font-display text-3xl tracking-tight text-white font-bold">Platform overview</h1>
+        <p className="mt-1 text-sm text-ink-soft">Real-time metrics and health status of the SOYL Forms platform.</p>
       </div>
-      <p className="mt-4 text-xs text-ink-faint">
-        Webhook sample covers recent delivery rows; storage sums the retained
-        (non-deleted) objects sample. No impersonation exists in V1 — every
-        moderation action below is audit-logged.
-      </p>
+
+      {/* Main KPI Cards */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div key={card.label} className="relative overflow-hidden rounded-2xl border border-white/10 bg-paper-deep/30 p-5 shadow-glass backdrop-blur-md transition-all hover:bg-white/5">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold tracking-wide text-ink-soft">{card.label}</p>
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-500/10">
+                  <Icon className="h-5 w-5 text-brand-400" />
+                </div>
+              </div>
+              <p className="mt-4 font-display text-3xl text-white font-bold">{card.value}</p>
+              <p className="mt-1 text-xs text-brand-400">{card.subtext}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Chart Section */}
+      <div className="rounded-3xl border border-white/10 bg-paper-deep/30 p-6 shadow-glass backdrop-blur-md">
+        <h2 className="text-lg font-bold text-white mb-6">Response Volume (30 Days)</h2>
+        <ActivityChart data={chartData} />
+      </div>
+
+      {/* Secondary Metrics */}
+      <div>
+        <h3 className="text-base font-bold text-white mb-4">System Health</h3>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          {secondaryCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div key={card.label} className="rounded-xl border border-white/5 bg-paper p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Icon className="h-4 w-4 text-ink-faint" />
+                  <p className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">{card.label}</p>
+                </div>
+                <p className="font-display text-2xl text-white font-semibold">{card.value}</p>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-xs text-ink-faint">
+          Webhook sample covers recent delivery rows; storage sums the retained
+          (non-deleted) objects sample. No impersonation exists in V1 — every
+          moderation action is audit-logged.
+        </p>
+      </div>
     </div>
   );
 }

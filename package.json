@@ -21,11 +21,13 @@
     "@dnd-kit/utilities": "^3.2.2",
     "@supabase/ssr": "^0.4.0",
     "@supabase/supabase-js": "^2.43.0",
+    "lucide-react": "^1.47.0",
     "next": "^14.2.0",
     "qrcode": "^1.5.4",
     "razorpay": "^2.9.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "recharts": "^3.10.1",
     "zod": "^3.23.0"
   },
   "devDependencies": {
