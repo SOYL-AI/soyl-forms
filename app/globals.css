@@ -24,14 +24,12 @@
   }
 }
 
-@layer base {
-  html {
-    -webkit-text-size-adjust: 100%;
-  }
+html {
+  -webkit-text-size-adjust: 100%;
+}
 
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
-  }
+body {
+  @apply bg-background text-foreground font-sans antialiased;
 }
 
 /* Respondent step transition: subtle rise + fade, ~220ms per spec (180–300ms). */
