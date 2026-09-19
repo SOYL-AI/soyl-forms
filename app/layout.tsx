@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { getProductName } from "@/lib/config";
+import { Inter, Outfit } from "next/font/google";
 import "./globals.css";
+
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
+const outfit = Outfit({ subsets: ["latin"], variable: "--font-display" });
 
 export const metadata: Metadata = {
   title: {
@@ -20,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
-      <body>{children}</body>
+    <html lang="en" className={`${inter.variable} ${outfit.variable}`}>
+      <body className="font-sans bg-background text-foreground antialiased">{children}</body>
     </html>
   );
 }

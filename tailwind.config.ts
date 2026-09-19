@@ -9,48 +9,47 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        background: "#09090b",
+        foreground: "#fafafa",
         paper: {
-          DEFAULT: "#FBFAF7",
-          deep: "#F3EFE7",
+          DEFAULT: "#18181b",
+          deep: "#27272a",
         },
         ink: {
-          DEFAULT: "#1C1917",
-          soft: "#57534E",
-          faint: "#A8A29E",
+          DEFAULT: "#fafafa",
+          soft: "#a1a1aa",
+          faint: "#52525b",
         },
         brand: {
-          50: "#ECFDF5",
-          100: "#D1FAE5",
-          200: "#A7F3D0",
-          500: "#10B981",
-          600: "#0E7C5B",
-          700: "#0B6449",
-          900: "#064E3B",
+          50: "#f5f3ff",
+          100: "#ede9fe",
+          200: "#ddd6fe",
+          500: "#8b5cf6",
+          600: "#7c3aed",
+          700: "#6d28d9",
+          900: "#4c1d95",
         },
       },
       fontFamily: {
-        sans: [
-          "ui-sans-serif",
-          "system-ui",
-          "-apple-system",
-          '"Segoe UI"',
-          "Roboto",
-          '"Helvetica Neue"',
-          "Arial",
-          "sans-serif",
-        ],
-        display: [
-          "ui-serif",
-          "Georgia",
-          '"Times New Roman"',
-          "serif",
-        ],
+        sans: ["var(--font-sans)", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "system-ui", "sans-serif"],
       },
       borderRadius: {
         xl2: "1.25rem",
       },
       boxShadow: {
-        lift: "0 12px 40px -12px rgb(28 25 23 / 0.18)",
+        lift: "0 12px 40px -12px rgba(139, 92, 246, 0.25)",
+        glass: "0 8px 32px 0 rgba(0, 0, 0, 0.37)",
+      },
+      animation: {
+        "float": "float 6s ease-in-out infinite",
+        "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+      },
+      keyframes: {
+        float: {
+          "0%, 100%": { transform: "translateY(0)" },
+          "50%": { transform: "translateY(-10px)" },
+        },
       },
     },
   },
