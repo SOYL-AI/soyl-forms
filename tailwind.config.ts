@@ -22,13 +22,13 @@ const config: Config = {
           faint: "var(--ink-faint)",
         },
         brand: {
-          50: "#f5f3ff",
-          100: "#ede9fe",
-          200: "#ddd6fe",
-          500: "#8b5cf6",
-          600: "#7c3aed",
-          700: "#6d28d9",
-          900: "#4c1d95",
+          50: "#f8fafc",
+          100: "#f1f5f9",
+          200: "#e2e8f0",
+          500: "#64748b",
+          600: "#475569",
+          700: "#334155",
+          900: "#0f172a",
         },
       },
       fontFamily: {
@@ -39,8 +39,8 @@ const config: Config = {
         xl2: "1.25rem",
       },
       boxShadow: {
-        lift: "0 12px 40px -12px rgba(139, 92, 246, 0.25)",
-        glass: "0 8px 32px 0 rgba(0, 0, 0, 0.37)",
+        lift: "0 12px 40px -12px rgba(15, 23, 42, 0.25)",
+        glass: "0 8px 32px 0 rgba(0, 0, 0, 0.15)",
       },
       animation: {
         "float": "float 6s ease-in-out infinite",
