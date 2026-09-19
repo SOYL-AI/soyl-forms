@@ -4,7 +4,7 @@ import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { ensurePersonalWorkspace } from "@/lib/workspaces";
 import { AppHeader } from "@/components/app-header";
-import { FormRowActions, NewFormButton } from "./FormActions";
+import { FormRowActions, NewFormButton, ScanQrButton } from "./FormActions";
 
 interface FormSummary {
   id: string;
@@ -101,6 +101,7 @@ export default async function DashboardPage() {
           <h1 className="mt-1 font-display text-3xl tracking-tight">Your forms</h1>
         </div>
         <div className="flex items-center gap-2">
+          <ScanQrButton />
           <Link
             href="/ai/new"
             className="rounded-full border border-ink/15 bg-white px-6 py-2.5 text-sm font-semibold transition-colors hover:border-ink/30"

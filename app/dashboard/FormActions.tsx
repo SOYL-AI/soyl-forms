@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -9,6 +9,44 @@ import {
   renameForm,
   setFormArchived,
 } from "@/lib/forms/actions";
+import { useQrScanner, QrScanResult } from "@/components/QrScanner";
+
+export function ScanQrButton() {
+  const { scanning, result, error, isNative, startScan, clearResult } =
+    useQrScanner();
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    // Only show on native platform (Capacitor Android)
+    import("@capacitor/core")
+      .then(({ Capacitor }) => setReady(Capacitor.isNativePlatform()))
+      .catch(() => setReady(false));
+  }, []);
+
+  if (!ready) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={startScan}
+        disabled={scanning}
+        className="rounded-full border border-ink/15 bg-white px-5 py-2.5 text-sm font-semibold transition-colors hover:border-ink/30 disabled:opacity-60"
+        aria-label="Scan QR code"
+      >
+        {scanning ? "Scanning…" : "📷 Scan QR"}
+      </button>
+      {error && (
+        <p role="alert" className="w-full text-xs font-medium text-red-700">
+          {error}
+        </p>
+      )}
+      {result && result.type === "display" && (
+        <QrScanResult value={result.value} onClose={clearResult} />
+      )}
+    </>
+  );
+}
 
 export function NewFormButton() {
   const router = useRouter();

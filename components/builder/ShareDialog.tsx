@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
+import { ScanQrButton } from "@/app/dashboard/FormActions";
 
 /**
  * Share dialog: canonical link, QR preview + PNG/SVG downloads, embed snippet.
@@ -166,6 +167,9 @@ export function ShareDialog({
             >
               Download SVG
             </button>
+            <div className="mt-1">
+              <ScanQrButton />
+            </div>
             <p className="text-[11px] leading-snug text-ink-faint">
               Scans to the same form; visits tagged <code>?src=qr</code>.
             </p>
