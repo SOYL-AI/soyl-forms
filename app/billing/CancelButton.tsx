@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
 
 export function CancelButton({ hasSubscription }: { hasSubscription: boolean }) {
   const router = useRouter();
@@ -11,29 +12,27 @@ export function CancelButton({ hasSubscription }: { hasSubscription: boolean }) 
   if (!hasSubscription) return null;
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         disabled={busy}
         onClick={() => {
-          if (!window.confirm("Cancel your subscription? Your data stays; limits return to Free.")) {
-            return;
-          }
+          if (!window.confirm("Cancel your subscription at the end of this period? Your data stays; limits return to Free.")) return;
           setBusy(true);
           setMessage(null);
           fetch("/api/billing/cancel", { method: "POST" })
             .then(async (res) => {
               const data = (await res.json()) as { ok?: boolean; error?: string };
               if (!res.ok || !data.ok) throw new Error(data.error ?? "Cancel failed.");
-              setMessage("Cancellation requested — the provider confirmation finalizes it.");
+              setMessage("Cancellation requested — it takes effect at the end of the current period.");
               router.refresh();
             })
             .catch((e: Error) => setMessage(e.message))
             .finally(() => setBusy(false));
         }}
-        className="rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold hover:border-ink/30 disabled:opacity-60"
       >
         {busy ? "Working…" : "Cancel subscription"}
-      </button>
+      </Button>
       {message && <span className="text-xs text-ink-soft">{message}</span>}
     </span>
   );

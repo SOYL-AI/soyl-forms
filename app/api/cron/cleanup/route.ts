@@ -3,8 +3,9 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { deleteR2Object } from "@/lib/r2";
 
 /**
- * Orphan cleanup: unattached `pending` uploads older than 24h are deleted
- * from R2 and their rows removed. Same CRON_SECRET scheduler as outbox.
+ * Orphan cleanup: unattached `pending` RESPONDENT uploads older than 24h are
+ * deleted from R2 and their rows removed. Creator assets (logos, question
+ * images, brand sources) are never swept. Same CRON_SECRET scheduler as outbox.
  */
 export async function POST(req: Request) {
   if (!process.env.CRON_SECRET) {
@@ -26,6 +27,7 @@ export async function POST(req: Request) {
     .from("uploaded_files")
     .select("id, r2_key")
     .eq("status", "pending")
+    .eq("kind", "submission")
     .is("submission_id", null)
     .lt("created_at", cutoff)
     .limit(100);

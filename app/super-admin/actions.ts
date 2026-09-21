@@ -2,31 +2,28 @@
 
 import { auditLog, requireAdmin, validateOverride } from "@/lib/admin";
 import { getServiceSupabase } from "@/lib/supabase/admin";
+import { platformFlagsSchema, setPlatformFlags, type PlatformFlags } from "@/lib/platform";
 
 export type AdminResult = { ok: true } | { ok: false; error: string };
 
 type ServiceClient = NonNullable<ReturnType<typeof getServiceSupabase>>;
 
-async function adminOnly(): Promise<
-  { admin: ServiceClient; userId: string } | { error: string }
-> {
+async function adminOnly(): Promise<{ admin: ServiceClient; userId: string; role: string } | { error: string }> {
   const gate = await requireAdmin();
   if (!gate.ok) return { error: "Not an operator account." };
   const admin = getServiceSupabase();
   if (!admin) return { error: "Server misconfigured." };
-  return { admin, userId: gate.userId };
+  return { admin, userId: gate.userId, role: gate.role };
 }
 
 export async function setWorkspaceStatus(args: {
   workspaceId: string;
   status: "active" | "suspended";
+  reason?: string;
 }): Promise<AdminResult> {
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
-  const { error } = await g.admin
-    .from("workspaces")
-    .update({ status: args.status })
-    .eq("id", args.workspaceId);
+  const { error } = await g.admin.from("workspaces").update({ status: args.status }).eq("id", args.workspaceId);
   if (error) return { ok: false, error: error.message };
   await auditLog({
     actorUserId: g.userId,
@@ -34,21 +31,15 @@ export async function setWorkspaceStatus(args: {
     targetType: "workspace",
     targetId: args.workspaceId,
     workspaceId: args.workspaceId,
+    metadata: { reason: args.reason?.trim().slice(0, 300) ?? "" },
   });
   return { ok: true };
 }
 
-export async function setFormStatus(args: {
-  formId: string;
-  suspend: boolean;
-}): Promise<AdminResult> {
+export async function setFormStatus(args: { formId: string; suspend: boolean; reason?: string }): Promise<AdminResult> {
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
-  const { data: form } = await g.admin
-    .from("forms")
-    .select("id, workspace_id, published_version_id")
-    .eq("id", args.formId)
-    .single();
+  const { data: form } = await g.admin.from("forms").select("id, workspace_id, published_version_id").eq("id", args.formId).single();
   const row = form as { id: string; workspace_id: string; published_version_id: string | null } | null;
   if (!row) return { ok: false, error: "Form not found." };
   const status = args.suspend ? "closed" : row.published_version_id ? "published" : "draft";
@@ -60,18 +51,15 @@ export async function setFormStatus(args: {
     targetType: "form",
     targetId: args.formId,
     workspaceId: row.workspace_id,
+    metadata: { reason: args.reason?.trim().slice(0, 300) ?? "" },
   });
   return { ok: true };
 }
 
-export async function setPlanOverride(args: {
-  workspaceId: string;
-  plan: string;
-  reason: string;
-  expiresAt: string;
-}): Promise<AdminResult> {
+export async function setPlanOverride(args: { workspaceId: string; plan: string; reason: string; expiresAt: string }): Promise<AdminResult> {
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
+  if (g.role !== "super_admin") return { ok: false, error: "Only super admins can change entitlements." };
   const valid = validateOverride(args);
   if (!valid.ok) return valid;
   const { error } = await g.admin.from("subscriptions").upsert(
@@ -95,15 +83,11 @@ export async function setPlanOverride(args: {
   return { ok: true };
 }
 
-export async function clearPlanOverride(args: {
-  workspaceId: string;
-}): Promise<AdminResult> {
+export async function clearPlanOverride(args: { workspaceId: string }): Promise<AdminResult> {
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
-  const { error } = await g.admin
-    .from("subscriptions")
-    .update({ override_reason: null, override_expires_at: null })
-    .eq("workspace_id", args.workspaceId);
+  if (g.role !== "super_admin") return { ok: false, error: "Only super admins can change entitlements." };
+  const { error } = await g.admin.from("subscriptions").update({ override_reason: null, override_expires_at: null }).eq("workspace_id", args.workspaceId);
   if (error) return { ok: false, error: error.message };
   await auditLog({
     actorUserId: g.userId,
@@ -111,6 +95,27 @@ export async function clearPlanOverride(args: {
     targetType: "workspace",
     targetId: args.workspaceId,
     workspaceId: args.workspaceId,
+  });
+  return { ok: true };
+}
+
+export async function updatePlatformFlags(args: { flags: PlatformFlags }): Promise<AdminResult> {
+  const g = await adminOnly();
+  if ("error" in g) return { ok: false, error: g.error };
+  if (g.role !== "super_admin") return { ok: false, error: "Only super admins can change platform settings." };
+  const parsed = platformFlagsSchema.safeParse(args.flags);
+  if (!parsed.success) return { ok: false, error: "Invalid settings." };
+  try {
+    await setPlatformFlags(parsed.data, g.userId);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  await auditLog({
+    actorUserId: g.userId,
+    action: "platform.flags.update",
+    targetType: "platform",
+    targetId: "flags",
+    metadata: parsed.data,
   });
   return { ok: true };
 }

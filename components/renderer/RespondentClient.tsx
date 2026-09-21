@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
-import type { Answers, FormSchemaV1, FormTheme } from "@/types/forms";
+import { useEffect, useMemo, useState } from "react";
+import type { Answers, FormSchemaV1, FormSettings, FormTheme } from "@/types/forms";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
 
 function newId(): string {
@@ -17,15 +17,31 @@ export function RespondentClient({
   versionId,
   minimal,
   theme,
+  settings,
 }: {
   slug: string;
   schema: FormSchemaV1;
   versionId: string;
   minimal?: boolean;
   theme?: FormTheme;
+  settings?: FormSettings;
 }) {
   const sessionId = useMemo(() => newId(), []);
   const idempotencyKey = useMemo(() => newId(), []);
+  const startedAt = useMemo(() => Date.now(), []);
+  const doneKey = `soyl:done:${slug}`;
+  const [alreadyDone, setAlreadyDone] = useState(false);
+
+  // Soft duplicate guard (per device) when the creator turned repeats off.
+  useEffect(() => {
+    if (settings?.allowMultipleSubmissions === false) {
+      try {
+        if (window.localStorage.getItem(doneKey)) setAlreadyDone(true);
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [settings?.allowMultipleSubmissions, doneKey]);
 
   // Record the visit once (analytics; failure never blocks answering).
   useEffect(() => {
@@ -39,9 +55,7 @@ export function RespondentClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  async function submit(
-    answers: Answers,
-  ): Promise<{ ok: boolean; error?: string }> {
+  async function submit(answers: Answers): Promise<{ ok: boolean; error?: string }> {
     const params = new URLSearchParams(window.location.search);
     const hidden: Record<string, string> = {};
     params.forEach((value, key) => {
@@ -58,15 +72,42 @@ export function RespondentClient({
           answers,
           hiddenFields: hidden,
           sessionId,
-          durationMs: Math.round(performance.now()),
+          source: params.get("src") ?? undefined,
+          durationMs: Math.max(0, Date.now() - startedAt),
         }),
       });
     } catch {
       return { ok: false };
     }
-    if (res.ok) return { ok: true };
+    if (res.ok) {
+      try {
+        window.localStorage.setItem(doneKey, new Date().toISOString());
+      } catch {
+        /* ignore */
+      }
+      return { ok: true };
+    }
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
     return { ok: false, error: data?.error ?? "Couldn't save your response. Try again." };
+  }
+
+  if (alreadyDone) {
+    return (
+      <div className="rounded-2xl border border-line bg-paper p-8 text-center">
+        <h1 className="font-display text-2xl tracking-tight">You&apos;ve already responded</h1>
+        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
+          This form accepts one response per device. If that wasn&apos;t you, or you were
+          asked to answer again, you can continue.
+        </p>
+        <button
+          type="button"
+          onClick={() => setAlreadyDone(false)}
+          className="mt-5 rounded-full border border-line-strong px-5 py-2.5 text-sm font-semibold hover:border-ink/40"
+        >
+          Respond again
+        </button>
+      </div>
+    );
   }
 
   return (
@@ -74,8 +115,10 @@ export function RespondentClient({
       schema={schema}
       minimal={minimal}
       theme={theme}
+      settings={settings}
       uploads={{ slug }}
       onBeforeComplete={submit}
+      persistKey={`soyl:f:${slug}:${versionId}`}
     />
   );
 }

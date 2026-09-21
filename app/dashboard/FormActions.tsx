@@ -1,19 +1,32 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  createForm,
-  duplicateForm,
-  renameForm,
-  setFormArchived,
-} from "@/lib/forms/actions";
+  Archive,
+  ArchiveRestore,
+  BarChart3,
+  Check,
+  Copy,
+  ExternalLink,
+  Link2,
+  MoreHorizontal,
+  PenLine,
+  Pencil,
+  Plus,
+} from "lucide-react";
+import { createForm, duplicateForm, renameForm, setFormArchived } from "@/lib/forms/actions";
 import { useQrScanner, QrScanResult } from "@/components/QrScanner";
+import { Button, type ButtonVariant } from "@/components/ui/button";
+import { Dialog } from "@/components/ui/dialog";
+import { Field, Input } from "@/components/ui/input";
+import { StatusBadge } from "@/components/ui/badge";
+import { timeAgo } from "@/lib/utils";
+import type { FormSummary } from "./page";
 
 export function ScanQrButton() {
-  const { scanning, result, error, isNative, startScan, clearResult } =
-    useQrScanner();
+  const { scanning, result, error, startScan, clearResult } = useQrScanner();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -27,181 +40,243 @@ export function ScanQrButton() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={startScan}
-        disabled={scanning}
-        className="rounded-full border border-ink/15 bg-white px-5 py-2.5 text-sm font-semibold transition-colors hover:border-ink/30 disabled:opacity-60"
-        aria-label="Scan QR code"
-      >
-        {scanning ? "Scanning…" : "📷 Scan QR"}
-      </button>
+      <Button type="button" variant="secondary" size="sm" onClick={startScan} disabled={scanning} aria-label="Scan QR code">
+        {scanning ? "Scanning…" : "Scan QR"}
+      </Button>
       {error && (
-        <p role="alert" className="w-full text-xs font-medium text-red-700">
+        <p role="alert" className="w-full text-xs font-medium text-danger">
           {error}
         </p>
       )}
-      {result && result.type === "display" && (
-        <QrScanResult value={result.value} onClose={clearResult} />
-      )}
+      {result && result.type === "display" && <QrScanResult value={result.value} onClose={clearResult} />}
     </>
   );
 }
 
-export function NewFormButton() {
+export function NewFormButton({ variant = "accent", label = "New form" }: { variant?: ButtonVariant; label?: string }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-full bg-ink px-6 py-2.5 text-sm font-semibold text-white"
-      >
-        + New form
-      </button>
-    );
-  }
   return (
-    <form
-      className="flex flex-wrap items-center gap-2"
-      onSubmit={(e) => {
-        e.preventDefault();
-        setError(null);
-        start(async () => {
-          const res = await createForm({ title: name });
-          if (!res.ok) {
-            setError(res.error);
-            return;
-          }
-          router.push(`/builder/${res.id}`);
-        });
-      }}
-    >
-      <input
-        autoFocus
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Form name, e.g. Event signup"
-        aria-label="New form name"
-        className="w-56 rounded-xl border border-ink/15 bg-white px-4 py-2.5 text-sm focus:border-brand-600 focus:outline-none focus:ring-2 focus:ring-brand-600/20"
-      />
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-full bg-ink px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
-      >
-        {pending ? "Creating…" : "Create"}
-      </button>
-      {error && (
-        <p role="alert" className="w-full text-sm font-medium text-red-700">{error}</p>
-      )}
-    </form>
+    <>
+      <Button variant={variant} onClick={() => setOpen(true)}>
+        <Plus className="h-4 w-4" /> {label}
+      </Button>
+      <Dialog open={open} onClose={() => setOpen(false)} title="Name your form" description="You can change it any time." size="sm">
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setError(null);
+            start(async () => {
+              const res = await createForm({ title: name });
+              if (!res.ok) {
+                setError(res.error);
+                return;
+              }
+              router.push(`/builder/${res.id}`);
+            });
+          }}
+        >
+          <Field label="Form name" htmlFor="new-form-name" error={error}>
+            <Input id="new-form-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Event signup" maxLength={200} />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Creating…" : "Create & open builder"}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+    </>
   );
 }
 
-export function FormRowActions({
-  id,
-  title,
+function CopyLinkButton({ slug }: { slug: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(`${window.location.origin}/f/${slug}`);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1800);
+        } catch {
+          /* selectable link is shown anyway */
+        }
+      }}
+      className="inline-flex items-center gap-1 rounded-full bg-paper-deep px-2.5 py-1 font-mono text-[11px] text-ink-soft transition-colors hover:text-ink"
+      aria-label="Copy public link"
+    >
+      {copied ? <Check className="h-3 w-3 text-positive" /> : <Link2 className="h-3 w-3" />}
+      /f/{slug}
+    </button>
+  );
+}
+
+export function FormCard({
+  form,
+  total,
+  thisMonth,
   archived,
 }: {
-  id: string;
-  title: string;
-  archived: boolean;
+  form: FormSummary;
+  total: number;
+  thisMonth: number;
+  archived?: boolean;
 }) {
   const router = useRouter();
+  const [menu, setMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const [name, setName] = useState(title);
+  const [name, setName] = useState(form.title);
   const [error, setError] = useState<string | null>(null);
   const [pending, start] = useTransition();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    function onDown(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setMenu(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [menu]);
 
   function run(fn: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
+    setMenu(false);
     start(async () => {
       const res = await fn();
       if (!res.ok) setError(res.error ?? "Something went wrong.");
-      else {
-        setRenaming(false);
-        router.refresh();
-      }
+      else router.refresh();
     });
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <Link
-        href={`/builder/${id}`}
-        className="rounded-full border border-ink/15 bg-white px-4 py-1.5 text-xs font-semibold transition-colors hover:border-ink/30"
-      >
-        Open builder
-      </Link>
-      {renaming ? (
+    <li className="relative flex flex-col rounded-2xl border border-line bg-paper p-5 shadow-card transition-shadow hover:shadow-lift">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <Link href={archived ? `/forms/${form.id}/responses` : `/builder/${form.id}`} className="block truncate text-base font-semibold hover:underline">
+            {form.title}
+          </Link>
+          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-faint">
+            <StatusBadge status={form.status} />
+            <span>Updated {timeAgo(form.updated_at)}</span>
+          </p>
+        </div>
+        <div ref={ref} className="relative">
+          <button
+            type="button"
+            onClick={() => setMenu((m) => !m)}
+            aria-haspopup="menu"
+            aria-expanded={menu}
+            aria-label="Form actions"
+            className="rounded-full p-1.5 text-ink-soft hover:bg-ink/5 hover:text-ink"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+          {menu && (
+            <div role="menu" className="absolute right-0 z-20 mt-1 w-52 rounded-2xl border border-line bg-paper p-1.5 shadow-pop">
+              {!archived && (
+                <>
+                  <Link role="menuitem" href={`/builder/${form.id}`} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-ink/5">
+                    <PenLine className="h-4 w-4" /> Open builder
+                  </Link>
+                  <Link role="menuitem" href={`/forms/${form.id}/responses`} className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-ink/5">
+                    <BarChart3 className="h-4 w-4" /> Responses
+                  </Link>
+                  {form.status === "published" && (
+                    <a role="menuitem" href={`/f/${form.slug}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 rounded-xl px-3 py-2 text-sm hover:bg-ink/5">
+                      <ExternalLink className="h-4 w-4" /> Open live form
+                    </a>
+                  )}
+                  <button role="menuitem" type="button" onClick={() => { setMenu(false); setRenaming(true); }} className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-ink/5">
+                    <Pencil className="h-4 w-4" /> Rename
+                  </button>
+                  <button
+                    role="menuitem"
+                    type="button"
+                    disabled={pending}
+                    onClick={() =>
+                      run(async () => {
+                        const res = await duplicateForm({ formId: form.id });
+                        if (res.ok) router.push(`/builder/${res.id}`);
+                        return res;
+                      })
+                    }
+                    className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-ink/5"
+                  >
+                    <Copy className="h-4 w-4" /> Duplicate
+                  </button>
+                </>
+              )}
+              <button
+                role="menuitem"
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  if (archived || window.confirm(`Archive “${form.title}”? Its public link stops working. You can restore it later.`)) {
+                    run(() => setFormArchived({ formId: form.id, archived: !archived }));
+                  } else {
+                    setMenu(false);
+                  }
+                }}
+                className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm hover:bg-ink/5"
+              >
+                {archived ? <ArchiveRestore className="h-4 w-4" /> : <Archive className="h-4 w-4" />}
+                {archived ? "Restore" : "Archive"}
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
+        <Link href={`/forms/${form.id}/responses`} className="group">
+          <p className="font-display text-2xl leading-none tracking-tight">
+            {total.toLocaleString("en-IN")}
+            <span className="ml-1.5 align-middle font-sans text-xs font-normal text-ink-faint">responses</span>
+          </p>
+          <p className="mt-1 text-xs text-ink-faint group-hover:text-ink">{thisMonth.toLocaleString("en-IN")} this month · view →</p>
+        </Link>
+        {form.status === "published" && !archived ? <CopyLinkButton slug={form.slug} /> : null}
+      </div>
+
+      {error && (
+        <p role="alert" className="mt-3 text-xs font-medium text-danger">
+          {error}
+        </p>
+      )}
+
+      <Dialog open={renaming} onClose={() => setRenaming(false)} title="Rename form" size="sm">
         <form
-          className="flex items-center gap-1.5"
+          className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault();
-            run(() => renameForm({ formId: id, title: name }));
+            run(() => renameForm({ formId: form.id, title: name }));
+            setRenaming(false);
           }}
         >
-          <input
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            aria-label="Form name"
-            className="w-40 rounded-lg border border-ink/15 px-2.5 py-1.5 text-xs focus:border-brand-600 focus:outline-none"
-          />
-          <button type="submit" disabled={pending} className="text-xs font-semibold text-brand-700">
-            Save
-          </button>
-          <button type="button" onClick={() => { setRenaming(false); setName(title); }} className="text-xs text-ink-faint">
-            Cancel
-          </button>
+          <Field label="Form name" htmlFor={`rename-${form.id}`}>
+            <Input id={`rename-${form.id}`} autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={200} />
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={() => { setRenaming(false); setName(form.title); }}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={pending}>
+              Save
+            </Button>
+          </div>
         </form>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setRenaming(true)}
-          className="rounded-full px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-ink/5"
-        >
-          Rename
-        </button>
-      )}
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() =>
-          run(async () => {
-            const res = await duplicateForm({ formId: id });
-            if (res.ok) router.push(`/builder/${res.id}`);
-            return res;
-          })
-        }
-        className="rounded-full px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-ink/5 disabled:opacity-60"
-      >
-        Duplicate
-      </button>
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => {
-          if (
-            archived ||
-            window.confirm(`Archive "${title}"? You can restore it later.`)
-          ) {
-            run(() => setFormArchived({ formId: id, archived: !archived }));
-          }
-        }}
-        className="rounded-full px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-ink/5 disabled:opacity-60"
-      >
-        {archived ? "Restore" : "Archive"}
-      </button>
-      {error && (
-        <p role="alert" className="w-full text-xs font-medium text-red-700">{error}</p>
-      )}
-    </div>
+      </Dialog>
+    </li>
   );
 }

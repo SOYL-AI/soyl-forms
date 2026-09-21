@@ -4,7 +4,9 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { clientIp, formAcceptance, resolvePublicForm } from "@/lib/forms/public";
 import { isR2Configured, newR2Key, presignedPutUrl } from "@/lib/r2";
-import { canUploadFile, PLANS, type PlanCode } from "@/lib/plans";
+import { canUploadFile } from "@/lib/plans";
+import { getWorkspacePlan } from "@/lib/billing/plan";
+import { getPlatformFlags } from "@/lib/platform";
 
 const DEFAULT_MIMES = [
   "image/jpeg",
@@ -36,6 +38,10 @@ export async function POST(
       { error: "File uploads aren't connected on this form yet." },
       { status: 503 },
     );
+  }
+  const flags = await getPlatformFlags();
+  if (!flags.uploadsEnabled) {
+    return NextResponse.json({ error: "Uploads are paused right now." }, { status: 503 });
   }
 
   const body = authorizeSchema.safeParse(await req.json().catch(() => null));
@@ -71,13 +77,7 @@ export async function POST(
   }
 
   const admin = getServiceSupabase();
-  const { data: sub } = await admin!
-    .from("subscriptions")
-    .select("plan_code")
-    .eq("workspace_id", form.workspaceId)
-    .maybeSingle();
-  const code = (sub as { plan_code: string } | null)?.plan_code;
-  const plan: PlanCode = code === "starter" || code === "pro" ? code : "free";
+  const plan = await getWorkspacePlan(form.workspaceId);
 
   const { data: files } = await admin!
     .from("uploaded_files")
@@ -107,6 +107,7 @@ export async function POST(
     id: fileId,
     workspace_id: form.workspaceId,
     form_id: form.id,
+    kind: "submission",
     question_id: block.id,
     r2_key: key,
     original_name: safeName,

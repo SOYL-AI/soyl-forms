@@ -1,174 +1,164 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
+import { FileText, LayoutGrid, Sparkles } from "lucide-react";
+import { getServiceSupabase } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
-import { ensurePersonalWorkspace } from "@/lib/workspaces";
-import { AppHeader } from "@/components/app-header";
-import { FormRowActions, NewFormButton, ScanQrButton } from "./FormActions";
+import { getAppContext } from "@/lib/app-context";
+import { ensureMonthlyCredits, getAiBalance } from "@/lib/ai/credits";
+import { AppShell } from "@/components/app/AppShell";
+import { ConfigRequired } from "@/components/app/ConfigRequired";
+import { Card, PageHeader } from "@/components/ui/card";
+import { Meter } from "@/components/ui/meter";
+import { EmptyState } from "@/components/ui/empty";
+import { ButtonLink } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
+import { formatBytes } from "@/lib/utils";
+import { FormCard, NewFormButton } from "./FormActions";
 
-interface FormSummary {
+export const metadata: Metadata = { title: "Your forms", robots: { index: false } };
+
+export interface FormSummary {
   id: string;
   title: string;
   slug: string;
   status: string;
   updated_at: string;
+  published_at: string | null;
+  brand_kit_id: string | null;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  draft: "Draft",
-  published: "Live",
-  closed: "Closed",
-  archived: "Archived",
-};
-
 export default async function DashboardPage() {
-  if (!isSupabaseConfigured()) {
+  if (!isSupabaseConfigured()) return <ConfigRequired area="your form list" />;
+  const res = await getAppContext();
+  if (!res.ok) {
+    if (res.reason === "signed-out") redirect("/login?next=/dashboard");
+    if (res.reason === "registrations-paused") {
+      return (
+        <main className="mx-auto max-w-xl px-5 py-24">
+          <Notice tone="warn" title="New sign-ups are paused">
+            We&apos;re not provisioning new workspaces right now. Your account exists — check back soon or contact support.
+          </Notice>
+        </main>
+      );
+    }
     return (
-      <main className="mx-auto max-w-2xl px-5 py-16">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-faint">
-          Dashboard
-        </p>
-        <h1 className="mt-1 font-display text-3xl tracking-tight">Almost there</h1>
-        <div className="mt-6 rounded-2xl border border-amber-300 bg-amber-50 p-6">
-          <h2 className="font-semibold text-amber-900">Backend not configured</h2>
-          <p className="mt-2 text-sm leading-relaxed text-amber-900/80">
-            Set <code>NEXT_PUBLIC_SUPABASE_URL</code>,{" "}
-            <code>NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY</code> and{" "}
-            <code>SUPABASE_SERVICE_ROLE_KEY</code>, then run{" "}
-            <code>supabase/migrations/0001_init.sql</code> in your Supabase SQL
-            editor. This page becomes your form list.
-          </p>
-        </div>
-        <p className="mt-6 text-sm text-ink-soft">
-          Meanwhile:{" "}
-          <Link href="/f/demo" className="font-semibold text-ink underline underline-offset-2">
-            answer the demo form
-          </Link>
-          .
-        </p>
+      <main className="mx-auto max-w-xl px-5 py-24">
+        <Notice tone="danger" title="Couldn't load your workspace">
+          {res.message} Check that the migrations in <code>supabase/migrations</code> have been run.
+        </Notice>
       </main>
     );
   }
+  const { ctx } = res;
+  const admin = getServiceSupabase()!;
+  const month = new Date().toISOString().slice(0, 7);
 
-  const userId = await getSessionUserId();
-  if (!userId) redirect("/login");
+  await ensureMonthlyCredits(ctx.workspaceId, ctx.plan);
+  const [{ data: formRows }, { data: subs }, { data: usage }, { data: files }, credits] = await Promise.all([
+    admin
+      .from("forms")
+      .select("id, title, slug, status, updated_at, published_at, brand_kit_id")
+      .eq("workspace_id", ctx.workspaceId)
+      .order("updated_at", { ascending: false }),
+    admin.from("submissions").select("form_id, submitted_at").eq("workspace_id", ctx.workspaceId).is("deleted_at", null).limit(10000),
+    admin.from("usage_monthly").select("completed_submissions").eq("workspace_id", ctx.workspaceId).eq("month", `${month}-01`).maybeSingle(),
+    admin.from("uploaded_files").select("size_bytes").eq("workspace_id", ctx.workspaceId).neq("status", "deleted").limit(5000),
+    getAiBalance(ctx.workspaceId),
+  ]);
 
-  let workspaceId: string;
-  try {
-    ({ workspaceId } = await ensurePersonalWorkspace(userId));
-  } catch (e) {
-    return (
-      <main className="mx-auto max-w-2xl px-5 py-16">
-        <h1 className="font-display text-3xl tracking-tight">Couldn&apos;t load your workspace</h1>
-        <p className="mt-3 text-sm text-ink-soft">
-          {(e as Error).message} Check that migration{" "}
-          <code>0001_init.sql</code> has been run.
-        </p>
-      </main>
-    );
+  const all = (formRows ?? []) as FormSummary[];
+  const forms = all.filter((f) => f.status !== "archived");
+  const archived = all.filter((f) => f.status === "archived");
+  const live = forms.filter((f) => f.status === "published").length;
+
+  const total = new Map<string, number>();
+  const thisMonth = new Map<string, number>();
+  for (const s of (subs ?? []) as Array<{ form_id: string; submitted_at: string }>) {
+    total.set(s.form_id, (total.get(s.form_id) ?? 0) + 1);
+    if (s.submitted_at.startsWith(month)) thisMonth.set(s.form_id, (thisMonth.get(s.form_id) ?? 0) + 1);
   }
-
-  const supabase = getServerSupabase();
-  const { data } = await supabase!
-    .from("forms")
-    .select("id, title, slug, status, updated_at")
-    .eq("workspace_id", workspaceId)
-    .order("updated_at", { ascending: false });
-  const forms = ((data ?? []) as FormSummary[]).filter((f) => f.status !== "archived");
-  const archived = ((data ?? []) as FormSummary[]).filter((f) => f.status === "archived");
-
-  const counts = new Map<string, number>();
-  await Promise.all(
-    forms.map(async (f) => {
-      const { count } = await supabase!
-        .from("submissions")
-        .select("id", { count: "exact", head: true })
-        .eq("form_id", f.id)
-        .is("deleted_at", null);
-      counts.set(f.id, count ?? 0);
-    }),
-  );
+  const monthlyUsed = (usage as { completed_submissions: number } | null)?.completed_submissions ?? 0;
+  const storageUsed = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
+  const e = ctx.entitlements;
+  const nearLimit = monthlyUsed / e.monthlySubmissions >= 0.8 || live / e.maxActiveForms >= 0.8;
 
   return (
-    <>
-      <AppHeader active="forms" />
-      <main className="mx-auto max-w-3xl px-5 py-12">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-widest text-ink-faint">
-            Dashboard
-          </p>
-          <h1 className="mt-1 font-display text-3xl tracking-tight">Your forms</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <ScanQrButton />
-          <Link
-            href="/ai/new"
-            className="rounded-full border border-ink/15 bg-white px-6 py-2.5 text-sm font-semibold transition-colors hover:border-ink/30"
-          >
-            Create with AI
+    <AppShell ctx={ctx} active="forms">
+      <PageHeader
+        eyebrow={ctx.workspaceName}
+        title="Your forms"
+        actions={
+          <>
+            <ButtonLink href="/create" variant="secondary">
+              <Sparkles className="h-4 w-4" /> Create with AI
+            </ButtonLink>
+            <NewFormButton />
+          </>
+        }
+      />
+
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <Card className="!p-4">
+          <Meter label="Live forms" used={live} limit={e.maxActiveForms} />
+        </Card>
+        <Card className="!p-4">
+          <Meter label={`Responses · ${new Date().toLocaleDateString("en-IN", { month: "short", year: "numeric" })}`} used={monthlyUsed} limit={e.monthlySubmissions} />
+        </Card>
+        <Card className="!p-4">
+          <Meter label="File storage" used={storageUsed} limit={e.storageBytes} format={formatBytes} />
+        </Card>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-faint">
+        <span>
+          {credits} AI credit{credits === 1 ? "" : "s"} available ·{" "}
+          <Link href="/billing/credits" className="font-semibold text-ink-soft underline underline-offset-2 hover:text-ink">
+            top up
           </Link>
-          <NewFormButton />
-        </div>
+        </span>
+        {nearLimit && ctx.plan !== "pro" && (
+          <Link href="/billing" className="font-semibold text-warn underline underline-offset-2">
+            You&apos;re close to a limit — see plans
+          </Link>
+        )}
       </div>
 
       {forms.length === 0 ? (
-        <div className="mt-8 rounded-2xl border border-ink/10 bg-paper p-8 text-center">
-          <p className="text-lg font-semibold">No forms yet</p>
-          <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
-            Create your first form above — you&apos;ll get a visual builder
-            with live preview and autosave.
-          </p>
-        </div>
+        <EmptyState
+          className="mt-10"
+          icon={<FileText className="h-5 w-5" />}
+          title="No forms yet"
+          description="Describe one and let the AI draft it in your brand, start from a template, or build from scratch."
+          action={
+            <>
+              <ButtonLink href="/create" variant="accent">
+                <Sparkles className="h-4 w-4" /> Create with AI
+              </ButtonLink>
+              <ButtonLink href="/templates" variant="secondary">
+                <LayoutGrid className="h-4 w-4" /> Templates
+              </ButtonLink>
+              <NewFormButton variant="ghost" label="Blank form" />
+            </>
+          }
+        />
       ) : (
-        <ul className="mt-8 divide-y divide-ink/10 rounded-2xl border border-ink/10 bg-white">
+        <ul className="mt-8 grid gap-3 md:grid-cols-2">
           {forms.map((f) => (
-            <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-              <div className="min-w-0">
-                <p className="flex items-center gap-2 font-semibold">
-                  <span className="truncate">{f.title}</span>
-                  <span className="shrink-0 rounded-full bg-paper-deep px-2.5 py-0.5 text-[11px] font-semibold text-ink-soft">
-                    {STATUS_LABEL[f.status] ?? f.status}
-                  </span>
-                </p>
-                <p className="mt-0.5 text-xs text-ink-faint">
-                  Updated {new Date(f.updated_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                  {" · "}
-                  <Link href={`/forms/${f.id}/responses`} className="font-semibold text-ink-soft underline underline-offset-2">
-                    {counts.get(f.id) ?? 0} responses
-                  </Link>
-                  {f.status === "published" && (
-                    <>
-                      {" · "}
-                      <Link href={`/f/${f.slug}`} className="font-semibold text-brand-700">
-                        View live
-                      </Link>
-                    </>
-                  )}
-                </p>
-              </div>
-              <FormRowActions id={f.id} title={f.title} archived={false} />
-            </li>
+            <FormCard key={f.id} form={f} total={total.get(f.id) ?? 0} thisMonth={thisMonth.get(f.id) ?? 0} />
           ))}
         </ul>
       )}
 
       {archived.length > 0 && (
-        <details className="mt-6">
-          <summary className="cursor-pointer text-sm font-semibold text-ink-soft">
-            Archived ({archived.length})
-          </summary>
-          <ul className="mt-3 divide-y divide-ink/10 rounded-2xl border border-ink/10 bg-white">
+        <details className="mt-10">
+          <summary className="cursor-pointer text-sm font-semibold text-ink-soft">Archived ({archived.length})</summary>
+          <ul className="mt-3 grid gap-3 md:grid-cols-2">
             {archived.map((f) => (
-              <li key={f.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-                <p className="font-medium text-ink-soft">{f.title}</p>
-                <FormRowActions id={f.id} title={f.title} archived />
-              </li>
+              <FormCard key={f.id} form={f} total={total.get(f.id) ?? 0} thisMonth={thisMonth.get(f.id) ?? 0} archived />
             ))}
           </ul>
         </details>
       )}
-      </main>
-    </>
+    </AppShell>
   );
 }

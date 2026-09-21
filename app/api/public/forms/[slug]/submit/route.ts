@@ -3,7 +3,8 @@ import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { validateAnswers } from "@/lib/forms/answers";
-import { PLANS, type PlanCode } from "@/lib/plans";
+import { PLANS } from "@/lib/plans";
+import { getWorkspacePlan } from "@/lib/billing/plan";
 import { clientIp, formAcceptance, resolvePublicForm } from "@/lib/forms/public";
 
 const submitSchema = z.object({
@@ -12,6 +13,7 @@ const submitSchema = z.object({
   answers: z.record(z.unknown()),
   hiddenFields: z.record(z.unknown()).optional().default({}),
   sessionId: z.string().min(1).max(100).optional(),
+  source: z.string().max(20).optional(),
   durationMs: z.number().int().min(0).max(24 * 3600 * 1000).optional(),
 });
 
@@ -85,14 +87,9 @@ export async function POST(
     }
   }
 
-  // Workspace plan → atomic insert + monthly gate in one transaction.
-  const { data: sub } = await admin!
-    .from("subscriptions")
-    .select("plan_code")
-    .eq("workspace_id", form.workspaceId)
-    .maybeSingle();
-  const code = (sub as { plan_code: string } | null)?.plan_code;
-  const plan: PlanCode = code === "starter" || code === "pro" ? code : "free";
+  // Effective workspace plan → atomic insert + monthly gate in one transaction.
+  const plan = await getWorkspacePlan(form.workspaceId);
+  const source = input.source && /^[a-z0-9_-]{1,20}$/i.test(input.source) ? input.source.toLowerCase() : null;
 
   const { data: result, error: rpcError } = await admin!.rpc("submit_form", {
     p_form_id: form.id,
@@ -101,7 +98,7 @@ export async function POST(
     p_idempotency_key: input.idempotencyKey,
     p_answers: checked.value,
     p_hidden: hidden,
-    p_source: null,
+    p_source: source,
     p_duration_ms: input.durationMs ?? null,
     p_monthly_limit: PLANS[plan].entitlements.monthlySubmissions,
   });

@@ -1,95 +1,98 @@
+import Link from "next/link";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { WorkspaceStatusButton, OverrideForm } from "../Controls";
+import { Table, Td, Th, Mono } from "@/components/ui/table";
+import { Badge, StatusBadge } from "@/components/ui/badge";
+import { formatDate } from "@/lib/utils";
+import { SearchForm, WorkspaceStatusButton } from "../Controls";
 
-export default async function AdminWorkspacesPage({
-  searchParams,
-}: {
-  searchParams?: { q?: string };
-}) {
+export default async function AdminWorkspacesPage({ searchParams }: { searchParams?: { q?: string } }) {
   const admin = getServiceSupabase();
   if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   const q = searchParams?.q?.trim() ?? "";
 
-  let query = admin
-    .from("workspaces")
-    .select("id, name, slug, status, created_at")
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (q) {
-    query = /^[0-9a-f-]{36}$/i.test(q)
-      ? query.eq("id", q)
-      : query.ilike("name", `%${q}%`);
-  }
+  let query = admin.from("workspaces").select("id, name, slug, status, created_at").order("created_at", { ascending: false }).limit(100);
+  if (q) query = /^[0-9a-f-]{36}$/i.test(q) ? query.eq("id", q) : query.ilike("name", `%${q}%`);
   const { data } = await query;
-  const spaces = ((data ?? []) as Array<{
-    id: string;
-    name: string;
-    slug: string;
-    status: string;
-    created_at: string;
-  }>);
-
+  const spaces = (data ?? []) as Array<{ id: string; name: string; slug: string; status: string; created_at: string }>;
   const ids = spaces.map((w) => w.id);
-  const { data: subs } = ids.length
-    ? await admin.from("subscriptions").select("workspace_id, plan_code, status, provider_subscription_id, override_reason, override_expires_at").in("workspace_id", ids)
-    : { data: [] };
-  const subByWs = new Map(
-    ((subs ?? []) as Array<Record<string, string | null>>).map((s) => [s.workspace_id as string, s]),
-  );
-  const { data: forms } = ids.length
-    ? await admin.from("forms").select("workspace_id").in("workspace_id", ids).limit(2000)
-    : { data: [] };
-  const formCount = new Map<string, number>();
-  for (const f of (forms ?? []) as Array<{ workspace_id: string }>) {
-    formCount.set(f.workspace_id, (formCount.get(f.workspace_id) ?? 0) + 1);
+  const month = `${new Date().toISOString().slice(0, 7)}-01`;
+
+  const [{ data: subs }, { data: forms }, { data: usage }] = ids.length
+    ? await Promise.all([
+        admin.from("subscriptions").select("workspace_id, plan_code, status, override_reason, override_expires_at").in("workspace_id", ids),
+        admin.from("forms").select("workspace_id, status").in("workspace_id", ids).limit(5000),
+        admin.from("usage_monthly").select("workspace_id, completed_submissions").in("workspace_id", ids).eq("month", month),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }];
+  const subByWs = new Map(((subs ?? []) as Array<Record<string, string | null>>).map((s) => [s.workspace_id as string, s]));
+  const formCount = new Map<string, { total: number; live: number }>();
+  for (const f of (forms ?? []) as Array<{ workspace_id: string; status: string }>) {
+    const cur = formCount.get(f.workspace_id) ?? { total: 0, live: 0 };
+    cur.total += 1;
+    if (f.status === "published") cur.live += 1;
+    formCount.set(f.workspace_id, cur);
   }
+  const usageByWs = new Map(((usage ?? []) as Array<{ workspace_id: string; completed_submissions: number }>).map((u) => [u.workspace_id, u.completed_submissions]));
 
   return (
-    <div>
-      <h1 className="font-display text-3xl tracking-tight">Workspaces</h1>
-      <form method="get" className="mt-4 flex gap-2">
-        <input
-          type="search"
-          name="q"
-          defaultValue={q}
-          placeholder="name or workspace id…"
-          className="w-72 rounded-xl border border-ink/15 px-4 py-2 text-sm"
-        />
-        <button type="submit" className="rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold">
-          Search
-        </button>
-      </form>
-      <ul className="mt-4 space-y-3">
-        {spaces.map((w) => {
-          const sub = subByWs.get(w.id);
-          return (
-            <li key={w.id} className="rounded-2xl border border-ink/10 bg-white px-5 py-4">
-              <p className="flex flex-wrap items-center gap-2 font-semibold">
-                {w.name}
-                <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${w.status === "active" ? "bg-brand-50 text-brand-700" : "bg-red-50 text-red-700"}`}>
-                  {w.status}
-                </span>
-                <span className="rounded-full bg-paper-deep px-2.5 py-0.5 text-[11px] font-semibold">
-                  {(sub?.plan_code as string) ?? "free"} · {(sub?.status as string) ?? "—"}
-                </span>
-                {sub?.override_reason ? (
-                  <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">
-                    Override → {sub.plan_code as string} (to {String(sub.override_expires_at).slice(0, 10)})
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-3xl tracking-tight">Workspaces</h1>
+        <p className="mt-1 text-sm text-ink-soft">Every form, subscription and quota hangs off a workspace.</p>
+      </div>
+      <SearchForm placeholder="name or workspace id…" defaultValue={q} />
+      <Table>
+        <thead>
+          <tr>
+            <Th>Workspace</Th>
+            <Th>Plan</Th>
+            <Th>Forms</Th>
+            <Th className="text-right">Responses (month)</Th>
+            <Th>Since</Th>
+            <Th />
+          </tr>
+        </thead>
+        <tbody>
+          {spaces.map((w) => {
+            const sub = subByWs.get(w.id);
+            return (
+              <tr key={w.id}>
+                <Td>
+                  <p className="flex items-center gap-2 font-medium">
+                    <Link href={`/super-admin/workspaces/${w.id}`} className="hover:underline">
+                      {w.name}
+                    </Link>
+                    <StatusBadge status={w.status} />
+                  </p>
+                  <Mono>{w.id}</Mono>
+                </Td>
+                <Td>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <Badge tone={(sub?.plan_code ?? "free") === "free" ? "neutral" : "accent"}>{(sub?.plan_code as string) ?? "free"}</Badge>
+                    <span className="text-xs text-ink-faint">{(sub?.status as string) ?? "—"}</span>
+                    {sub?.override_reason ? <Badge tone="warn">override → {String(sub.override_expires_at).slice(0, 10)}</Badge> : null}
                   </span>
-                ) : null}
-              </p>
-              <p className="mt-0.5 font-mono text-[11px] text-ink-faint">
-                {w.id} · {formCount.get(w.id) ?? 0} forms · since {w.created_at.slice(0, 10)}
-              </p>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <WorkspaceStatusButton workspaceId={w.id} status={w.status} />
-              </div>
-              <OverrideForm workspaceId={w.id} currentPlan={(sub?.plan_code as string) ?? "free"} />
-            </li>
-          );
-        })}
-      </ul>
-      {spaces.length === 0 && <p className="mt-4 text-sm text-ink-soft">No workspaces match.</p>}
+                </Td>
+                <Td className="text-xs text-ink-soft">
+                  {formCount.get(w.id)?.live ?? 0} live / {formCount.get(w.id)?.total ?? 0}
+                </Td>
+                <Td className="text-right tabular-nums">{(usageByWs.get(w.id) ?? 0).toLocaleString("en-IN")}</Td>
+                <Td className="text-xs text-ink-soft">{formatDate(w.created_at)}</Td>
+                <Td className="text-right">
+                  <WorkspaceStatusButton workspaceId={w.id} status={w.status} />
+                </Td>
+              </tr>
+            );
+          })}
+          {spaces.length === 0 && (
+            <tr>
+              <Td colSpan={6} className="text-center text-sm text-ink-soft">
+                No workspaces match.
+              </Td>
+            </tr>
+          )}
+        </tbody>
+      </Table>
     </div>
   );
 }
