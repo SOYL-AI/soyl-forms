@@ -1,22 +1,45 @@
 import type { Metadata } from "next";
-import { getProductName } from "@/lib/config";
-import { Inter, Outfit } from "next/font/google";
+import { Bricolage_Grotesque, Instrument_Sans, JetBrains_Mono } from "next/font/google";
+import { getAppUrl, getProductName } from "@/lib/config";
 import { ThemeProvider } from "@/components/ThemeProvider";
+import { Analytics } from "@/components/Analytics";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
-const outfit = Outfit({ subsets: ["latin"], variable: "--font-display" });
+const display = Bricolage_Grotesque({
+  subsets: ["latin"],
+  variable: "--font-display",
+  axes: ["opsz", "wdth"],
+});
+const sans = Instrument_Sans({ subsets: ["latin"], variable: "--font-sans" });
+const mono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-mono",
+  weight: ["400", "500"],
+});
+
+const description =
+  "Build conversational one-question-at-a-time forms, or describe one and let AI draft it in your brand. Share with a link or QR code, collect responses, pay in rupees.";
 
 export const metadata: Metadata = {
   title: {
-    default: `${getProductName()} — Forms people enjoy answering`,
+    default: `${getProductName()} — Forms people actually finish`,
     template: `%s · ${getProductName()}`,
   },
-  description:
-    "Create beautiful one-question-at-a-time forms, share them with a link or QR code, and review responses. Simple INR pricing.",
-  metadataBase: process.env.NEXT_PUBLIC_APP_URL
-    ? new URL(process.env.NEXT_PUBLIC_APP_URL)
-    : undefined,
+  description,
+  metadataBase: new URL(getAppUrl()),
+  applicationName: getProductName(),
+  openGraph: {
+    type: "website",
+    siteName: getProductName(),
+    title: `${getProductName()} — Forms people actually finish`,
+    description,
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${getProductName()} — Forms people actually finish`,
+    description,
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({
@@ -25,10 +48,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`${inter.variable} ${outfit.variable}`} suppressHydrationWarning>
-      <body className="font-sans bg-background text-foreground antialiased">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <html
+      lang="en"
+      className={`${display.variable} ${sans.variable} ${mono.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="min-h-screen font-sans antialiased">
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
           {children}
+          <Analytics />
         </ThemeProvider>
       </body>
     </html>

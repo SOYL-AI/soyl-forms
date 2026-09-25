@@ -192,11 +192,11 @@ export function QrScanResult({
       role="dialog"
       aria-modal="true"
       aria-label="QR scan result"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-lift"
+        className="w-full max-w-sm rounded-2xl border border-line bg-paper p-6 shadow-pop"
         onClick={(e) => e.stopPropagation()}
       >
         <h3 className="font-display text-lg font-bold tracking-tight">
@@ -206,21 +206,21 @@ export function QrScanResult({
           This QR code doesn&apos;t link to a SOYL form. Here&apos;s what it
           contains:
         </p>
-        <div className="mt-4 rounded-xl border border-ink/10 bg-paper p-3">
+        <div className="mt-4 rounded-xl border border-line bg-paper-deep/40 p-3">
           <p className="break-all text-sm font-mono">{value}</p>
         </div>
         <div className="mt-4 flex gap-2">
           <button
             type="button"
             onClick={handleCopy}
-            className="flex-1 rounded-full bg-ink px-4 py-2.5 text-xs font-semibold text-white"
+            className="flex-1 rounded-full bg-ink px-4 py-2.5 text-xs font-semibold text-paper"
           >
             {copied ? "Copied ✓" : "Copy"}
           </button>
           <button
             type="button"
             onClick={handleShare}
-            className="flex-1 rounded-full border border-ink/15 px-4 py-2.5 text-xs font-semibold hover:border-ink/30"
+            className="flex-1 rounded-full border border-line-strong px-4 py-2.5 text-xs font-semibold hover:border-ink/40"
           >
             Share
           </button>

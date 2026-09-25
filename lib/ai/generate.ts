@@ -1,85 +1,101 @@
-import { formSchemaV1, validateLogicGraph } from "@/lib/forms/schema";
-import type { FormSchemaV1 } from "@/types/forms";
+import { formSchemaV1, formSettingsSchema, formThemeSchema, validateLogicGraph } from "@/lib/forms/schema";
+import { DEFAULT_THEME, resolveTheme } from "@/lib/forms/themes";
+import { FONTS } from "@/lib/forms/fonts";
+import { brandKitToTheme, type BrandKit } from "@/lib/brand/types";
+import type { FormSchemaV1, FormSettings, FormTheme } from "@/types/forms";
+import { aiProvider, chatJson, extractJson, isAiConfigured } from "./client";
 
-export const AI_MAX_BLOCKS = 25;
+export { aiProvider, extractJson, isAiConfigured };
 
-export type AiProvider = "openai" | "azure-foundry" | "azure-openai";
+export const AI_MAX_BLOCKS = 30;
+
+export type DraftLength = "short" | "medium" | "long";
+
+export interface GenerateOptions {
+  description: string;
+  brand?: BrandKit | null;
+  length?: DraftLength;
+  /** Overrides the brand's tone ("playful", "formal", …). */
+  tone?: string;
+  /** Respondent-facing language, e.g. "English", "Hindi", "Hinglish". */
+  language?: string;
+}
+
+export interface GeneratedDraft {
+  schema: FormSchemaV1;
+  theme: FormTheme;
+  settings: FormSettings;
+  logicDropped: boolean;
+  rationale: string;
+}
+
+const LENGTH_HINT: Record<DraftLength, string> = {
+  short: "3–5 questions",
+  medium: "5–9 questions",
+  long: "9–14 questions",
+};
 
 /**
- * Provider selection:
- * - `openai` (default): any OpenAI-compatible `/chat/completions` + Bearer key.
- * - `azure-foundry`: Azure AI Foundry serverless inference
- *   (`https://<resource>.services.ai.azure.com/models` + Bearer key) — same
- *   OpenAI-compatible wire format, deployment name in AI_MODEL.
- * - `azure-openai`: classic Azure OpenAI
- *   (`https://<resource>.openai.azure.com`, AI_MODEL = deployment name,
- *   `api-key` header + api-version query).
- */
-export function aiProvider(): AiProvider {
-  const raw = (process.env.AI_PROVIDER ?? "openai").toLowerCase();
-  if (raw === "azure-foundry" || raw === "azure_foundry") return "azure-foundry";
-  if (raw === "azure-openai" || raw === "azure_openai") return "azure-openai";
-  return "openai";
-}
-
-/** True when an AI provider is configured. */
-export function isAiConfigured(): boolean {
-  return Boolean(process.env.AI_API_KEY && process.env.AI_MODEL);
-}
-
-function baseUrl(): string {
-  const provider = aiProvider();
-  const fallback =
-    provider === "azure-openai"
-      ? "https://YOUR-RESOURCE.openai.azure.com"
-      : provider === "azure-foundry"
-        ? "https://YOUR-RESOURCE.services.ai.azure.com/models"
-        : "https://api.openai.com/v1";
-  return (process.env.AI_BASE_URL ?? fallback).replace(/\/+$/, "");
-}
-
-function endpointUrl(model: string): string {
-  if (aiProvider() === "azure-openai") {
-    const version = process.env.AI_API_VERSION ?? "2024-10-21";
-    return `${baseUrl()}/openai/deployments/${encodeURIComponent(model)}/chat/completions?api-version=${version}`;
-  }
-  return `${baseUrl()}/chat/completions`;
-}
-
-function authHeaders(): Record<string, string> {
-  if (aiProvider() === "azure-openai") {
-    return { "api-key": process.env.AI_API_KEY as string };
-  }
-  return { authorization: `Bearer ${process.env.AI_API_KEY}` };
-}
-
-/**
- * System prompt: the model must emit ONLY a FormSchemaV1 JSON object.
- * Generation never publishes — output always lands as an editable draft.
+ * System prompt: the model must emit ONLY one JSON object with the draft,
+ * its theme and settings. Generation never publishes — output always lands
+ * as an editable draft the creator reviews.
  */
 export function buildFormPrompt(): string {
+  const fontIds = FONTS.map((f) => `${f.id} (${f.feel})`).join(", ");
   return [
-    "You generate form definitions as strict JSON. Reply with NOTHING but the JSON object.",
-    "Schema: {\"schemaVersion\":1,\"title\":string,\"blocks\":Block[],\"logic\":[]}.",
-    "Block: {\"id\":string-url-safe-stable,\"type\":one-of-below,\"title\":string,\"description\"?:string,\"required\"?:boolean}.",
-    'Types: welcome, short_text, long_text, email, number, phone, url, single_choice, multiple_choice, dropdown, yes_no, rating, opinion_scale, date, statement, thank_you. (Never file_upload.)',
-    "Choice blocks need \"options\":[{\"id\":string,\"label\":string}] with 2-6 options and stable ids.",
-    "Rating uses {\"max\":5}. Opinion scale uses {\"min\":0,\"max\":10}.",
-    "Structure: start with a welcome block, then 4-10 questions (mark truly-necessary ones required), end with thank_you.",
-    "Keep \"logic\":[] always. Titles under 120 chars. No markdown, no commentary.",
+    "You design conversational, one-question-per-screen forms for a form builder. Reply with NOTHING but one JSON object.",
+    'Shape: {"schema":FormSchemaV1,"theme":Theme,"settings":Settings,"rationale":string(<=200 chars)}.',
+    'FormSchemaV1: {"schemaVersion":1,"title":string,"blocks":Block[],"logic":LogicRule[]}.',
+    'Block (common): {"id":string,"type":string,"title":string,"description"?:string,"required"?:boolean}. ids: lowercase, letters/digits/underscore, unique, descriptive (e.g. "email", "team_size").',
+    "Block types and extra fields:",
+    ' welcome {"buttonLabel"?}, statement {"buttonLabel"?}, thank_you {"buttonLabel"?,"buttonUrl"?}',
+    ' short_text/long_text/email/phone/url {"placeholder"?,"validation"?:{"maxLength"?,"minLength"?}}',
+    ' number {"placeholder"?,"validation"?:{"min"?,"max"?}}',
+    ' single_choice/multiple_choice/dropdown {"options":[{"id","label"}] (2–8), "allowOther"?:boolean, "shuffle"?:boolean}',
+    " yes_no {}",
+    ' rating {"max":5|10,"icon":"star"|"heart"|"number"}',
+    ' opinion_scale {"min":0|1,"max":5|7|10,"minLabel"?,"maxLabel"?}',
+    ' matrix {"rows":[{"id","label"}] (2–6), "columns":[{"id","label"}] (3–5)}  — for rating several items on one scale',
+    ' legal {"acceptLabel":string,"linkUrl"?:https,"linkLabel"?}  — consent/terms',
+    " date {}, time {}, file_upload {\"maxSizeMb\":number}",
+    'LogicRule: {"id":string,"when":{"questionId":string,"operator":"equals"|"not_equals"|"contains"|"answered"|"not_answered"|"greater_than"|"less_than","value"?:string},"then":{"action":"goto","blockId":string}}. Rules run in order, first match wins, else next block. Use the option id (not label) as value for choice questions; "yes"/"no" for yes_no; numbers as strings. Only add logic when a question is genuinely conditional (e.g. skip follow-ups after a "no").',
+    'Theme: {"background":hex,"text":hex,"accent":hex,"headingFont":fontId,"bodyFont":fontId,"radius":"none"|"sm"|"md"|"lg"|"xl","buttonStyle":"pill"|"rounded"|"square"}. Allowed fontIds: ' +
+      fontIds +
+      ". Text must contrast strongly with background; accent must be a real brand-like colour, never grey. If a BRAND KIT is provided, use its colours, fonts and style exactly.",
+    'Settings: {"autoAdvance":boolean,"showProgress":boolean,"buttonLabelSubmit"?:string(<=20)}.',
+    "Writing: titles are short questions addressed to the respondent, in the brand's voice when given (else warm and plain). Descriptions are optional, one line, only when they add information. Use the most specific type available (email, phone, date, rating, matrix, legal). Mark only truly necessary questions required. Start with a welcome screen unless the form is under 4 questions; end with a thank_you whose title reflects what happens next.",
+    "Never invent facts about the organisation. No markdown, no commentary, no trailing text.",
   ].join("\n");
 }
 
-/** Extract the JSON object from model output (tolerates code fences). */
-export function extractJson(raw: string): unknown {
-  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/i);
-  const candidate = (fenced?.[1] ?? raw).trim();
-  const start = candidate.indexOf("{");
-  const end = candidate.lastIndexOf("}");
-  if (start === -1 || end === -1 || end <= start) {
-    throw new Error("Model did not return JSON.");
-  }
-  return JSON.parse(candidate.slice(start, end + 1));
+function brandBlock(kit: BrandKit): string {
+  const v = kit.voice;
+  return [
+    "BRAND KIT (follow exactly):",
+    `Name: ${kit.name}`,
+    kit.summary ? `About: ${kit.summary}` : "",
+    v.tone ? `Tone of voice: ${v.tone}` : "",
+    v.audience ? `Audience: ${v.audience}` : "",
+    v.avoid.length ? `Avoid: ${v.avoid.join(", ")}` : "",
+    v.sample ? `Sample on-brand copy: "${v.sample.slice(0, 300)}"` : "",
+    `Colours: background ${kit.colors.background}, text ${kit.colors.text}, accent ${kit.colors.primary}${kit.colors.secondary ? `, secondary ${kit.colors.secondary}` : ""}`,
+    `Fonts: heading ${kit.fonts.heading}, body ${kit.fonts.body}`,
+    `Style: radius ${kit.style.radius}, buttons ${kit.style.buttonStyle}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function buildUserPrompt(opts: GenerateOptions): string {
+  const parts = [
+    `Create a form for this request:\n${opts.description.trim().slice(0, 3000)}`,
+    `Length: ${LENGTH_HINT[opts.length ?? "medium"]}.`,
+  ];
+  if (opts.tone) parts.push(`Tone override: ${opts.tone.slice(0, 80)}.`);
+  if (opts.language) parts.push(`Write all respondent-facing text in ${opts.language.slice(0, 40)}.`);
+  if (opts.brand) parts.push(brandBlock(opts.brand));
+  else parts.push("No brand kit: choose a tasteful theme that suits the topic.");
+  return parts.join("\n\n");
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -95,78 +111,85 @@ function sanitizeIds(raw: unknown): unknown {
   if (!Array.isArray(root.blocks)) return raw;
   const used = new Set<string>();
   const fresh = (fallback: string): string => {
-    let id = fallback;
+    let id = fallback.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 60) || "q";
     let n = 1;
     while (used.has(id) || !ID_RE.test(id)) {
       n += 1;
-      id = `${fallback.slice(0, 56)}_${n}`;
+      id = `${fallback.replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 56)}_${n}`;
     }
     used.add(id);
     return id;
   };
   const blockMap = new Map<string, string>();
+  const fixOptions = (list: unknown, prefix: string): unknown => {
+    if (!Array.isArray(list)) return list;
+    const seen = new Set<string>();
+    return list.map((o, j) => {
+      if (!o || typeof o !== "object" || Array.isArray(o)) return o;
+      const opt = o as Record<string, unknown>;
+      const oldId = typeof opt.id === "string" ? opt.id : "";
+      let oid = oldId.replace(/[^A-Za-z0-9_-]/g, "_");
+      if (!ID_RE.test(oid) || seen.has(oid)) {
+        oid = `${prefix}_${j + 1}`;
+        let k = 1;
+        while (seen.has(oid)) {
+          k += 1;
+          oid = `${prefix}_${j + 1}_${k}`;
+        }
+      }
+      seen.add(oid);
+      if (oldId && oldId !== oid) blockMap.set(`${prefix}::${oldId}`, oid);
+      return { ...opt, id: oid, label: String(opt.label ?? oid).slice(0, 200) || oid };
+    });
+  };
   const blocks = (root.blocks as unknown[]).map((b, i) => {
     if (!b || typeof b !== "object" || Array.isArray(b)) return b;
     const blk = b as Record<string, unknown>;
     const oldId = typeof blk.id === "string" ? blk.id : "";
-    const newId = ID_RE.test(oldId) && !used.has(oldId)
-      ? (used.add(oldId), oldId)
-      : fresh(`q_${i + 1}`);
+    const newId = ID_RE.test(oldId) && !used.has(oldId) ? (used.add(oldId), oldId) : fresh(oldId || `q_${i + 1}`);
     if (oldId) blockMap.set(oldId, newId);
     const out: Record<string, unknown> = { ...blk, id: newId };
-    if (Array.isArray(blk.options)) {
-      const seenOpt = new Set<string>();
-      out.options = (blk.options as unknown[]).map((o, j) => {
-        if (!o || typeof o !== "object" || Array.isArray(o)) return o;
-        const opt = o as Record<string, unknown>;
-        const oldOid = typeof opt.id === "string" ? opt.id : "";
-        let oid = oldOid;
-        if (!ID_RE.test(oid) || seenOpt.has(oid)) {
-          oid = `${newId}_o${j}`;
-          let k = 1;
-          while (seenOpt.has(oid)) {
-            k += 1;
-            oid = `${newId}_o${j}_${k}`;
-          }
-        }
-        seenOpt.add(oid);
-        return { ...opt, id: oid };
-      });
+    if ("options" in blk) out.options = fixOptions(blk.options, `${newId}_o`);
+    if ("rows" in blk) out.rows = fixOptions(blk.rows, `${newId}_r`);
+    if ("columns" in blk) out.columns = fixOptions(blk.columns, `${newId}_c`);
+    // Models sometimes send null for optional strings.
+    for (const k of ["description", "placeholder", "buttonLabel", "buttonUrl", "linkUrl", "linkLabel", "minLabel", "maxLabel", "acceptLabel", "imageUrl"]) {
+      if (out[k] === null || out[k] === "") delete out[k];
     }
+    if (out.type === "thank_you") delete out.required;
     return out;
   });
   let logic = root.logic;
   if (Array.isArray(logic)) {
-    logic = (logic as unknown[]).map((r) => {
+    logic = (logic as unknown[]).map((r, i) => {
       if (!r || typeof r !== "object" || Array.isArray(r)) return r;
       const rule = r as Record<string, unknown>;
       const when = (rule.when ?? {}) as Record<string, unknown>;
       const then = (rule.then ?? {}) as Record<string, unknown>;
+      const qid = typeof when.questionId === "string" ? blockMap.get(when.questionId) ?? when.questionId : when.questionId;
+      let value = when.value;
+      if (typeof value === "string" && typeof qid === "string") {
+        value = blockMap.get(`${qid}_o::${value}`) ?? value;
+      }
+      if (typeof value === "number") value = String(value);
       return {
-        ...rule,
-        when: {
-          ...when,
-          questionId:
-            typeof when.questionId === "string" && blockMap.has(when.questionId)
-              ? blockMap.get(when.questionId)
-              : when.questionId,
-        },
+        id: typeof rule.id === "string" && ID_RE.test(rule.id) ? rule.id : `rule_${i + 1}`,
+        when: { ...when, questionId: qid, value },
         then: {
-          ...then,
-          blockId:
-            typeof then.blockId === "string" && blockMap.has(then.blockId)
-              ? blockMap.get(then.blockId)
-              : then.blockId,
+          action: "goto",
+          blockId: typeof then.blockId === "string" ? blockMap.get(then.blockId) ?? then.blockId : then.blockId,
         },
       };
     });
+  } else {
+    logic = [];
   }
-  return { ...root, blocks, logic };
+  return { ...root, schemaVersion: 1, blocks, logic };
 }
 
 /**
- * Validate + normalize a generated draft: ids repaired, schema-checked,
- * block-capped, broken logic dropped.
+ * Validate + normalize a generated schema: ids repaired, schema-checked,
+ * block-capped, broken logic dropped (never a broken publish).
  */
 export function parseGeneratedSchema(raw: unknown): {
   schema: FormSchemaV1;
@@ -178,97 +201,67 @@ export function parseGeneratedSchema(raw: unknown): {
   }
   const data = parsed.data;
   const blocks = data.blocks.slice(0, AI_MAX_BLOCKS);
-  const seen = new Set<string>();
-  const cleanId = (id: string, fallback: string): string => {
-    let safe = id.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64) || fallback;
-    let n = 1;
-    while (seen.has(safe)) {
-      n += 1;
-      safe = `${safe.slice(0, 60)}_${n}`;
-    }
-    seen.add(safe);
-    return safe;
-  };
-  const idMap = new Map<string, string>();
-  for (const b of blocks) {
-    idMap.set(b.id, cleanId(b.id, `q_${seen.size + 1}`));
-  }
-  const normalized = blocks.map((b) => {
-    const next = { ...b, id: idMap.get(b.id) as string };
-    if (
-      (next.type === "single_choice" ||
-        next.type === "multiple_choice" ||
-        next.type === "dropdown") &&
-      Array.isArray(next.options)
-    ) {
-      const used = new Set<string>();
-      next.options = next.options.map((o, i) => {
-        let oid = o.id.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64) || `${next.id}_o${i}`;
-        let k = 1;
-        while (used.has(oid)) {
-          k += 1;
-          oid = `${oid.slice(0, 60)}_${k}`;
-        }
-        used.add(oid);
-        return { ...o, id: oid };
-      });
-    }
-    return next;
-  });
-
-  let logic = data.logic
-    .map((r) => ({
-      ...r,
-      when: { ...r.when, questionId: idMap.get(r.when.questionId) ?? r.when.questionId },
-      then: { ...r.then, blockId: idMap.get(r.then.blockId) ?? r.then.blockId },
-    }))
-    .slice(0, 50);
-  const problems = validateLogicGraph({ ...data, blocks: normalized, logic });
-  const logicDropped = problems.length > 0;
-  if (logicDropped) logic = [];
-
+  const ids = new Set(blocks.map((b) => b.id));
+  // Keep only rules whose endpoints survived the cap; then validate the graph.
+  let logic = data.logic.filter((r) => ids.has(r.when.questionId) && ids.has(r.then.blockId) && r.when.questionId !== r.then.blockId).slice(0, 50);
+  const problems = validateLogicGraph({ ...data, blocks, logic });
+  const logicDropped = problems.length > 0 || logic.length !== data.logic.length;
+  if (problems.length > 0) logic = [];
   return {
-    schema: { schemaVersion: 1, title: data.title, blocks: normalized, logic },
+    schema: { schemaVersion: 1, title: data.title, blocks, logic },
     logicDropped,
   };
 }
 
+/** Theme from the model, or from the brand kit when one was requested. */
+export function parseGeneratedTheme(raw: unknown, brand?: BrandKit | null): FormTheme {
+  if (brand) return brandKitToTheme(brand);
+  const parsed = formThemeSchema.safeParse(raw ?? {});
+  const theme: FormTheme = parsed.success ? parsed.data : { ...DEFAULT_THEME };
+  // Persist contrast-corrected colours so the stored draft is legible as-is.
+  const resolved = resolveTheme(theme);
+  return {
+    ...theme,
+    background: resolved.background,
+    text: resolved.text,
+    accent: resolved.accent,
+    headingFont: resolved.heading.id,
+    bodyFont: resolved.body.id,
+    radius: resolved.radius,
+    buttonStyle: resolved.buttonStyle,
+  };
+}
+
+export function parseGeneratedSettings(raw: unknown): FormSettings {
+  const parsed = formSettingsSchema.safeParse(raw ?? {});
+  const s = parsed.success ? parsed.data : {};
+  return { autoAdvance: s.autoAdvance ?? true, showProgress: s.showProgress ?? true, ...(s.buttonLabelSubmit ? { buttonLabelSubmit: s.buttonLabelSubmit } : {}) };
+}
+
 /** Call the provider and return a validated draft. Throws with safe messages. */
-export async function generateFormDraft(
-  description: string,
-): Promise<{ schema: FormSchemaV1; logicDropped: boolean }> {
+export async function generateFormDraft(opts: GenerateOptions): Promise<GeneratedDraft> {
   if (!isAiConfigured()) {
-    throw new Error("AI generation isn't connected (missing AI_API_KEY / AI_MODEL).");
+    throw new Error("AI generation isn't connected (missing provider key).");
   }
-  const prompt = description.trim().slice(0, 2000);
+  const prompt = opts.description.trim();
   if (prompt.length < 10) {
     throw new Error("Describe your form in a sentence or two first.");
   }
-  const model = process.env.AI_MODEL as string;
-  const res = await fetch(endpointUrl(model), {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      ...authHeaders(),
-    },
-    body: JSON.stringify({
-      model: process.env.AI_MODEL,
-      temperature: 0.4,
-      max_tokens: 4000,
-      messages: [
-        { role: "system", content: buildFormPrompt() },
-        { role: "user", content: `Create a form for this request:\n${prompt}` },
-      ],
-    }),
-    signal: AbortSignal.timeout(60_000),
+  const content = await chatJson({
+    system: buildFormPrompt(),
+    user: buildUserPrompt(opts),
+    maxTokens: 6000,
+    temperature: 0.5,
   });
-  if (!res.ok) {
-    throw new Error("The AI provider refused the request. Try again in a bit.");
-  }
-  const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+  const json = extractJson(content) as Record<string, unknown>;
+  // Tolerate models that return the schema at the top level.
+  const schemaRaw = json.schema && typeof json.schema === "object" ? json.schema : json;
+  const { schema, logicDropped } = parseGeneratedSchema(schemaRaw);
+  return {
+    schema,
+    theme: parseGeneratedTheme(json.theme, opts.brand),
+    settings: parseGeneratedSettings(json.settings),
+    logicDropped,
+    rationale: typeof json.rationale === "string" ? json.rationale.slice(0, 200) : "",
   };
-  const content = data.choices?.[0]?.message?.content;
-  if (!content) throw new Error("The AI provider returned nothing usable.");
-  return parseGeneratedSchema(extractJson(content));
 }

@@ -1,163 +1,149 @@
-# Soyl Forms.
+# SOYL Forms
 
-Typeform-style form SaaS: beautiful one-question-at-a-time forms, public links,
-embeds, QR sharing, response analytics, Razorpay billing in INR, and a
-super-admin console. One Next.js repository.
+Conversational one-question-at-a-time forms with **brand-aware AI drafting**:
+upload a logo, a guidelines PDF or paste a website once, and every form the
+AI drafts arrives in your colours, fonts and tone of voice. Public links,
+QR codes, embeds, branching logic, webhooks, response analytics, Razorpay
+billing in INR, and an operator console — one Next.js repository.
 
-> Spec source of truth lives in the build pack (`docs/` in the original
-> project folder). If docs conflict, priority is: `16_agent_rules` →
-> `01_product_requirements` → `17_acceptance_criteria` → `architecture` →
-> `04_database` → feature docs → `master prompt`.
+> Spec source of truth lives in `docs/`. If docs conflict, priority is:
+> `16_agent_rules` → `01_product_requirements` → `17_acceptance_criteria` →
+> `architecture` → `04_database` → feature docs → `master prompt`.
+> Pricing rationale for the current release: `docs/18_pricing_review_2026-09.md`.
 
-## Status
+## What's in the box
 
-- [x] **Phase 0 — foundation**: repo, Next.js 14 + TS strict + Tailwind,
-  Supabase SSR clients, design tokens, migration `0001_init`, CI, marketing
-  shell, auth pages, dashboard shell, health endpoint.
-- [x] **Phase 1 — renderer**: shared one-question-at-a-time renderer
-  (welcome, short/long text, single/multiple choice, yes/no, rating,
-  thank-you), keyboard nav, progress, 220 ms transitions with
-  `prefers-reduced-motion`, validation, logic jumps — live at `/f/demo`.
-- [x] **Phase 2 — builder**: workspace auto-provisioning, dashboard list with
-  create/rename/duplicate/archive, 3-pane builder (drag-and-drop outline,
-  live renderer preview, per-type settings, jump rules), debounced autosave
-  with revision guard, full-screen preview. Needs Supabase keys + migration
-  to go live (see “Supabase setup”).
-- [x] **Phase 3 — publish & responses**: immutable versioned publishes with
-  plan enforcement, public `/f/[slug]` with all V1 types, idempotent
-  submission endpoint with atomic monthly-limit gate + rate limits, visit
-  tracking, responses list/detail with filters, workspace-authorized CSV
-  export. Needs migration `0003_submit_publish.sql` to go live.
-- [x] **Phase 4 — share & insight**: Share dialog (copy link, QR preview +
-  PNG/SVG download, embed snippet), 14-day response chart, views/starts/
-  completion-rate/avg-time cards, per-question choice + rating breakdowns.
-- [x] **Phase 5 — uploads & webhooks**: private R2 uploads (presigned PUT,
-  quota + MIME + size enforcement, authorized downloads, orphan cleanup),
-  outgoing `form.submission.completed` webhooks (HMAC-signed, encrypted
-  secrets, bounded retries via outbox worker). Needs `0005`, R2 keys,
-  `WEBHOOK_ENCRYPTION_KEY`, `CRON_SECRET`.
-- [x] **Design tab**: 6 theme presets + custom accent, serif/sans, pill/
-  rounded buttons, response limits, close scheduling, closed message —
-  all saved to drafts and frozen into published versions.
-- [x] **AI dictate-to-form**: describe a form → validated editable draft in
-  the builder (never auto-publishes). Credit-metered: 10 welcome + 10/month
-  free, one-time Razorpay top-up packs. Needs `0006`, `AI_API_KEY`/`AI_MODEL`.
-- [x] **Phase 6 — subscriptions**: server-side Razorpay subscription
-  checkout, raw-body webhook with signature + `x-razorpay-event-id`
-  idempotency, order-tolerant lifecycle mapping, server-truth entitlements,
-  billing page with usage meters, cancel flow. Downgrades preserve all data.
-  Needs Razorpay test keys + 4 plan ids + webhook secret.
-- [x] **Phase 7 — super-admin**: `/super-admin` (server-verified role;
-  bootstrap via `SUPER_ADMIN_EMAILS`), overview metrics incl. MRR estimate,
-  user/workspace/form search, suspend-reactivate moderation, billing
-  inspection, reason+expiry entitlement overrides — everything audited.
-  No impersonation in V1.
-- [ ] Phase 8 — hardening (E2E, Turnstile, monitoring, Cloudflare deploy)
-- [ ] Phase 3 — publishing, versions, submission endpoint, responses, CSV
-- [ ] Phase 4 — logic UI, QR/share panel, embed, analytics
-- [ ] Phase 5 — R2 uploads, outgoing webhooks + outbox
-- [ ] Phase 6 — Razorpay subscriptions + entitlement enforcement
-- [ ] Phase 7 — super-admin console
-- [ ] Phase 8 — hardening (E2E, rate limits, Turnstile, monitoring)
+| Area | Highlights |
+| --- | --- |
+| **Marketing site** | Home with a live brand-switching demo, features, pricing (monthly/yearly, CTAs carry the chosen plan into checkout), templates gallery + per-template preview, privacy/terms/contact, sitemap/robots/OG image, light + dark. |
+| **Brand kit** (`/brand`) | Extracts palette, typography and voice from a logo, PDF guidelines, website URL or notes (deterministic extraction + optional AI interpretation). Contrast-checked, font allow-listed. Live preview. |
+| **AI Studio** (`/create`) | Describe a form → complete draft (schema + theme + settings) in the brand kit's style, previewed as a respondent before it's saved. Credits are plan-included and only spent on success. |
+| **Builder** | Outline · live preview that follows the selected question (desktop/phone) · Question, Design and Settings panels. 20 block types (grid, opinion scale, consent, time, files, question images), per-answer branching, shuffled options, "Other", auto-advance, redirects, notifications, logo + fonts + radius. |
+| **Renderer** | Theme-driven CSS variables (no hard-coded surfaces), keyboard-first, answers persist across refresh, embed mode, soft one-response-per-device. |
+| **Responses** | Views/completions/rate/time, 14-day chart, choice/rating/grid distributions, detail view, CSV (grids expand per row). |
+| **Billing** | Razorpay subscriptions + instant checkout verification, effective-plan resolution (`lib/billing/plan.ts`), credit packs, cancel flow. |
+| **Operator console** (`/super-admin`) | Overview KPIs, sign-up and response charts, plan mix, MRR/ARR, top workspaces, abuse signals; users and workspaces with detail pages; forms moderation; billing + Razorpay webhook events; usage & cost; platform feature flags; audit log. |
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env   # then fill Supabase keys
+cp .env.example .env   # fill Supabase keys at minimum
 npm run dev            # http://localhost:3000
 ```
 
-Key routes: `/` marketing · `/features` · `/pricing` · `/f/demo` live
-renderer demo · `/login` · `/signup` · `/dashboard` · `/builder/[formId]`
-visual builder · `/api/health`.
+Key routes: `/` · `/features` · `/pricing` · `/templates` · `/f/demo` ·
+`/login` · `/signup` · `/dashboard` · `/create` · `/brand` ·
+`/builder/[formId]` · `/forms/[formId]/responses` · `/billing` · `/super-admin`.
+
+Requires Node 20.9+ (CI runs 22).
 
 ## Scripts
 
-| Command           | What it does                              |
-| ----------------- | ----------------------------------------- |
-| `npm run dev`     | Local dev server                          |
-| `npm run typecheck` | `tsc --noEmit`                          |
-| `npm run lint`    | Next.js ESLint                            |
-| `npm run test`    | Vitest unit suite (`tests/`)              |
-| `npm run build`   | Production build                          |
-| `npm run ci`      | typecheck + lint + test + build           |
+| Command             | What it does                     |
+| ------------------- | -------------------------------- |
+| `npm run dev`       | Local dev server                 |
+| `npm run typecheck` | `tsc --noEmit`                   |
+| `npm run lint`      | Next.js ESLint                   |
+| `npm run test`      | Vitest unit suite (`tests/`)     |
+| `npm run build`     | Production build                 |
+| `npm run ci`        | typecheck + lint + test + build  |
 
 ## Environment
 
 See [.env.example](.env.example). Only `NEXT_PUBLIC_*` values ship to the
-browser — service-role, Razorpay, R2, and email secrets are server-only and
-the app refuses auth paths when Supabase keys are absent.
+browser. Every integration degrades honestly when its keys are missing:
+auth pages render but sign-in is disabled; uploads fall back to pasted URLs;
+AI Studio explains it isn't connected; billing shows preview-only plans.
+
+### AI provider
+
+`AI_PROVIDER` selects the wire format. Output is always a validated,
+editable draft — never auto-published.
+
+- `anthropic` (recommended): official SDK, `ANTHROPIC_API_KEY`, optional
+  `AI_MODEL` (default `claude-opus-5`; `claude-sonnet-5` is the cost-efficient
+  choice for drafts — see the pricing review) and `AI_EFFORT` (`low|medium|high`).
+- `openai`: any OpenAI-compatible endpoint — `AI_BASE_URL`, `AI_API_KEY`, `AI_MODEL`.
+- `azure-foundry` / `azure-openai`: as before (`AI_BASE_URL`, `AI_MODEL` = deployment, `AI_API_VERSION`).
+
+### Analytics (optional)
+
+`NEXT_PUBLIC_PLAUSIBLE_DOMAIN` or `NEXT_PUBLIC_POSTHOG_KEY` (+ host). Loaded on
+marketing and signed-in pages only — never on public `/f/*` forms.
 
 ## Supabase setup
 
-1. Create a project at <https://supabase.com> (note the current key naming in
-   your project dashboard — publishable vs legacy anon key).
-2. Run `supabase/migrations/0001_init.sql` in the SQL editor (or
-   `supabase db push` if you use the CLI). All schema changes must land as
-   versioned SQL migrations — never manual dashboard edits.
-3. Set `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
-   and (server only) `SUPABASE_SERVICE_ROLE_KEY`.
-4. Enable email auth (and Google OAuth if wanted) per the current
-   [Next.js Auth quickstart](https://supabase.com/docs/guides/auth/quickstarts/nextjs).
-5. First signup creates a profile; the app provisions one personal workspace
-   per user (Phase 2+ server action).
+1. Create a project; set `NEXT_PUBLIC_SUPABASE_URL`,
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+2. Run the migrations below in order (SQL editor or `supabase db push`).
+3. Enable email auth. For Google sign-in, enable the Google provider and add
+   `https://<your-domain>/auth/callback` to the redirect allow-list.
+4. Set `SUPER_ADMIN_EMAILS` to bootstrap the first operator account.
 
-## Deployment
-
-- **Preferred (Phase 8):** Cloudflare Workers via Cloudflare's current
-  recommended Next.js path (vinext, per Aug 2026 guidance).
-  `wrangler.jsonc` holds the placeholder config; keep business logic
-  runtime-agnostic. Add Cloudflare Cron Triggers hitting
-  `/api/cron/outbox` and `/api/cron/cleanup` with an
-  `Authorization: Bearer <CRON_SECRET>` header.
-- **Fallback:** any Node 18+ host (`npm run build && npm start`); run the
-  two cron routes from any scheduler (cron, GitHub Actions) with the secret.
-- Set production secrets in the host dashboard, never in the repo. Configure
-  the live Razorpay webhook only after test-mode billing passes (Phase 6).
-
-## Migrations (run in order, Supabase SQL editor)
+## Migrations (run in order)
 
 1. `0001_init.sql` — all tables, indexes, RLS, plan seeds.
 2. `0002_fix_forms_rls.sql` — per-command write policies + membership reads.
-3. `0003_submit_publish.sql` — `publish_form` / `submit_form` RPCs (service-role only).
+3. `0003_submit_publish.sql` — `publish_form` / `submit_form` RPCs.
 4. `0004_publish_fix.sql` — qualifies the ambiguous `version_number` reference.
 5. `0005_uploads_index.sql` — orphan-cleanup indexes.
-6. `0006_ai_credits.sql` — credit ledger + grant/spend RPCs (service-role only).
+6. `0006_ai_credits.sql` — credit ledger + grant/spend RPCs.
 7. `0007_billing_override.sql` — manual override columns on subscriptions.
+8. `0008_brand_kits.sql` — **new**: `brand_kits`, `forms.brand_kit_id`,
+   `uploaded_files.kind` (`submission` | `brand_asset` | `question_media` | `brand_source`),
+   `platform_settings` feature flags.
 
-## AI providers (incl. Azure AI Foundry)
+## Storage (Cloudflare R2)
 
-`AI_PROVIDER` selects the wire format; generation output is always a
-validated, editable draft — never auto-published.
+Private bucket. Respondent uploads are served only through owner-authorised
+5-minute links (`/api/files/[id]`). Creator assets — logos and question
+images — are served through `/api/public/assets/[id]`, which redirects to a
+1-hour signed URL and refuses anything that isn't a creator image. Brand
+guideline PDFs (`brand_source`) are never served publicly; the extractor
+reads them server-side.
 
-- `openai` (default): `AI_BASE_URL` + Bearer `AI_API_KEY`, `AI_MODEL` is the
-  model name. Any OpenAI-compatible endpoint works.
-- `azure-foundry`: Azure AI Foundry serverless inference. From the Foundry
-  portal → your deployment → Target URI, e.g.
-  `https://<resource>.services.ai.azure.com/models`, key from Keys/Endpoint.
-  Set `AI_BASE_URL` to that URI, `AI_MODEL` to the deployment name
-  (e.g. `gpt-4o`), `AI_API_KEY` to the key. Bearer auth, same JSON schema.
-- `azure-openai`: classic Azure OpenAI. `AI_BASE_URL` =
-  `https://<resource>.openai.azure.com`, `AI_MODEL` = deployment name,
-  `AI_API_VERSION` (default `2024-10-21`); authenticates with the `api-key`
-  header instead of Bearer.
+## Deployment
+
+- **Preferred:** Cloudflare Workers via Cloudflare's current Next.js path.
+  `wrangler.jsonc` holds the placeholder config. Add Cron Triggers for
+  `POST /api/cron/outbox` (webhooks + owner email notifications) and
+  `POST /api/cron/cleanup` with `Authorization: Bearer <CRON_SECRET>`.
+- **Fallback:** any Node 20+ host (`npm run build && npm start`) with the two
+  cron routes on any scheduler.
+- Configure the live Razorpay webhook (`/api/webhooks/razorpay`) only after
+  test-mode billing passes.
 
 ## Architecture (short)
 
-- `app/` — marketing, auth, dashboard, public renderer (`f/demo`), API routes.
-- `components/renderer/` — the shared form engine. Builder preview (Phase 2)
-  and public runtime reuse these components; there is one engine, not two.
-- `lib/forms/` — versioned schema (Zod), conditional-logic resolver, demo content.
-- `lib/plans.ts` — centralized entitlements; all limits enforced server-side.
+- `app/` — marketing, auth (`/auth/callback` for OAuth/PKCE), signed-in app,
+  public renderer (`f/[slug]`), API routes, operator console.
+- `components/renderer/` — the shared form engine; builder preview, AI
+  Studio preview, templates and the public runtime all use it.
+- `components/ui/` — small design-system primitives (tokens in `app/globals.css`).
+- `lib/forms/` — versioned schema (Zod), logic resolver, theme engine
+  (`themes.ts`, `color.ts`, `fonts.ts`), templates, CSV, distributions.
+- `lib/brand/` — brand kit types/actions, signal extraction (PDF/URL/text/logo).
+- `lib/ai/` — provider client (OpenAI-compatible, Azure, Anthropic SDK),
+  draft generation, brand interpretation, credits.
+- `lib/billing/plan.ts` — the one place that resolves a workspace's
+  effective plan (override → entitled subscription → free).
+- `lib/platform.ts` — operator feature flags read at enforcement points.
 - `supabase/migrations/` — the only way schema changes ship.
-- `tests/` — unit coverage for schema validation, logic routing, entitlements.
+- `tests/` — unit coverage for schema, answers, CSV, logic, themes/colour,
+  brand extraction, AI parsing, plans, billing, migrations.
 
 ## Decisions worth knowing
 
-- Renderer transitions are CSS (220 ms, reduced-motion aware), not a motion
-  library, to keep the public route light per agent rule 11.
-- Public submissions will go through a server endpoint with rate limits,
-  idempotency keys, and atomic usage enforcement — never direct anon DB
-  inserts (RLS has no anon insert policy on `submissions` by design).
-- Plan prices render from `lib/plans.ts` everywhere, including `/pricing`.
+- Renderer styling is entirely CSS-variable driven from `resolveTheme()`;
+  text is forced to ≥4.5:1 and accent to ≥3:1 against the background, so a
+  pasted brand palette can never make a form unreadable.
+- Free publishes preset colours only; custom colours, logos and brand kits
+  publish on Starter+. Design is never blocked — only publishing, with a
+  clear upgrade prompt (that's the paid conversion moment).
+- Paid entitlements come from `resolveEffectivePlan`, never from
+  `plan_code` alone — a checkout that was opened but never paid grants nothing.
+- AI credits are spent atomically before the provider call and refunded on
+  failure; monthly grants are idempotent per workspace+month+plan.
+- Public forms load no analytics, no dashboard JS, and only the two web
+  fonts the theme uses.

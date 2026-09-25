@@ -1,50 +1,69 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { BrandLockup, BrandMark } from "@/components/brand";
+import { BrandMark } from "@/components/brand";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { formAcceptance, resolvePublicForm } from "@/lib/forms/public";
 import { RespondentClient } from "@/components/renderer/RespondentClient";
 import { getProductName } from "@/lib/config";
-import { resolveTheme } from "@/lib/forms/themes";
-import type { FormTheme } from "@/types/forms";
+import { resolveTheme, themeFontsHref } from "@/lib/forms/themes";
+import { getWorkspacePlan } from "@/lib/billing/plan";
+import { PLANS } from "@/lib/plans";
+import type { FormSettings, FormTheme } from "@/types/forms";
+
+export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+  const resolved = await resolvePublicForm(params.slug);
+  if ("error" in resolved) return { title: "Form unavailable", robots: { index: false } };
+  const welcome = resolved.form.schema.blocks.find((b) => b.type === "welcome");
+  const description = welcome?.description ?? `Answer ${resolved.form.title} — takes about a minute.`;
+  return {
+    title: resolved.form.title,
+    description,
+    robots: { index: false, follow: false },
+    openGraph: { title: resolved.form.title, description, type: "website" },
+  };
+}
 
 function Shell({
   embed,
-  background,
-  color,
+  theme,
   children,
 }: {
   embed: boolean;
-  background?: string;
-  color?: string;
+  theme?: ReturnType<typeof resolveTheme>;
   children: React.ReactNode;
 }) {
+  const fontHref = theme ? themeFontsHref(theme) : null;
   return (
     <div
       className="min-h-screen"
-      style={background ? { backgroundColor: background, color } : undefined}
+      style={theme ? { backgroundColor: theme.background, color: theme.text, fontFamily: theme.body.stack } : undefined}
     >
-      {!embed && (
-        <header className="border-b border-ink/10">
-          <div className="mx-auto flex h-14 max-w-3xl items-center justify-between px-5">
-            <BrandLockup compact markSize={24} />
-          </div>
-        </header>
-      )}
-      <main className="mx-auto w-full max-w-2xl px-5 pb-16 pt-10 sm:pt-14">
-        {children}
-      </main>
+      {fontHref ? (
+        <>
+          {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+          {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+          <link rel="stylesheet" href={fontHref} />
+        </>
+      ) : null}
+      <main className={embed ? "mx-auto w-full max-w-2xl px-4 py-6" : "mx-auto w-full max-w-2xl px-5 pb-16 pt-10 sm:pt-16"}>{children}</main>
     </div>
   );
 }
 
-function Unavailable({ embed, message }: { embed: boolean; message: string }) {
+function Unavailable({ embed, message, title = "Form unavailable" }: { embed: boolean; message: string; title?: string }) {
   return (
     <Shell embed={embed}>
-      <div className="rounded-2xl border border-ink/10 bg-paper p-8 text-center">
-        <h1 className="font-display text-2xl tracking-tight">Form unavailable</h1>
-        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
-          {message}
-        </p>
+      <div className="rounded-3xl border border-line bg-paper p-8 text-center shadow-card">
+        <h1 className="font-display text-2xl tracking-tight">{title}</h1>
+        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">{message}</p>
+        {!embed && (
+          <p className="mt-6 text-xs text-ink-faint">
+            <Link href="/" className="inline-flex items-center gap-1.5 hover:text-ink">
+              <BrandMark size={14} /> Powered by {getProductName()}
+            </Link>
+          </p>
+        )}
       </div>
     </Shell>
   );
@@ -59,67 +78,49 @@ export default async function PublicFormPage({
 }) {
   const embed = searchParams?.embed === "1";
   const resolved = await resolvePublicForm(params.slug);
-  if ("error" in resolved) {
-    return <Unavailable embed={embed} message={resolved.error} />;
-  }
+  if ("error" in resolved) return <Unavailable embed={embed} message={resolved.error} />;
   const form = resolved.form;
 
   const acceptance = formAcceptance(form);
-  if (!acceptance.open) {
-    return <Unavailable embed={embed} message={acceptance.message} />;
-  }
+  if (!acceptance.open) return <Unavailable embed={embed} title="This form is closed" message={acceptance.message} />;
+
+  const admin = getServiceSupabase()!;
   if (form.settings.submissionLimit) {
-    const admin = getServiceSupabase();
-    const { count } = await admin!
-      .from("submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("form_id", form.id)
-      .is("deleted_at", null);
+    const { count } = await admin.from("submissions").select("id", { count: "exact", head: true }).eq("form_id", form.id).is("deleted_at", null);
     if ((count ?? 0) >= form.settings.submissionLimit) {
-      return (
-        <Unavailable
-          embed={embed}
-          message={form.settings.closedMessage ?? "This form is no longer accepting responses."}
-        />
-      );
+      return <Unavailable embed={embed} title="This form is full" message={form.settings.closedMessage ?? "This form is no longer accepting responses."} />;
     }
   }
 
-  // Branding follows the workspace plan: free shows it, paid removes it.
-  let showBranding = true;
-  try {
-    const admin = getServiceSupabase();
-    const { data: sub } = await admin!
-      .from("subscriptions")
-      .select("plan_code")
-      .eq("workspace_id", form.workspaceId)
-      .maybeSingle();
-    const code = (sub as { plan_code: string } | null)?.plan_code;
-    showBranding = code !== "starter" && code !== "pro";
-  } catch {
-    showBranding = true;
-  }
+  // Branding follows the workspace's effective plan (webhook-confirmed).
+  const plan = await getWorkspacePlan(form.workspaceId);
+  const showBranding = !PLANS[plan].entitlements.removeBranding;
+  const theme = resolveTheme(form.theme);
 
-  const pageTheme = resolveTheme(form.theme);
   return (
-    <Shell embed={embed} background={pageTheme.background} color={pageTheme.text}>
+    <Shell embed={embed} theme={theme}>
       <RespondentClient
         slug={form.slug}
         schema={form.schema}
         versionId={form.versionId}
         minimal={embed}
         theme={form.theme as FormTheme}
+        settings={form.settings as FormSettings}
       />
       {showBranding && !embed && (
-        <footer className="mt-12 border-t border-ink/10 pt-5 text-center text-xs text-ink-faint">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-colors hover:bg-ink/5 hover:text-ink-soft"
-          >
+        <footer className="mt-12 border-t pt-5 text-center text-xs" style={{ borderColor: `${theme.text}22`, color: `${theme.text}99` }}>
+          <Link href="/?utm_source=form-footer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-opacity hover:opacity-100" style={{ opacity: 0.85 }}>
             <BrandMark size={16} />
-            Powered by {getProductName()}
+            Made with {getProductName()} — create yours free
           </Link>
         </footer>
+      )}
+      {showBranding && embed && (
+        <p className="mt-6 text-center text-[11px]" style={{ color: `${theme.text}80` }}>
+          <a href="/?utm_source=embed" target="_blank" rel="noreferrer" className="underline underline-offset-2">
+            Made with {getProductName()}
+          </a>
+        </p>
       )}
     </Shell>
   );

@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
+import { Check, Copy, Download, ExternalLink } from "lucide-react";
+import { Dialog } from "@/components/ui/dialog";
+import { Button, ButtonLink } from "@/components/ui/button";
+import { Notice } from "@/components/ui/notice";
 import { ScanQrButton } from "@/app/dashboard/FormActions";
 
 /**
@@ -10,13 +14,19 @@ import { ScanQrButton } from "@/app/dashboard/FormActions";
  * Available on all plans, including free.
  */
 export function ShareDialog({
+  open,
+  onClose,
   slug,
   title,
-  onClose,
+  published,
+  justPublishedVersion,
 }: {
+  open: boolean;
+  onClose: () => void;
   slug: string;
   title: string;
-  onClose: () => void;
+  published: boolean;
+  justPublishedVersion?: number | null;
 }) {
   const [origin, setOrigin] = useState("");
   const [svg, setSvg] = useState<string | null>(null);
@@ -33,14 +43,9 @@ export function ShareDialog({
   }, []);
 
   useEffect(() => {
-    if (!qrUrl) return;
+    if (!qrUrl || !open) return;
     let live = true;
-    QRCode.toString(qrUrl, {
-      type: "svg",
-      errorCorrectionLevel: "M",
-      margin: 2,
-      width: 256,
-    })
+    QRCode.toString(qrUrl, { type: "svg", errorCorrectionLevel: "M", margin: 2, width: 256 })
       .then((s) => {
         if (live) setSvg(s);
       })
@@ -48,15 +53,11 @@ export function ShareDialog({
     return () => {
       live = false;
     };
-  }, [qrUrl]);
+  }, [qrUrl, open]);
 
   async function downloadPng() {
     if (!qrUrl) return;
-    const dataUrl = await QRCode.toDataURL(qrUrl, {
-      width: 1024,
-      margin: 2,
-      errorCorrectionLevel: "M",
-    });
+    const dataUrl = await QRCode.toDataURL(qrUrl, { width: 1024, margin: 2, errorCorrectionLevel: "M" });
     const a = document.createElement("a");
     a.href = dataUrl;
     a.download = `${slug}-qr.png`;
@@ -84,118 +85,87 @@ export function ShareDialog({
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={`Share ${title}`}
-      className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-ink/40 p-4"
-      onClick={onClose}
+    <Dialog
+      open={open}
+      onClose={onClose}
+      title={justPublishedVersion ? "You’re live" : "Share your form"}
+      description={
+        justPublishedVersion
+          ? `Version ${justPublishedVersion} is answering at the link below.`
+          : "Link, QR code, or embed — all point at the same live form."
+      }
+      size="lg"
     >
-      <div
-        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-lift"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="font-display text-2xl tracking-tight">Share your form</h2>
-            <p className="mt-1 text-sm text-ink-soft">
-              Link, QR code, or embed — all live the moment you publish.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close share dialog"
-            className="rounded-full px-3 py-1.5 text-sm text-ink-soft hover:bg-ink/5"
-          >
-            ✕
-          </button>
-        </div>
+      {!published && (
+        <Notice tone="warn" className="mb-4">
+          This form isn’t published yet. The link below will show “unavailable” until you publish.
+        </Notice>
+      )}
 
-        <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
-          Public link
-        </p>
-        <div className="flex items-center gap-2">
-          <input
-            readOnly
-            value={url}
-            aria-label="Public form URL"
-            onFocus={(e) => e.target.select()}
-            placeholder="Publishing sets the link…"
-            className="min-w-0 flex-1 rounded-xl border border-ink/15 bg-paper px-3 py-2.5 text-sm"
-          />
-          <button
-            type="button"
-            disabled={!url}
-            onClick={() => copy(url, "link")}
-            className="shrink-0 rounded-full bg-ink px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-50"
-          >
-            {copied === "link" ? "Copied ✓" : "Copy"}
-          </button>
-        </div>
+      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Public link</p>
+      <div className="flex items-center gap-2">
+        <input
+          readOnly
+          value={url}
+          aria-label="Public form URL"
+          onFocus={(e) => e.target.select()}
+          className="min-w-0 flex-1 rounded-xl border border-line-strong bg-paper-deep/40 px-3 py-2.5 font-mono text-xs"
+        />
+        <Button onClick={() => copy(url, "link")} disabled={!url}>
+          {copied === "link" ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+          {copied === "link" ? "Copied" : "Copy"}
+        </Button>
+        <ButtonLink href={url || "#"} variant="secondary" target="_blank" rel="noreferrer" aria-label="Open live form">
+          <ExternalLink className="h-4 w-4" />
+        </ButtonLink>
+      </div>
 
-        <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
-          QR code
-        </p>
-        <div className="flex items-center gap-4 rounded-2xl border border-ink/10 bg-paper p-4">
+      <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
+        <div>
+          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">QR code</p>
           {svg ? (
             <div
-              className="h-28 w-28 shrink-0 overflow-hidden rounded-lg bg-white p-1"
+              className="h-36 w-36 overflow-hidden rounded-xl border border-line bg-white p-1"
               dangerouslySetInnerHTML={{ __html: svg }}
               role="img"
               aria-label={`QR code linking to ${qrUrl}`}
             />
           ) : (
-            <div className="flex h-28 w-28 shrink-0 items-center justify-center rounded-lg bg-white text-xs text-ink-faint">
-              {url ? "Drawing…" : "Publish first"}
+            <div className="flex h-36 w-36 items-center justify-center rounded-xl border border-line bg-paper-deep/40 text-xs text-ink-faint">
+              Drawing…
             </div>
           )}
-          <div className="flex flex-col gap-2">
-            <button
-              type="button"
-              disabled={!qrUrl}
-              onClick={downloadPng}
-              className="rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold hover:border-ink/30 disabled:opacity-50"
-            >
-              Download PNG
-            </button>
-            <button
-              type="button"
-              disabled={!svg}
-              onClick={downloadSvg}
-              className="rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold hover:border-ink/30 disabled:opacity-50"
-            >
-              Download SVG
-            </button>
-            <div className="mt-1">
-              <ScanQrButton />
-            </div>
-            <p className="text-[11px] leading-snug text-ink-faint">
-              Scans to the same form; visits tagged <code>?src=qr</code>.
-            </p>
-          </div>
         </div>
-
-        <p className="mb-1 mt-5 text-xs font-semibold uppercase tracking-widest text-ink-faint">
-          Embed
-        </p>
-        <textarea
-          readOnly
-          value={embed}
-          rows={5}
-          aria-label="Embed snippet"
-          onFocus={(e) => e.target.select()}
-          className="w-full rounded-xl border border-ink/15 bg-paper px-3 py-2.5 font-mono text-xs"
-        />
-        <button
-          type="button"
-          disabled={!embed}
-          onClick={() => copy(embed, "embed")}
-          className="mt-2 rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold hover:border-ink/30 disabled:opacity-50"
-        >
-          {copied === "embed" ? "Copied ✓" : "Copy snippet"}
-        </button>
+        <div className="flex flex-col justify-end gap-2">
+          <div className="flex flex-wrap gap-2">
+            <Button variant="secondary" size="sm" onClick={downloadPng} disabled={!qrUrl}>
+              <Download className="h-3.5 w-3.5" /> PNG
+            </Button>
+            <Button variant="secondary" size="sm" onClick={downloadSvg} disabled={!svg}>
+              <Download className="h-3.5 w-3.5" /> SVG
+            </Button>
+            <ScanQrButton />
+          </div>
+          <p className="text-xs leading-relaxed text-ink-faint">
+            Print it on posters, menus, packaging or a check-in desk. Scans are tagged{" "}
+            <code className="font-mono">?src=qr</code> so you can see how many responses came from print.
+          </p>
+        </div>
       </div>
-    </div>
+
+      <p className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Embed on your site</p>
+      <textarea
+        readOnly
+        value={embed}
+        rows={5}
+        aria-label="Embed snippet"
+        onFocus={(e) => e.target.select()}
+        className="w-full rounded-xl border border-line-strong bg-paper-deep/40 px-3 py-2.5 font-mono text-xs"
+      />
+      <Button variant="secondary" size="sm" className="mt-2" onClick={() => copy(embed, "embed")} disabled={!embed}>
+        {copied === "embed" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied === "embed" ? "Copied" : "Copy snippet"}
+      </Button>
+    </Dialog>
   );
 }

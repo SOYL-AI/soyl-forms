@@ -6,6 +6,7 @@ import { getRazorpay, isRazorpayConfigured, razorpayKeyId } from "@/lib/billing/
 import { razorpayPlanIdFor } from "@/lib/billing/subscriptions";
 import { getUserWorkspaceId } from "@/lib/workspaces";
 import type { BillingInterval, PlanCode } from "@/lib/plans";
+import { getPlatformFlags } from "@/lib/platform";
 
 const subscribeSchema = z.object({
   plan: z.enum(["starter", "pro"]),
@@ -28,6 +29,10 @@ export async function POST(req: Request) {
       { error: "Billing isn't connected yet (missing Razorpay keys). Test mode first." },
       { status: 503 },
     );
+  }
+  const flags = await getPlatformFlags();
+  if (!flags.upgradesEnabled) {
+    return NextResponse.json({ error: "Upgrades are paused right now. Try again later." }, { status: 503 });
   }
   const body = subscribeSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {

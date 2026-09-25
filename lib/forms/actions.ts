@@ -3,9 +3,13 @@
 import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { ensurePersonalWorkspace } from "@/lib/workspaces";
-import { formSchemaV1, validateLogicGraph } from "./schema";
+import { formSchemaV1, formSettingsSchema, formThemeSchema, validateLogicGraph } from "./schema";
 import { buildStarterSchema } from "./builder";
-import { canPublishForm, PLANS, type PlanCode } from "@/lib/plans";
+import { themeRequiresPaidPlan } from "./themes";
+import { getTemplate } from "./templates";
+import { canPublishForm, PLANS } from "@/lib/plans";
+import { getWorkspacePlan } from "@/lib/billing/plan";
+import type { FormSchemaV1, FormSettings, FormTheme } from "@/types/forms";
 import { getAppUrl } from "@/lib/config";
 import { encryptSecret, isSecretEncryptionConfigured, newWebhookSecret } from "@/lib/security/secrets";
 import { deliverToWebhook } from "@/lib/webhooks/deliver";
@@ -129,6 +133,22 @@ export async function saveDraft(args: {
     };
   }
 
+  let theme: FormTheme | undefined;
+  if (args.theme !== undefined) {
+    const t = formThemeSchema.safeParse(args.theme);
+    if (!t.success) return { ok: false, error: `Design: ${t.error.issues[0]?.message ?? "invalid value"}.` };
+    theme = t.data;
+  }
+  let settings: FormSettings | undefined;
+  if (args.settings !== undefined) {
+    const st = formSettingsSchema.safeParse(args.settings);
+    if (!st.success) {
+      const issue = st.error.issues[0];
+      return { ok: false, error: `Settings: ${issue?.path?.[0] ?? "field"} — ${issue?.message ?? "invalid value"}.` };
+    }
+    settings = st.data;
+  }
+
   const title = args.title.trim().slice(0, 200) || "Untitled form";
   const schema = { ...parsed.data, title };
   const { error } = await supabase
@@ -137,8 +157,8 @@ export async function saveDraft(args: {
       title,
       draft_schema: schema,
       draft_revision: args.revision + 1,
-      ...(args.theme !== undefined ? { theme: args.theme } : {}),
-      ...(args.settings !== undefined ? { settings: args.settings } : {}),
+      ...(theme !== undefined ? { theme, brand_kit_id: theme.brandKitId ?? null } : {}),
+      ...(settings !== undefined ? { settings } : {}),
     })
     .eq("id", args.formId)
     .eq("draft_revision", args.revision);
@@ -257,17 +277,6 @@ export async function getFormForOwner(
   return { form: data as OwnerForm };
 }
 
-async function workspacePlan(workspaceId: string): Promise<PlanCode> {
-  const admin = getServiceSupabase();
-  const { data } = await admin!
-    .from("subscriptions")
-    .select("plan_code")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  const code = (data as { plan_code: string } | null)?.plan_code;
-  return code === "starter" || code === "pro" ? code : "free";
-}
-
 async function countActiveForms(workspaceId: string, excludeId?: string): Promise<number> {
   const admin = getServiceSupabase();
   let query = admin!
@@ -321,7 +330,7 @@ export async function publishForm(args: {
     return { ok: false, error: "Add at least one question before publishing." };
   }
 
-  const plan = await workspacePlan(full.workspace_id);
+  const plan = await getWorkspacePlan(full.workspace_id);
   const activeForms = await countActiveForms(full.workspace_id, args.formId);
   const gate = canPublishForm({
     plan,
@@ -329,6 +338,16 @@ export async function publishForm(args: {
     republishingActive: full.status === "published",
   });
   if (!gate.ok) return { ok: false, error: gate.reason ?? "Plan limit reached." };
+  if (!PLANS[plan].entitlements.customThemes) {
+    const reason = themeRequiresPaidPlan(full.theme);
+    if (reason) return { ok: false, error: `${reason} Upgrade to Starter to publish this design, or pick a preset.` };
+  }
+  if (!PLANS[plan].entitlements.emailNotifications) {
+    const st = formSettingsSchema.safeParse(full.settings);
+    if (st.success && st.data.notifyEmails && st.data.notifyEmails.length > 0) {
+      return { ok: false, error: "Email notifications are a Starter feature. Clear the notification emails or upgrade your plan to publish." };
+    }
+  }
 
   const schema = { ...parsed.data, title: full.title };
   const { data: versions, error } = await admin!.rpc("publish_form", {
@@ -439,7 +458,7 @@ export async function createWebhook(args: {
   }
 
   const admin = getServiceSupabase();
-  const plan = await workspacePlan(owned.form.workspace_id);
+  const plan = await getWorkspacePlan(owned.form.workspace_id);
   const { count } = await admin!
     .from("webhooks")
     .select("id", { count: "exact", head: true })
@@ -538,7 +557,7 @@ export async function reopenForm(args: { formId: string }): Promise<ActionResult
   if (!full?.published_version_id) {
     return { ok: false, error: "Publish this form before reopening it." };
   }
-  const plan = await workspacePlan(full.workspace_id);
+  const plan = await getWorkspacePlan(full.workspace_id);
   const activeForms = await countActiveForms(full.workspace_id, args.formId);
   const gate = canPublishForm({ plan, activeForms });
   if (!gate.ok) return { ok: false, error: gate.reason ?? "Plan limit reached." };
@@ -548,4 +567,68 @@ export async function reopenForm(args: { formId: string }): Promise<ActionResult
     .update({ status: "published" })
     .eq("id", args.formId);
   return error ? { ok: false, error: error.message } : { ok: true };
+}
+
+/** Create a form from a starter template (schema + theme + settings). */
+export async function createFormFromTemplate(args: {
+  templateId: string;
+}): Promise<ActionResult<{ id: string }>> {
+  const template = getTemplate(args.templateId);
+  if (!template) return { ok: false, error: "That template doesn't exist." };
+  return createFormFromDraft({
+    title: template.name,
+    schema: template.schema,
+    theme: template.theme,
+    settings: template.settings,
+  });
+}
+
+/**
+ * Create a form with a ready-made draft (templates, AI Studio). Everything is
+ * validated server-side; the form starts as an unpublished draft.
+ */
+export async function createFormFromDraft(args: {
+  title: string;
+  schema: unknown;
+  theme?: unknown;
+  settings?: unknown;
+}): Promise<ActionResult<{ id: string }>> {
+  const userId = await getSessionUserId();
+  if (!userId) return { ok: false, error: "Sign in to create a form." };
+  const supabase = getServerSupabase();
+  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+
+  const parsed = formSchemaV1.safeParse(args.schema);
+  if (!parsed.success) return { ok: false, error: "This draft has invalid questions." };
+  const graphErrors = validateLogicGraph(parsed.data);
+  if (graphErrors.length > 0) return { ok: false, error: graphErrors[0] as string };
+  const theme = args.theme !== undefined ? formThemeSchema.safeParse(args.theme) : null;
+  if (theme && !theme.success) return { ok: false, error: "This draft has an invalid design." };
+  const settings = args.settings !== undefined ? formSettingsSchema.safeParse(args.settings) : null;
+  if (settings && !settings.success) return { ok: false, error: "This draft has invalid settings." };
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const { workspaceId } = await ensurePersonalWorkspace(userId, user?.email ?? null);
+  const title = args.title.trim().slice(0, 200) || parsed.data.title || "Untitled form";
+  const schema: FormSchemaV1 = { ...parsed.data, title };
+  const { data, error } = await supabase
+    .from("forms")
+    .insert({
+      workspace_id: workspaceId,
+      title,
+      slug: newSlug(),
+      status: "draft",
+      draft_schema: schema,
+      draft_revision: 0,
+      theme: theme?.success ? theme.data : {},
+      settings: settings?.success ? settings.data : {},
+      brand_kit_id: theme?.success ? theme.data.brandKitId ?? null : null,
+      created_by: userId,
+    })
+    .select("id")
+    .single();
+  if (error || !data) return { ok: false, error: `Could not create form: ${error?.message}` };
+  return { ok: true, id: (data as { id: string }).id };
 }

@@ -1,48 +1,58 @@
-import type { Answers, FormSchemaV1 } from "@/types/forms";
+import type { Answers, FormSchemaV1, LogicRule } from "@/types/forms";
 
 type Schema = Pick<FormSchemaV1, "blocks" | "logic">;
 
-function ruleMatches(
-  rule: Schema["logic"][number],
-  answers: Answers,
-): boolean {
+function scalar(answer: Answers[string]): string | number | null {
+  if ("value" in answer) {
+    const v = answer.value;
+    if (typeof v === "string" || typeof v === "number") return v;
+  }
+  return null;
+}
+
+function ruleMatches(rule: LogicRule, answers: Answers): boolean {
   const answer = answers[rule.when.questionId];
+  if (rule.when.operator === "not_answered") return !answer;
   if (!answer) return false;
   switch (rule.when.operator) {
     case "answered":
       return true;
-    case "equals":
-      if (typeof rule.when.value === "string") {
-        return (
-          ("value" in answer && answer.value === rule.when.value) ||
-          (answer.type === "multiple_choice" &&
-            Array.isArray(answer.value) &&
-            answer.value.includes(rule.when.value))
-        );
+    case "equals": {
+      if (typeof rule.when.value !== "string") return false;
+      const s = scalar(answer);
+      if (s !== null && String(s) === rule.when.value) return true;
+      return (
+        answer.type === "multiple_choice" &&
+        Array.isArray(answer.value) &&
+        answer.value.includes(rule.when.value)
+      );
+    }
+    case "not_equals": {
+      if (typeof rule.when.value !== "string") return false;
+      const s = scalar(answer);
+      if (s !== null) return String(s) !== rule.when.value;
+      if (answer.type === "multiple_choice" && Array.isArray(answer.value)) {
+        return !answer.value.includes(rule.when.value);
       }
       return false;
-    case "not_equals":
-      return (
-        typeof rule.when.value === "string" &&
-        "value" in answer &&
-        answer.value !== rule.when.value
-      );
+    }
     case "contains":
       if (answer.type === "multiple_choice" && Array.isArray(answer.value)) {
         return typeof rule.when.value === "string"
           ? answer.value.includes(rule.when.value)
           : false;
       }
-      if (
-        (answer.type === "short_text" || answer.type === "long_text") &&
-        typeof answer.value === "string" &&
-        typeof rule.when.value === "string"
-      ) {
-        return answer.value
-          .toLowerCase()
-          .includes(rule.when.value.toLowerCase());
+      if (typeof answer.value === "string" && typeof rule.when.value === "string") {
+        return answer.value.toLowerCase().includes(rule.when.value.toLowerCase());
       }
       return false;
+    case "greater_than":
+    case "less_than": {
+      const s = scalar(answer);
+      const target = Number(rule.when.value);
+      if (typeof s !== "number" || !Number.isFinite(target)) return false;
+      return rule.when.operator === "greater_than" ? s > target : s < target;
+    }
     default:
       return false;
   }
@@ -50,7 +60,8 @@ function ruleMatches(
 
 /**
  * Resolve the next block id after `currentId`, honoring conditional jumps.
- * Falls back to linear order. Returns null when the form is complete.
+ * Rules are evaluated in order; the first match wins. Falls back to linear
+ * order. Returns null when the form is complete.
  */
 export function getNextBlockId(
   schema: Schema,
@@ -68,19 +79,52 @@ export function getNextBlockId(
     if (rule.when.questionId !== currentId) continue;
     if (!ruleMatches(rule, answers)) continue;
     const target = rule.then.blockId;
-    // Never jump backwards into an infinite loop or to self.
+    // Never jump to self; unknown targets fall through to linear order.
     if (target !== currentId && order.includes(target)) return target;
   }
 
   const next = order[currentIndex + 1];
-  if (!next) return null;
-  if (schema.blocks[currentIndex + 1]?.type === "thank_you") return next;
-  return next;
+  return next ?? null;
 }
 
 /** Blocks that collect an answer (used for progress + counts). */
 export function isAnswerable(type: string): boolean {
-  return (
-    type !== "welcome" && type !== "statement" && type !== "thank_you"
-  );
+  return type !== "welcome" && type !== "statement" && type !== "thank_you";
+}
+
+/** Question types whose answers are single values a rule can compare. */
+export function supportsEqualityRules(type: string): boolean {
+  return [
+    "single_choice",
+    "multiple_choice",
+    "dropdown",
+    "yes_no",
+    "rating",
+    "opinion_scale",
+    "number",
+    "short_text",
+    "email",
+    "legal",
+  ].includes(type);
+}
+
+export function supportsNumericRules(type: string): boolean {
+  return type === "rating" || type === "opinion_scale" || type === "number";
+}
+
+/**
+ * Best-effort remaining-step estimate for progress: walks linear order from
+ * the current block and counts answerable blocks, so branching forms never
+ * show an obviously wrong "3 of 8".
+ */
+export function estimateProgress(
+  schema: Schema,
+  currentId: string,
+  visited: string[],
+): { done: number; total: number } {
+  const answerable = schema.blocks.filter((b) => isAnswerable(b.type)).map((b) => b.id);
+  const done = visited.filter((id) => answerable.includes(id)).length;
+  const idx = schema.blocks.findIndex((b) => b.id === currentId);
+  const ahead = schema.blocks.slice(Math.max(0, idx)).filter((b) => isAnswerable(b.type)).length;
+  return { done, total: Math.max(1, done + ahead) };
 }

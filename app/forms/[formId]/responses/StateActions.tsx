@@ -3,42 +3,34 @@
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { closeForm, reopenForm } from "@/lib/forms/actions";
+import { Button } from "@/components/ui/button";
 
-export function StateActions({
-  formId,
-  status,
-  canReopen,
-}: {
-  formId: string;
-  status: string;
-  canReopen: boolean;
-}) {
+export function StateActions({ formId, status, canReopen }: { formId: string; status: string; canReopen: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
 
   if (status === "published") {
     return (
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         disabled={pending}
         onClick={() => {
-          if (window.confirm("Close this form? Respondents will see your closed message.")) {
+          if (window.confirm("Close this form? Respondents will see your closed message until you reopen it.")) {
             start(async () => {
               await closeForm({ formId });
               router.refresh();
             });
           }
         }}
-        className="rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold hover:border-ink/30 disabled:opacity-60"
       >
         Close form
-      </button>
+      </Button>
     );
   }
   if (status === "closed" && canReopen) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="primary"
         disabled={pending}
         onClick={() =>
           start(async () => {
@@ -46,10 +38,9 @@ export function StateActions({
             router.refresh();
           })
         }
-        className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
       >
         Reopen
-      </button>
+      </Button>
     );
   }
   return null;

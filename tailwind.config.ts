@@ -21,36 +21,51 @@ const config: Config = {
           soft: "var(--ink-soft)",
           faint: "var(--ink-faint)",
         },
-        brand: {
-          50: "#f8fafc",
-          100: "#f1f5f9",
-          200: "#e2e8f0",
-          500: "#64748b",
-          600: "#475569",
-          700: "#334155",
-          900: "#0f172a",
+        line: {
+          DEFAULT: "var(--line)",
+          strong: "var(--line-strong)",
+        },
+        accent: {
+          DEFAULT: "var(--accent)",
+          ink: "var(--accent-ink)",
+          soft: "var(--accent-soft)",
+        },
+        positive: {
+          DEFAULT: "var(--positive)",
+          soft: "var(--positive-soft)",
+        },
+        danger: {
+          DEFAULT: "var(--danger)",
+          soft: "var(--danger-soft)",
+        },
+        warn: {
+          DEFAULT: "var(--warn)",
+          soft: "var(--warn-soft)",
+        },
+        info: {
+          DEFAULT: "var(--info)",
+          soft: "var(--info-soft)",
         },
       },
       fontFamily: {
         sans: ["var(--font-sans)", "system-ui", "sans-serif"],
-        display: ["var(--font-display)", "system-ui", "sans-serif"],
+        display: ["var(--font-display)", "var(--font-sans)", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },
       borderRadius: {
         xl2: "1.25rem",
+        xl3: "1.75rem",
       },
       boxShadow: {
-        lift: "0 12px 40px -12px rgba(15, 23, 42, 0.25)",
-        glass: "0 8px 32px 0 rgba(0, 0, 0, 0.15)",
+        card: "0 1px 2px rgba(16,16,18,0.04), 0 8px 24px -16px rgba(16,16,18,0.18)",
+        lift: "0 12px 40px -12px rgba(16, 16, 18, 0.28)",
+        pop: "0 24px 80px -24px rgba(16, 16, 18, 0.45)",
       },
-      animation: {
-        "float": "float 6s ease-in-out infinite",
-        "pulse-slow": "pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite",
+      maxWidth: {
+        page: "72rem",
       },
-      keyframes: {
-        float: {
-          "0%, 100%": { transform: "translateY(0)" },
-          "50%": { transform: "translateY(-10px)" },
-        },
+      letterSpacing: {
+        tightest: "-0.04em",
       },
     },
   },

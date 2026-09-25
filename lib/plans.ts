@@ -12,12 +12,21 @@ export interface Entitlements {
   monthlySubmissions: number;
   storageBytes: number;
   removeBranding: boolean;
+  /** Custom colors, logo, brand kits on published forms. */
   customThemes: boolean;
   advancedLogic: boolean;
   maxWebhooksPerForm: number;
   analyticsTier: "basic" | "advanced";
   /** Days of form version history retained. */
   versionHistoryDays: number;
+  /** AI credits granted every calendar month (drafts + brand extraction). */
+  aiCreditsMonthly: number;
+  /** Saved brand kits per workspace. */
+  maxBrandKits: number;
+  /** Owner email notifications on new responses. */
+  emailNotifications: boolean;
+  /** Notification emails per month (0 = feature off). */
+  monthlyNotificationEmails: number;
 }
 
 export interface PlanDefinition {
@@ -26,6 +35,8 @@ export interface PlanDefinition {
   monthlyPaise: number;
   yearlyPaise: number;
   tagline: string;
+  /** Who this plan is for — used on pricing surfaces. */
+  audience: string;
   entitlements: Entitlements;
 }
 
@@ -39,6 +50,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     monthlyPaise: 0,
     yearlyPaise: 0,
     tagline: "For trying things out and personal use.",
+    audience: "Students, side projects, one-off events",
     entitlements: {
       maxActiveForms: 2,
       monthlySubmissions: 250,
@@ -49,6 +61,10 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
       maxWebhooksPerForm: 1,
       analyticsTier: "basic",
       versionHistoryDays: 7,
+      aiCreditsMonthly: 10,
+      maxBrandKits: 1,
+      emailNotifications: false,
+      monthlyNotificationEmails: 0,
     },
   },
   starter: {
@@ -57,6 +73,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     monthlyPaise: 19900,
     yearlyPaise: 199000,
     tagline: "For freelancers and small teams getting serious.",
+    audience: "Freelancers, small businesses, creators",
     entitlements: {
       maxActiveForms: 15,
       monthlySubmissions: 5000,
@@ -67,6 +84,10 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
       maxWebhooksPerForm: 5,
       analyticsTier: "basic",
       versionHistoryDays: 30,
+      aiCreditsMonthly: 40,
+      maxBrandKits: 3,
+      emailNotifications: true,
+      monthlyNotificationEmails: 1000,
     },
   },
   pro: {
@@ -75,6 +96,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
     monthlyPaise: 49900,
     yearlyPaise: 499000,
     tagline: "For high-volume forms and deeper insight.",
+    audience: "Agencies, growing companies, multiple brands",
     entitlements: {
       maxActiveForms: 100,
       monthlySubmissions: 25000,
@@ -85,11 +107,19 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
       maxWebhooksPerForm: 20,
       analyticsTier: "advanced",
       versionHistoryDays: 90,
+      aiCreditsMonthly: 150,
+      maxBrandKits: 10,
+      emailNotifications: true,
+      monthlyNotificationEmails: 5000,
     },
   },
 };
 
 export const PLAN_ORDER: PlanCode[] = ["free", "starter", "pro"];
+
+export function isPlanCode(v: unknown): v is PlanCode {
+  return v === "free" || v === "starter" || v === "pro";
+}
 
 export interface CreditPack {
   id: string;
@@ -105,10 +135,12 @@ export const AI_CREDIT_PACKS: CreditPack[] = [
   { id: "pack-1000", credits: 1000, paise: 49900, label: "Power pack" },
 ];
 
-/** Credits burned per AI-generated draft. */
+/** Credits burned per AI-generated form draft. */
 export const AI_COST_PER_DRAFT = 1;
-/** Free credits granted every calendar month, per workspace. */
-export const AI_FREE_MONTHLY_CREDITS = 10;
+/** Credits burned per brand extraction (reads PDFs/websites; heavier prompt). */
+export const AI_COST_PER_BRAND_EXTRACTION = 2;
+/** Free credits granted every calendar month, per workspace (free plan). */
+export const AI_FREE_MONTHLY_CREDITS = PLANS.free.entitlements.aiCreditsMonthly;
 /** Welcome bonus on workspace creation. */
 export const AI_WELCOME_CREDITS = 10;
 
@@ -117,6 +149,16 @@ export function formatINR(paise: number): string {
   if (paise === 0) return "₹0";
   const rupees = paise / 100;
   return `₹${rupees.toLocaleString("en-IN", { maximumFractionDigits: 0 })}`;
+}
+
+/** Monthly-equivalent price when billed yearly, e.g. ₹1,990/yr → ₹166/mo. */
+export function yearlyPerMonthPaise(plan: PlanDefinition): number {
+  return Math.round(plan.yearlyPaise / 12);
+}
+
+export function yearlySavingsPct(plan: PlanDefinition): number {
+  if (plan.monthlyPaise === 0) return 0;
+  return Math.round((1 - plan.yearlyPaise / (plan.monthlyPaise * 12)) * 100);
 }
 
 export interface PublishCheck {
@@ -168,6 +210,18 @@ export function canUploadFile(args: {
     return {
       ok: false,
       reason: `Storage limit reached for the ${PLANS[args.plan].name} plan.`,
+    };
+  }
+  return { ok: true };
+}
+
+/** Can this workspace save another brand kit? */
+export function canCreateBrandKit(args: { plan: PlanCode; existing: number }): PublishCheck {
+  const limit = PLANS[args.plan].entitlements.maxBrandKits;
+  if (args.existing >= limit) {
+    return {
+      ok: false,
+      reason: `Your ${PLANS[args.plan].name} plan allows ${limit} brand kit${limit === 1 ? "" : "s"}. Upgrade for more.`,
     };
   }
   return { ok: true };

@@ -1,39 +1,37 @@
-import Link from "next/link";
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { getAppContext } from "@/lib/app-context";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getFormForOwner, listWebhooks } from "@/lib/forms/actions";
+import { PLANS } from "@/lib/plans";
+import { AppShell } from "@/components/app/AppShell";
+import { ConfigRequired } from "@/components/app/ConfigRequired";
+import { FormSubnav } from "@/components/app/FormSubnav";
 import { WebhookManager } from "./WebhookManager";
 
-export default async function WebhooksPage({
-  params,
-}: {
-  params: { formId: string };
-}) {
+export const metadata: Metadata = { title: "Webhooks", robots: { index: false } };
+
+export default async function WebhooksPage({ params }: { params: { formId: string } }) {
+  if (!isSupabaseConfigured()) return <ConfigRequired area="webhooks" />;
+  const res = await getAppContext();
+  if (!res.ok) redirect(`/login?next=/forms/${params.formId}/webhooks`);
   const owned = await getFormForOwner(params.formId);
-  if ("error" in owned) redirect("/login");
+  if ("error" in owned) redirect("/dashboard");
   const listed = await listWebhooks({ formId: params.formId });
-  if ("error" in listed) redirect("/login");
+  if ("error" in listed) redirect("/dashboard");
 
   return (
-    <main className="mx-auto max-w-3xl px-5 py-12">
-      <p className="flex gap-4">
-        <Link href="/dashboard" className="text-sm font-semibold text-ink-soft hover:text-ink">
-          ← Dashboard
-        </Link>
-        <Link
-          href={`/forms/${owned.form.id}/responses`}
-          className="text-sm font-semibold text-ink-soft hover:text-ink"
-        >
-          Responses
-        </Link>
-      </p>
-      <h1 className="mt-2 font-display text-3xl tracking-tight">Webhooks</h1>
-      <p className="mt-1 text-sm text-ink-soft">
-        {owned.form.title} · signed <code>form.submission.completed</code> events
-        with retries.
-      </p>
-      <div className="mt-6">
-        <WebhookManager formId={owned.form.id} initial={listed.webhooks} />
+    <AppShell ctx={res.ctx} active="forms">
+      <FormSubnav formId={owned.form.id} title={owned.form.title} status={owned.form.status} slug={owned.form.slug} active="webhooks" />
+      <div className="mt-6 max-w-3xl">
+        <p className="text-sm leading-relaxed text-ink-soft">
+          Each completed response POSTs a signed <code className="font-mono text-xs">form.submission.completed</code> event to every active endpoint,
+          with bounded retries. Your {PLANS[res.ctx.plan].name} plan allows {PLANS[res.ctx.plan].entitlements.maxWebhooksPerForm} per form.
+        </p>
+        <div className="mt-6">
+          <WebhookManager formId={owned.form.id} initial={listed.webhooks} />
+        </div>
       </div>
-    </main>
+    </AppShell>
   );
 }

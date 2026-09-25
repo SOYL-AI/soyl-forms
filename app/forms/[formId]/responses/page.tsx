@@ -1,12 +1,27 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { getServerSupabase } from "@/lib/supabase/server";
+import { Download, Inbox } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase/admin";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { getAppContext } from "@/lib/app-context";
 import { getFormForOwner } from "@/lib/forms/actions";
 import { formSchemaV1 } from "@/lib/forms/schema";
-import { choiceDistribution, numericDistribution } from "@/lib/forms/distributions";
-import type { AnswerValue } from "@/types/forms";
+import { choiceDistribution, matrixDistribution, numericDistribution } from "@/lib/forms/distributions";
+import { displayAnswer } from "@/lib/forms/answers";
+import { isAnswerable } from "@/lib/forms/logic";
+import type { AnswerValue, Block } from "@/types/forms";
+import { AppShell } from "@/components/app/AppShell";
+import { ConfigRequired } from "@/components/app/ConfigRequired";
+import { FormSubnav } from "@/components/app/FormSubnav";
+import { Card } from "@/components/ui/card";
+import { ButtonLink } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty";
+import { Input } from "@/components/ui/input";
+import { formatDateTime, pct } from "@/lib/utils";
 import { StateActions } from "./StateActions";
+
+export const metadata: Metadata = { title: "Responses", robots: { index: false } };
 
 interface SubmissionRow {
   id: string;
@@ -15,30 +30,44 @@ interface SubmissionRow {
   answers: Record<string, AnswerValue>;
 }
 
-async function Analytics({ formId }: { formId: string }) {
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <Card className="!p-4">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">{label}</p>
+      <p className="mt-1 font-display text-2xl tracking-tight">{value}</p>
+    </Card>
+  );
+}
+
+function Bars({ rows, max }: { rows: Array<{ label: string; count: number }>; max: number }) {
+  return (
+    <ul className="mt-3 space-y-2">
+      {rows.map((r) => (
+        <li key={r.label} className="flex items-center gap-3 text-sm">
+          <span className="w-36 shrink-0 truncate text-ink-soft" title={r.label}>
+            {r.label}
+          </span>
+          <span className="h-2 flex-1 overflow-hidden rounded-full bg-ink/10">
+            <span className="block h-full rounded-full bg-ink" style={{ width: `${Math.round((r.count / max) * 100)}%` }} />
+          </span>
+          <span className="w-10 text-right tabular-nums text-ink-soft">{r.count}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+async function Analytics({ formId, blocks }: { formId: string; blocks: Block[] | null }) {
   const admin = getServiceSupabase();
   if (!admin) return null;
 
-  const [{ count: views }, { data: visits }, { data: subs }, { data: formRow }] =
-    await Promise.all([
-      admin.from("form_visits").select("id", { count: "exact", head: true }).eq("form_id", formId),
-      admin
-        .from("form_visits")
-        .select("duration_ms")
-        .eq("form_id", formId)
-        .not("completed_at", "is", null)
-        .limit(2000),
-      admin
-        .from("submissions")
-        .select("answers, submitted_at")
-        .eq("form_id", formId)
-        .is("deleted_at", null)
-        .order("submitted_at", { ascending: true })
-        .limit(2000),
-      admin.from("forms").select("published_version_id").eq("id", formId).single(),
-    ]);
+  const [{ count: views }, { data: visits }, { data: subs }] = await Promise.all([
+    admin.from("form_visits").select("id", { count: "exact", head: true }).eq("form_id", formId),
+    admin.from("form_visits").select("duration_ms, source").eq("form_id", formId).not("completed_at", "is", null).limit(2000),
+    admin.from("submissions").select("answers, submitted_at, source").eq("form_id", formId).is("deleted_at", null).order("submitted_at", { ascending: true }).limit(2000),
+  ]);
 
-  const submissions = ((subs ?? []) as Array<{ answers: Record<string, AnswerValue>; submitted_at: string }>);
+  const submissions = (subs ?? []) as Array<{ answers: Record<string, AnswerValue>; submitted_at: string; source: string | null }>;
   const completions = submissions.length;
   const viewCount = views ?? 0;
   if (viewCount === 0 && completions === 0) return null;
@@ -46,131 +75,135 @@ async function Analytics({ formId }: { formId: string }) {
   const durations = ((visits ?? []) as Array<{ duration_ms: number | null }>)
     .map((v) => v.duration_ms)
     .filter((d): d is number => typeof d === "number" && d > 0);
-  const avgSecs =
-    durations.length > 0
-      ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length / 1000)
-      : null;
+  const avgSecs = durations.length > 0 ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length / 1000) : null;
+  const fromQr = submissions.filter((s) => s.source === "qr").length;
 
-  // Submissions per day, last 14 days.
-  const days: Array<{ label: string; count: number }> = [];
   const byDay = new Map<string, number>();
   for (const s of submissions) {
     const day = s.submitted_at.slice(0, 10);
     byDay.set(day, (byDay.get(day) ?? 0) + 1);
   }
+  const days: Array<{ label: string; count: number }> = [];
   for (let i = 13; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10) as string;
+    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
     days.push({ label: d.slice(5), count: byDay.get(d) ?? 0 });
   }
   const maxDay = Math.max(1, ...days.map((d) => d.count));
 
-  // Per-question breakdowns from the live version's schema.
-  const publishedId = (formRow as { published_version_id: string | null } | null)
-    ?.published_version_id;
-  let distBlocks: React.ReactNode = null;
-  if (publishedId) {
-    const { data: version } = await admin
-      .from("form_versions")
-      .select("schema")
-      .eq("id", publishedId)
-      .single();
-    const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
-    if (parsed.success) {
-      const answerMaps = submissions.map((s) => s.answers);
-      const sections = [];
-      for (const block of parsed.data.blocks) {
-        const choice = choiceDistribution(block, answerMaps);
-        if (choice) {
-          const max = Math.max(1, ...choice.map((c) => c.count));
-          sections.push(
-            <div key={block.id} className="rounded-2xl border border-ink/10 bg-white p-5">
-              <p className="text-sm font-bold">{block.title}</p>
-              <ul className="mt-3 space-y-2">
-                {choice.map((c) => (
-                  <li key={c.optionId} className="flex items-center gap-2 text-sm">
-                    <span className="w-32 shrink-0 truncate text-ink-soft">{c.label}</span>
-                    <span className="h-2 flex-1 overflow-hidden rounded-full bg-ink/10">
-                      <span
-                        className="block h-full rounded-full bg-brand-600"
-                        style={{ width: `${Math.round((c.count / max) * 100)}%` }}
-                      />
-                    </span>
-                    <span className="w-8 text-right tabular-nums text-ink-soft">{c.count}</span>
-                  </li>
+  const answerMaps = submissions.map((s) => s.answers);
+  const sections: React.ReactNode[] = [];
+  for (const block of blocks ?? []) {
+    const choice = choiceDistribution(block, answerMaps);
+    if (choice) {
+      const max = Math.max(1, ...choice.map((c) => c.count));
+      sections.push(
+        <Card key={block.id}>
+          <p className="text-sm font-semibold">{block.title}</p>
+          <Bars rows={choice.map((c) => ({ label: c.label, count: c.count }))} max={max} />
+        </Card>,
+      );
+      continue;
+    }
+    const numeric = numericDistribution(block, answerMaps);
+    if (numeric && numeric.total > 0) {
+      const max = Math.max(1, ...numeric.counts.map((c) => c.count));
+      sections.push(
+        <Card key={block.id}>
+          <p className="text-sm font-semibold">{block.title}</p>
+          <p className="mt-2 font-display text-3xl tracking-tight">
+            {numeric.average}
+            <span className="ml-2 align-middle font-sans text-xs font-normal text-ink-faint">average · {numeric.total} answers</span>
+          </p>
+          <div className="mt-3 flex h-12 items-end gap-1">
+            {numeric.counts.map((c) => (
+              <div key={c.value} className="flex flex-1 flex-col items-center gap-1" title={`${c.value}: ${c.count}`}>
+                <div className="w-full rounded-sm bg-ink" style={{ height: `${Math.max(6, Math.round((c.count / max) * 36))}px` }} />
+                <span className="text-[10px] text-ink-faint">{c.value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>,
+      );
+      continue;
+    }
+    const matrix = matrixDistribution(block, answerMaps);
+    if (matrix && matrix.rows.some((r) => r.total > 0)) {
+      sections.push(
+        <Card key={block.id} className="md:col-span-2">
+          <p className="text-sm font-semibold">{block.title}</p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="pb-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink-faint" />
+                  {matrix.columns.map((c) => (
+                    <th key={c.id} className="pb-2 text-center text-[11px] font-semibold uppercase tracking-wide text-ink-faint">
+                      {c.label}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {matrix.rows.map((r) => (
+                  <tr key={r.id} className="border-t border-line">
+                    <th scope="row" className="py-2 pr-3 text-left font-medium text-ink-soft">
+                      {r.label}
+                    </th>
+                    {r.counts.map((n, i) => (
+                      <td key={i} className="py-2 text-center tabular-nums">
+                        <span className="inline-block rounded-md px-2 py-0.5" style={{ background: `rgba(16,16,18,${r.total ? 0.06 + (n / r.total) * 0.5 : 0.06})`, color: r.total && n / r.total > 0.5 ? "#fff" : undefined }}>
+                          {n}
+                        </span>
+                      </td>
+                    ))}
+                  </tr>
                 ))}
-              </ul>
-            </div>,
-          );
-          continue;
-        }
-        const numeric = numericDistribution(block, answerMaps);
-        if (numeric && numeric.total > 0) {
-          sections.push(
-            <div key={block.id} className="rounded-2xl border border-ink/10 bg-white p-5">
-              <p className="text-sm font-bold">{block.title}</p>
-              <p className="mt-2 font-display text-3xl">
-                {numeric.average}
-                <span className="ml-2 align-middle font-sans text-xs font-normal text-ink-faint">
-                  average · {numeric.total} answers
-                </span>
-              </p>
-            </div>,
-          );
-        }
-      }
-      if (sections.length > 0) {
-        distBlocks = <div className="mt-4 grid gap-4 md:grid-cols-2">{sections}</div>;
-      }
+              </tbody>
+            </table>
+          </div>
+        </Card>,
+      );
     }
   }
 
-  const stats: Array<[string, string]> = [
-    ["Views", viewCount.toLocaleString("en-IN")],
-    ["Completions", completions.toLocaleString("en-IN")],
-    [
-      "Completion rate",
-      viewCount > 0 ? `${Math.round((completions / viewCount) * 100)}%` : "—",
-    ],
-    ["Avg. time", avgSecs !== null ? `${avgSecs}s` : "—"],
-  ];
-
   return (
     <section aria-label="Analytics" className="mt-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {stats.map(([label, value]) => (
-          <div key={label} className="rounded-2xl border border-ink/10 bg-white px-4 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-ink-faint">
-              {label}
-            </p>
-            <p className="font-display text-2xl">{value}</p>
-          </div>
-        ))}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <Stat label="Views" value={viewCount.toLocaleString("en-IN")} />
+        <Stat label="Completions" value={completions.toLocaleString("en-IN")} />
+        <Stat label="Completion rate" value={viewCount > 0 ? `${pct(completions, viewCount)}%` : "—"} />
+        <Stat label="Avg. time" value={avgSecs !== null ? `${avgSecs}s` : "—"} />
+        <Stat label="From QR" value={fromQr.toLocaleString("en-IN")} />
       </div>
-      <div className="mt-3 rounded-2xl border border-ink/10 bg-white p-5">
-        <p className="text-xs font-semibold uppercase tracking-widest text-ink-faint">
-          Responses · last 14 days
-        </p>
+      <Card className="mt-3">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">Responses · last 14 days</p>
         <div className="mt-3 flex h-20 items-end gap-1.5" role="img" aria-label="Daily response counts">
           {days.map((d) => (
-            <div key={d.label} title={`${d.label}: ${d.count}`} className="flex-1 rounded-sm bg-brand-600/80" style={{ height: `${Math.max(4, Math.round((d.count / maxDay) * 100))}%`, opacity: d.count === 0 ? 0.2 : 1 }} />
+            <div key={d.label} title={`${d.label}: ${d.count}`} className="flex-1 rounded-sm bg-ink" style={{ height: `${Math.max(4, Math.round((d.count / maxDay) * 100))}%`, opacity: d.count === 0 ? 0.12 : 1 }} />
           ))}
         </div>
-      </div>
-      {distBlocks}
+      </Card>
+      {sections.length > 0 && <div className="mt-3 grid gap-3 md:grid-cols-2">{sections}</div>}
     </section>
   );
 }
 
-function preview(row: SubmissionRow): string {
-  const values = Object.values(row.answers)
-    .map((a) => {
-      if (typeof a.value === "string") return a.value;
-      if (Array.isArray(a.value)) return a.value.join(", ");
-      return String(a.value);
-    })
-    .filter(Boolean);
-  const text = values.join(" · ");
-  return text.length > 120 ? `${text.slice(0, 120)}…` : text || "—";
+function preview(blocks: Block[] | null, row: SubmissionRow): string {
+  const parts: string[] = [];
+  const list = blocks ? blocks.filter((b) => isAnswerable(b.type)) : [];
+  if (list.length) {
+    for (const b of list) {
+      const v = displayAnswer(b, row.answers[b.id]);
+      if (v) parts.push(v);
+      if (parts.join(" · ").length > 140) break;
+    }
+  } else {
+    for (const a of Object.values(row.answers)) {
+      parts.push(typeof a.value === "string" ? a.value : JSON.stringify(a.value));
+    }
+  }
+  const text = parts.join(" · ");
+  return text.length > 140 ? `${text.slice(0, 140)}…` : text || "—";
 }
 
 export default async function ResponsesPage({
@@ -180,12 +213,24 @@ export default async function ResponsesPage({
   params: { formId: string };
   searchParams?: { from?: string; to?: string; q?: string };
 }) {
+  if (!isSupabaseConfigured()) return <ConfigRequired area="responses" />;
+  const res = await getAppContext();
+  if (!res.ok) redirect(`/login?next=/forms/${params.formId}/responses`);
   const owned = await getFormForOwner(params.formId);
-  if ("error" in owned) redirect("/login");
+  if ("error" in owned) redirect("/dashboard");
   const form = owned.form;
+  const admin = getServiceSupabase()!;
 
-  const supabase = getServerSupabase();
-  let query = supabase!
+  const { data: formRow } = await admin.from("forms").select("published_version_id").eq("id", form.id).single();
+  const publishedId = (formRow as { published_version_id: string | null } | null)?.published_version_id;
+  let blocks: Block[] | null = null;
+  if (publishedId) {
+    const { data: version } = await admin.from("form_versions").select("schema").eq("id", publishedId).single();
+    const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
+    if (parsed.success) blocks = parsed.data.blocks;
+  }
+
+  let query = admin
     .from("submissions")
     .select("id, submitted_at, source, answers")
     .eq("form_id", form.id)
@@ -193,131 +238,96 @@ export default async function ResponsesPage({
     .order("submitted_at", { ascending: false })
     .limit(100);
   if (searchParams?.from) query = query.gte("submitted_at", searchParams.from);
-  if (searchParams?.to) query = query.lte("submitted_at", searchParams.to);
+  if (searchParams?.to) query = query.lte("submitted_at", `${searchParams.to}T23:59:59.999Z`);
   const { data } = await query;
-  let rows = ((data ?? []) as SubmissionRow[]);
+  let rows = (data ?? []) as SubmissionRow[];
   const q = searchParams?.q?.trim().toLowerCase();
-  if (q) {
-    rows = rows.filter((r) => JSON.stringify(r.answers).toLowerCase().includes(q));
-  }
+  if (q) rows = rows.filter((r) => JSON.stringify(r.answers).toLowerCase().includes(q));
+  const filtered = Boolean(searchParams?.from || searchParams?.to || q);
 
   return (
-    <main className="mx-auto max-w-4xl px-5 py-12">
-      <p>
-        <Link href="/dashboard" className="text-sm font-semibold text-ink-soft hover:text-ink">
-          ← Dashboard
-        </Link>
-      </p>
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-3xl tracking-tight">{form.title}</h1>
-          <p className="mt-1 text-sm text-ink-soft">
-            {rows.length} response{rows.length === 1 ? "" : "s"}
-            {form.status === "published" && (
-              <>
-                {" · "}
-                <Link href={`/f/${form.slug}`} className="font-semibold text-brand-700 hover:text-brand-900">
-                  View live form
-                </Link>
-              </>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <StateActions
-            formId={form.id}
-            status={form.status}
-            canReopen={form.status === "closed"}
-          />
-          <a
-            href={`/api/forms/${form.id}/export`}
-            className="rounded-full bg-ink px-4 py-2 text-xs font-semibold text-white"
-          >
-            Export CSV
-          </a>
-        </div>
-      </div>
+    <AppShell ctx={res.ctx} active="forms">
+      <FormSubnav
+        formId={form.id}
+        title={form.title}
+        status={form.status}
+        slug={form.slug}
+        active="responses"
+        actions={
+          <>
+            <StateActions formId={form.id} status={form.status} canReopen={form.status === "closed"} />
+            <ButtonLink href={`/api/forms/${form.id}/export`} variant="secondary">
+              <Download className="h-4 w-4" /> Export CSV
+            </ButtonLink>
+          </>
+        }
+      />
 
-      <Analytics formId={form.id} />
+      <Analytics formId={form.id} blocks={blocks} />
 
-      <form method="get" className="mt-6 flex flex-wrap items-end gap-2">
-        <label className="text-xs font-semibold">
-          <span className="mb-1 block text-ink-soft">From</span>
-          <input
-            type="date"
-            name="from"
-            defaultValue={searchParams?.from ?? ""}
-            className="rounded-lg border border-ink/15 px-3 py-2 text-sm"
-          />
+      <form method="get" className="mt-8 flex flex-wrap items-end gap-2">
+        <label className="text-xs font-semibold text-ink-soft">
+          <span className="mb-1 block">From</span>
+          <Input type="date" name="from" defaultValue={searchParams?.from ?? ""} className="w-40 !py-2" />
         </label>
-        <label className="text-xs font-semibold">
-          <span className="mb-1 block text-ink-soft">To</span>
-          <input
-            type="date"
-            name="to"
-            defaultValue={searchParams?.to ?? ""}
-            className="rounded-lg border border-ink/15 px-3 py-2 text-sm"
-          />
+        <label className="text-xs font-semibold text-ink-soft">
+          <span className="mb-1 block">To</span>
+          <Input type="date" name="to" defaultValue={searchParams?.to ?? ""} className="w-40 !py-2" />
         </label>
-        <label className="text-xs font-semibold">
-          <span className="mb-1 block text-ink-soft">Search answers</span>
-          <input
-            type="search"
-            name="q"
-            defaultValue={searchParams?.q ?? ""}
-            placeholder="name, choice…"
-            className="w-44 rounded-lg border border-ink/15 px-3 py-2 text-sm"
-          />
+        <label className="text-xs font-semibold text-ink-soft">
+          <span className="mb-1 block">Search answers</span>
+          <Input type="search" name="q" defaultValue={searchParams?.q ?? ""} placeholder="name, choice…" className="w-52 !py-2" />
         </label>
-        <button
-          type="submit"
-          className="rounded-full border border-ink/15 px-4 py-2 text-xs font-semibold hover:border-ink/30"
-        >
+        <button type="submit" className="h-[38px] rounded-full border border-line-strong px-4 text-xs font-semibold hover:border-ink/40">
           Filter
         </button>
-        {(searchParams?.from || searchParams?.to || searchParams?.q) && (
-          <Link
-            href={`/forms/${form.id}/responses`}
-            className="rounded-full px-3 py-2 text-xs font-medium text-ink-soft hover:bg-ink/5"
-          >
+        {filtered && (
+          <Link href={`/forms/${form.id}/responses`} className="h-[38px] rounded-full px-3 text-xs font-medium leading-[38px] text-ink-soft hover:bg-ink/5">
             Clear
           </Link>
         )}
       </form>
 
       {rows.length === 0 ? (
-        <div className="mt-8 rounded-2xl border border-ink/10 bg-paper p-8 text-center">
-          <p className="text-lg font-semibold">No responses yet</p>
-          <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
-            {form.status === "published"
-              ? "Share your live link and answers will appear here."
-              : "Publish this form from the builder, then share it to collect answers."}
-          </p>
-        </div>
+        <EmptyState
+          className="mt-6"
+          icon={<Inbox className="h-5 w-5" />}
+          title={filtered ? "No responses match" : "No responses yet"}
+          description={
+            filtered
+              ? "Try a wider date range or a different search."
+              : form.status === "published"
+                ? "Share your live link or QR code and answers appear here as they arrive."
+                : "Publish this form from the builder, then share it to collect answers."
+          }
+          action={
+            !filtered && form.status !== "published" ? (
+              <ButtonLink href={`/builder/${form.id}`} variant="primary">
+                Open builder
+              </ButtonLink>
+            ) : undefined
+          }
+        />
       ) : (
-        <ul className="mt-6 divide-y divide-ink/10 rounded-2xl border border-ink/10 bg-white">
-          {rows.map((r) => (
-            <li key={r.id}>
-              <Link
-                href={`/forms/${form.id}/responses/${r.id}`}
-                className="block px-5 py-4 transition-colors hover:bg-paper"
-              >
-                <p className="text-sm font-medium">{preview(r)}</p>
-                <p className="mt-1 text-xs text-ink-faint">
-                  {new Date(r.submitted_at).toLocaleString("en-IN", {
-                    day: "numeric",
-                    month: "short",
-                    hour: "numeric",
-                    minute: "2-digit",
-                  })}
-                  {r.source ? ` · via ${r.source}` : ""}
-                </p>
-              </Link>
-            </li>
-          ))}
-        </ul>
+        <>
+          <ul className="mt-6 divide-y divide-line rounded-2xl border border-line bg-paper">
+            {rows.map((r) => (
+              <li key={r.id}>
+                <Link href={`/forms/${form.id}/responses/${r.id}`} className="block px-5 py-4 transition-colors hover:bg-paper-deep/40">
+                  <p className="text-sm font-medium">{preview(blocks, r)}</p>
+                  <p className="mt-1 text-xs text-ink-faint">
+                    {formatDateTime(r.submitted_at)}
+                    {r.source ? ` · via ${r.source}` : ""}
+                  </p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-3 text-xs text-ink-faint">
+            Showing {rows.length === 100 ? "the latest 100" : rows.length} response{rows.length === 1 ? "" : "s"}. Export CSV for everything.
+          </p>
+        </>
       )}
-      <p className="mt-3 text-xs text-ink-faint">Showing up to the latest 100 responses.</p>
-    </main>
+    </AppShell>
   );
 }

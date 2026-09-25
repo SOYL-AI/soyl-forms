@@ -37,11 +37,33 @@ export function createBlock(type: BlockType): Block {
     case "yes_no":
       return { id, type, title: "Yes or no?", required: true };
     case "rating":
-      return { id, type, title: "How would you rate this?", required: true, max: 5 };
+      return { id, type, title: "How would you rate this?", required: true, max: 5, icon: "star" };
     case "opinion_scale":
-      return { id, type, title: "How much do you agree?", required: true, min: 0, max: 10 };
+      return { id, type, title: "How much do you agree?", required: true, min: 0, max: 10, minLabel: "Not at all", maxLabel: "Completely" };
     case "date":
       return { id, type, title: "Pick a date", required: false };
+    case "time":
+      return { id, type, title: "Pick a time", required: false };
+    case "matrix":
+      return {
+        id, type, title: "Rate each of the following", required: true,
+        rows: [
+          { id: `${id}_r1`, label: "Quality" },
+          { id: `${id}_r2`, label: "Speed" },
+          { id: `${id}_r3`, label: "Value" },
+        ],
+        columns: [
+          { id: `${id}_c1`, label: "Poor" },
+          { id: `${id}_c2`, label: "Okay" },
+          { id: `${id}_c3`, label: "Good" },
+          { id: `${id}_c4`, label: "Excellent" },
+        ],
+      };
+    case "legal":
+      return {
+        id, type, title: "Before you continue", required: true,
+        acceptLabel: "I agree to the terms and privacy policy",
+      };
     case "file_upload":
       return { id, type, title: "Upload a file", required: false, maxSizeMb: 10 };
     case "statement":
@@ -79,7 +101,7 @@ export function moveBlock<T extends { id: string }>(
   return next;
 }
 
-/** Copy a block with fresh ids (options included); logic rules untouched. */
+/** Copy a block with fresh ids (options/rows/columns included); logic rules untouched. */
 export function duplicateBlock(block: Block): Block {
   const id = newBlockId();
   const copy = JSON.parse(JSON.stringify(block)) as Block;
@@ -95,6 +117,10 @@ export function duplicateBlock(block: Block): Block {
       id: `${id}_${i.toString(36)}`,
     }));
   }
+  if (copy.type === "matrix") {
+    copy.rows = copy.rows.map((o, i) => ({ ...o, id: `${id}_r${i.toString(36)}` }));
+    copy.columns = copy.columns.map((o, i) => ({ ...o, id: `${id}_c${i.toString(36)}` }));
+  }
   return copy;
 }
 
@@ -105,7 +131,7 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   email: "Email",
   number: "Number",
   phone: "Phone",
-  url: "URL",
+  url: "Website",
   single_choice: "Single choice",
   multiple_choice: "Multiple choice",
   dropdown: "Dropdown",
@@ -113,7 +139,44 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   rating: "Rating",
   opinion_scale: "Opinion scale",
   date: "Date",
+  time: "Time",
+  matrix: "Grid",
+  legal: "Consent",
   file_upload: "File upload",
   statement: "Statement",
   thank_you: "Thank you",
+};
+
+export type BlockGroup = "screens" | "text" | "choice" | "scale" | "input";
+
+/** Palette grouping + one-line hints for the Add-block picker. */
+export const BLOCK_TYPE_META: Record<BlockType, { group: BlockGroup; hint: string }> = {
+  welcome: { group: "screens", hint: "Opening screen with a start button" },
+  statement: { group: "screens", hint: "A message between questions" },
+  thank_you: { group: "screens", hint: "Closing screen, optional link" },
+  short_text: { group: "text", hint: "Names, one-liners" },
+  long_text: { group: "text", hint: "Paragraph answers" },
+  email: { group: "text", hint: "Validated email address" },
+  phone: { group: "text", hint: "Phone number" },
+  url: { group: "text", hint: "Link or profile" },
+  number: { group: "text", hint: "Numeric with min/max" },
+  single_choice: { group: "choice", hint: "Pick exactly one" },
+  multiple_choice: { group: "choice", hint: "Pick any number" },
+  dropdown: { group: "choice", hint: "Long lists, compact" },
+  yes_no: { group: "choice", hint: "Two buttons" },
+  legal: { group: "choice", hint: "Consent checkbox with link" },
+  rating: { group: "scale", hint: "Stars or numbers 1–5 / 1–10" },
+  opinion_scale: { group: "scale", hint: "0–10 with end labels" },
+  matrix: { group: "scale", hint: "Rows × columns grid" },
+  date: { group: "input", hint: "Calendar date" },
+  time: { group: "input", hint: "Time of day" },
+  file_upload: { group: "input", hint: "Files up to 100 MB" },
+};
+
+export const BLOCK_GROUP_LABELS: Record<BlockGroup, string> = {
+  screens: "Screens",
+  text: "Text & numbers",
+  choice: "Choices",
+  scale: "Scales & grids",
+  input: "Date, time & files",
 };

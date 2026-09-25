@@ -2,42 +2,91 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+  Design tokens. Two surfaces (background / paper), three ink weights, one
+  accent (marigold) used as a fill, never as body text. Every component reads
+  from these so light and dark stay in lockstep.
+*/
 @layer base {
   :root {
-    --background: #FBFAF7;
-    --foreground: #1C1917;
-    --paper: #FFFFFF;
-    --paper-deep: #F3EFE7;
-    --ink: #1C1917;
-    --ink-soft: #57534E;
-    --ink-faint: #A8A29E;
+    --background: #f6f5f1;
+    --paper: #ffffff;
+    --paper-deep: #efede7;
+    --ink: #101012;
+    --ink-soft: #55534e;
+    --ink-faint: #8e8b84;
+    --line: rgba(16, 16, 18, 0.1);
+    --line-strong: rgba(16, 16, 18, 0.2);
+    --accent: #f2b418;
+    --accent-ink: #1a1400;
+    --accent-soft: #fff3d1;
+    --positive: #178a5d;
+    --positive-soft: #e3f5ec;
+    --danger: #c4372f;
+    --danger-soft: #fbe9e7;
+    --warn: #b26a00;
+    --warn-soft: #fff1db;
+    --info: #2f5fd3;
+    --info-soft: #e8eefc;
+    --foreground: var(--ink);
+    color-scheme: light;
   }
 
   .dark {
-    --background: #09090b;
-    --foreground: #fafafa;
-    --paper: #18181b;
-    --paper-deep: #27272a;
-    --ink: #fafafa;
-    --ink-soft: #a1a1aa;
-    --ink-faint: #52525b;
+    --background: #0c0c0e;
+    --paper: #151518;
+    --paper-deep: #1e1e22;
+    --ink: #f4f3ee;
+    --ink-soft: #aba89f;
+    --ink-faint: #6e6c66;
+    --line: rgba(244, 243, 238, 0.1);
+    --line-strong: rgba(244, 243, 238, 0.2);
+    --accent: #f5bc2e;
+    --accent-ink: #1a1400;
+    --accent-soft: rgba(245, 188, 46, 0.14);
+    --positive: #34b27b;
+    --positive-soft: rgba(52, 178, 123, 0.14);
+    --danger: #e5615a;
+    --danger-soft: rgba(229, 97, 90, 0.14);
+    --warn: #e0a030;
+    --warn-soft: rgba(224, 160, 48, 0.14);
+    --info: #6f95f0;
+    --info-soft: rgba(111, 149, 240, 0.14);
+    --foreground: var(--ink);
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "ss01", "cv11";
+  }
+
+  ::selection {
+    background: var(--accent);
+    color: var(--accent-ink);
+  }
+
+  /* Visible keyboard focus everywhere. */
+  :focus-visible {
+    outline: 2px solid var(--ink);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  .dark :focus-visible {
+    outline-color: var(--accent);
   }
 }
 
-html {
-  -webkit-text-size-adjust: 100%;
-}
-
-body {
-  @apply bg-background text-foreground font-sans antialiased;
-}
-
-/* Respondent step transition: subtle rise + fade, ~220ms per spec (180–300ms). */
 @layer components {
+  /* Respondent step transition: subtle rise + fade, ~220ms per spec (180–300ms). */
   .step-animated {
     animation: step-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
-
   @keyframes step-in {
     from {
       opacity: 0;
@@ -48,15 +97,56 @@ body {
       transform: translateY(0);
     }
   }
-
   .progress-animated {
     transition: width 240ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  /* Marketing page-load choreography: one staggered rise, then still. */
+  .rise {
+    animation: rise 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .rise-1 {
+    animation-delay: 60ms;
+  }
+  .rise-2 {
+    animation-delay: 140ms;
+  }
+  .rise-3 {
+    animation-delay: 220ms;
+  }
+  .rise-4 {
+    animation-delay: 320ms;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(14px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .prose-legal h2 {
+    @apply mt-10 font-display text-2xl tracking-tight;
+  }
+  .prose-legal h3 {
+    @apply mt-6 text-base font-semibold;
+  }
+  .prose-legal p,
+  .prose-legal li {
+    @apply mt-3 text-[15px] leading-relaxed text-ink-soft;
+  }
+  .prose-legal ul {
+    @apply list-disc pl-5;
   }
 }
 
 /* Honor users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
-  .step-animated {
+  .step-animated,
+  .rise {
     animation: none;
   }
   .progress-animated {
@@ -67,35 +157,239 @@ body {
   *::after {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* Creator-chosen form themes (data attributes set by FormRenderer). */
-.renderer-themed[data-font="sans"] h1 {
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    "Helvetica Neue", Arial, sans-serif;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+/*
+  Form runtime theme. FormRenderer sets these variables from the creator's
+  theme (or a brand kit); every respondent-facing control reads only from
+  them, so a dark brand never gets a white input by accident.
+*/
+.renderer-themed {
+  --f-bg: #ffffff;
+  --f-text: #1c1917;
+  --f-accent: #0e7c5b;
+  --f-accent-ink: #ffffff;
+  --f-muted: rgba(28, 25, 23, 0.68);
+  --f-faint: rgba(28, 25, 23, 0.48);
+  --f-surface: rgba(28, 25, 23, 0.035);
+  --f-surface-strong: rgba(28, 25, 23, 0.07);
+  --f-border: rgba(28, 25, 23, 0.16);
+  --f-border-strong: rgba(28, 25, 23, 0.32);
+  --f-error: #c4372f;
+  --f-radius: 14px;
+  --f-radius-button: 999px;
+  --f-font-heading: ui-serif, Georgia, "Times New Roman", serif;
+  --f-font-body: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--f-bg);
+  color: var(--f-text);
+  font-family: var(--f-font-body);
 }
-.renderer-themed[data-buttons="pill"] button[role="option"] {
-  border-radius: 9999px;
+.renderer-themed h1,
+.renderer-themed h2 {
+  font-family: var(--f-font-heading);
+  color: var(--f-text);
 }
-/* Themed surfaces inherit the creator's text color at readable opacities. */
-.renderer-themed h1 {
-  color: inherit;
+.renderer-themed .f-muted {
+  color: var(--f-muted);
 }
-.renderer-themed .text-ink-soft {
-  color: inherit;
-  opacity: 0.75;
+.renderer-themed .f-faint {
+  color: var(--f-faint);
 }
-.renderer-themed .text-ink-faint {
-  color: inherit;
-  opacity: 0.55;
+.renderer-themed .f-input {
+  width: 100%;
+  border-radius: var(--f-radius);
+  border: 1px solid var(--f-border);
+  background: var(--f-surface);
+  color: var(--f-text);
+  padding: 1rem 1.25rem;
+  font-size: 1.125rem;
+  line-height: 1.5;
+  font-family: var(--f-font-body);
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
 }
-
-/* Visible keyboard focus everywhere. */
-:focus-visible {
-  outline: 2px solid theme("colors.brand.600");
-  outline-offset: 2px;
-  border-radius: 4px;
+.renderer-themed .f-input::placeholder {
+  color: var(--f-faint);
+}
+.renderer-themed .f-input:focus,
+.renderer-themed .f-input:focus-visible {
+  outline: none;
+  border-color: var(--f-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--f-accent) 22%, transparent);
+  background: var(--f-bg);
+}
+.renderer-themed .f-input option {
+  color: initial;
+}
+.renderer-themed .f-choice {
+  display: flex;
+  min-height: 3.25rem;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: var(--f-radius);
+  border: 1px solid var(--f-border);
+  background: var(--f-surface);
+  color: var(--f-text);
+  padding: 0.75rem 1.25rem;
+  text-align: left;
+  font-size: 1.0625rem;
+  font-family: var(--f-font-body);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.renderer-themed .f-choice:hover {
+  border-color: var(--f-border-strong);
+  background: var(--f-surface-strong);
+}
+.renderer-themed .f-choice[aria-selected="true"],
+.renderer-themed .f-choice[aria-checked="true"] {
+  border-color: var(--f-accent);
+  background: color-mix(in srgb, var(--f-accent) 12%, var(--f-bg));
+  font-weight: 500;
+}
+.renderer-themed .f-key {
+  display: flex;
+  height: 1.5rem;
+  min-width: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--f-border-strong);
+  color: var(--f-faint);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0 0.3rem;
+}
+.renderer-themed .f-choice[aria-selected="true"] .f-key,
+.renderer-themed .f-choice[aria-checked="true"] .f-key {
+  border-color: var(--f-accent);
+  background: var(--f-accent);
+  color: var(--f-accent-ink);
+}
+.renderer-themed .f-scale {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: calc(var(--f-radius) * 0.85);
+  border: 1px solid var(--f-border);
+  background: var(--f-surface);
+  color: var(--f-text);
+  font-weight: 600;
+  font-family: var(--f-font-body);
+  transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+}
+.renderer-themed .f-scale:hover {
+  border-color: var(--f-border-strong);
+  background: var(--f-surface-strong);
+}
+.renderer-themed .f-scale[aria-checked="true"] {
+  border-color: var(--f-accent);
+  background: var(--f-accent);
+  color: var(--f-accent-ink);
+  transform: scale(1.04);
+}
+.renderer-themed .f-btn-primary {
+  border-radius: var(--f-radius-button);
+  background: var(--f-accent);
+  color: var(--f-accent-ink);
+  font-weight: 600;
+  font-family: var(--f-font-body);
+  transition: transform 120ms ease, filter 120ms ease;
+}
+.renderer-themed .f-btn-primary:hover {
+  filter: brightness(1.05);
+}
+.renderer-themed .f-btn-primary:active {
+  transform: scale(0.99);
+}
+.renderer-themed .f-btn-secondary {
+  border-radius: var(--f-radius-button);
+  border: 1px solid var(--f-border);
+  background: var(--f-surface);
+  color: var(--f-text);
+  font-weight: 500;
+  font-family: var(--f-font-body);
+}
+.renderer-themed .f-btn-secondary:hover {
+  border-color: var(--f-border-strong);
+}
+.renderer-themed .f-kbd {
+  border-radius: 5px;
+  border: 1px solid var(--f-border-strong);
+  padding: 0.1rem 0.4rem;
+  font-family: var(--f-font-body);
+  font-size: 0.75rem;
+  color: var(--f-muted);
+}
+.renderer-themed .f-progress-track {
+  background: var(--f-surface-strong);
+}
+.renderer-themed .f-progress-fill {
+  background: var(--f-accent);
+}
+.renderer-themed .f-error {
+  color: var(--f-error);
+}
+.renderer-themed .f-chip {
+  border-radius: 999px;
+  background: var(--f-surface-strong);
+  color: var(--f-muted);
+}
+.renderer-themed .f-divider {
+  border-color: var(--f-border);
+}
+.renderer-themed .f-radio {
+  display: inline-flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1.5px solid var(--f-border-strong);
+  background: var(--f-surface);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+.renderer-themed .f-radio[aria-checked="true"],
+.renderer-themed .f-radio[data-checked="true"] {
+  border-color: var(--f-accent);
+  background: var(--f-accent);
+  box-shadow: inset 0 0 0 4px var(--f-bg);
+}
+.renderer-themed .f-check {
+  display: inline-flex;
+  height: 1.5rem;
+  width: 1.5rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1.5px solid var(--f-border-strong);
+  background: var(--f-surface);
+  color: var(--f-accent-ink);
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.renderer-themed .f-check[data-checked="true"] {
+  border-color: var(--f-accent);
+  background: var(--f-accent);
+}
+.renderer-themed .f-link {
+  color: var(--f-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.renderer-themed .f-media {
+  border-radius: var(--f-radius);
+  max-height: 20rem;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+}
+.renderer-themed .f-logo {
+  max-height: 2.5rem;
+  width: auto;
+  max-width: 12rem;
+  object-fit: contain;
 }
