@@ -1,7 +1,33 @@
 import type { Config } from "tailwindcss";
 
+/**
+ * Theme colors are CSS variables (hex or rgba, see globals.css) so they can
+ * flip for dark mode and be re-pointed by form themes. Tailwind can't apply
+ * opacity modifiers (`bg-ink/5`, `border-ink/[0.07]`) to a bare `var()` and
+ * silently emits nothing, so modifiers are resolved with color-mix() instead.
+ * Solid classes still compile to a plain `var(--x)`.
+ */
+function token(name: string): string {
+  const color = ({ opacityValue }: { opacityValue?: string }) =>
+    opacityValue === undefined
+      ? `var(--${name})`
+      : `color-mix(in srgb, var(--${name}) calc(${opacityValue} * 100%), transparent)`;
+  // Tailwind supports color functions at runtime; its Config types only model strings.
+  return color as unknown as string;
+}
+
 const config: Config = {
   darkMode: "class",
+  // Legacy `*-opacity-*` utilities are unused; disabling them keeps solid
+  // color classes as a plain var() instead of routing them through color-mix().
+  corePlugins: {
+    textOpacity: false,
+    backgroundOpacity: false,
+    borderOpacity: false,
+    divideOpacity: false,
+    placeholderOpacity: false,
+    ringOpacity: false,
+  },
   content: [
     "./app/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
@@ -10,41 +36,41 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        background: "var(--background)",
-        foreground: "var(--foreground)",
+        background: token("background"),
+        foreground: token("foreground"),
         paper: {
-          DEFAULT: "var(--paper)",
-          deep: "var(--paper-deep)",
+          DEFAULT: token("paper"),
+          deep: token("paper-deep"),
         },
         ink: {
-          DEFAULT: "var(--ink)",
-          soft: "var(--ink-soft)",
-          faint: "var(--ink-faint)",
+          DEFAULT: token("ink"),
+          soft: token("ink-soft"),
+          faint: token("ink-faint"),
         },
         line: {
-          DEFAULT: "var(--line)",
-          strong: "var(--line-strong)",
+          DEFAULT: token("line"),
+          strong: token("line-strong"),
         },
         accent: {
-          DEFAULT: "var(--accent)",
-          ink: "var(--accent-ink)",
-          soft: "var(--accent-soft)",
+          DEFAULT: token("accent"),
+          ink: token("accent-ink"),
+          soft: token("accent-soft"),
         },
         positive: {
-          DEFAULT: "var(--positive)",
-          soft: "var(--positive-soft)",
+          DEFAULT: token("positive"),
+          soft: token("positive-soft"),
         },
         danger: {
-          DEFAULT: "var(--danger)",
-          soft: "var(--danger-soft)",
+          DEFAULT: token("danger"),
+          soft: token("danger-soft"),
         },
         warn: {
-          DEFAULT: "var(--warn)",
-          soft: "var(--warn-soft)",
+          DEFAULT: token("warn"),
+          soft: token("warn-soft"),
         },
         info: {
-          DEFAULT: "var(--info)",
-          soft: "var(--info-soft)",
+          DEFAULT: token("info"),
+          soft: token("info-soft"),
         },
       },
       fontFamily: {
