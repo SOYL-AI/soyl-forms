@@ -55,14 +55,18 @@ export function buildFormPrompt(): string {
     " yes_no {}",
     ' rating {"max":5|10,"icon":"star"|"heart"|"number"}',
     ' opinion_scale {"min":0|1,"max":5|7|10,"minLabel"?,"maxLabel"?}',
-    ' matrix {"rows":[{"id","label"}] (2–6), "columns":[{"id","label"}] (3–5)}  — for rating several items on one scale',
+    ' matrix {"rows":[{"id","label"}] (2–6), "columns":[{"id","label"}] (3–5), "multiple"?:boolean}  — rating several items on one scale; multiple=true for a checkbox grid',
+    ' ranking {"options":[{"id","label"}] (3–7)}  — respondent orders options by preference',
+    ' nps {"minLabel"?,"maxLabel"?}  — 0–10 "how likely to recommend"; prefer it over opinion_scale for recommendation questions',
     ' legal {"acceptLabel":string,"linkUrl"?:https,"linkLabel"?}  — consent/terms',
     " date {}, time {}, file_upload {\"maxSizeMb\":number}",
     'LogicRule: {"id":string,"when":{"questionId":string,"operator":"equals"|"not_equals"|"contains"|"answered"|"not_answered"|"greater_than"|"less_than","value"?:string},"then":{"action":"goto","blockId":string}}. Rules run in order, first match wins, else next block. Use the option id (not label) as value for choice questions; "yes"/"no" for yes_no; numbers as strings. Only add logic when a question is genuinely conditional (e.g. skip follow-ups after a "no").',
     'Theme: {"background":hex,"text":hex,"accent":hex,"headingFont":fontId,"bodyFont":fontId,"radius":"none"|"sm"|"md"|"lg"|"xl","buttonStyle":"pill"|"rounded"|"square"}. Allowed fontIds: ' +
       fontIds +
       ". Text must contrast strongly with background; accent must be a real brand-like colour, never grey. If a BRAND KIT is provided, use its colours, fonts and style exactly.",
-    'Settings: {"autoAdvance":boolean,"showProgress":boolean,"buttonLabelSubmit"?:string(<=20)}.',
+    'Recall: a title or description may include {{questionId}} to show an earlier answer, e.g. "Thanks, {{name}}! What brings you here?" — only reference questions that come before it.',
+    'Quiz: only when the request is a quiz, test or assessment, set settings.quizMode=true and add "quiz":{"correct":[optionId…] (or accepted texts for short_text),"points"?:number} to each graded single_choice, multiple_choice, dropdown, yes_no or short_text block.',
+    'Settings: {"autoAdvance":boolean,"showProgress":boolean,"buttonLabelSubmit"?:string(<=20),"quizMode"?:boolean}.',
     "Writing: titles are short questions addressed to the respondent, in the brand's voice when given (else warm and plain). Descriptions are optional, one line, only when they add information. Use the most specific type available (email, phone, date, rating, matrix, legal). Mark only truly necessary questions required. Start with a welcome screen unless the form is under 4 questions; end with a thank_you whose title reflects what happens next.",
     "Never invent facts about the organisation. No markdown, no commentary, no trailing text.",
   ].join("\n");
@@ -157,8 +161,34 @@ function sanitizeIds(raw: unknown): unknown {
       if (out[k] === null || out[k] === "") delete out[k];
     }
     if (out.type === "thank_you") delete out.required;
+    // Quiz keys reference option ids, which may have been rewritten above.
+    const quiz = out.quiz as { correct?: unknown; points?: unknown } | null | undefined;
+    if (quiz && typeof quiz === "object") {
+      const list = Array.isArray(quiz.correct) ? quiz.correct : typeof quiz.correct === "string" ? [quiz.correct] : [];
+      const correct = list
+        .filter((c): c is string | number => typeof c === "string" || typeof c === "number")
+        .map((c) => String(c))
+        .map((c) => blockMap.get(`${newId}_o::${c}`) ?? c);
+      out.quiz = correct.length ? { correct, ...(typeof quiz.points === "number" ? { points: quiz.points } : {}) } : undefined;
+      if (!out.quiz) delete out.quiz;
+    } else {
+      delete out.quiz;
+    }
     return out;
   });
+  // Recall tokens ({{id}}) follow renamed block ids.
+  for (const b of blocks) {
+    if (!b || typeof b !== "object" || Array.isArray(b)) continue;
+    const blk = b as Record<string, unknown>;
+    for (const k of ["title", "description"]) {
+      if (typeof blk[k] === "string") {
+        blk[k] = (blk[k] as string).replace(/\{\{([^{}]{1,80})\}\}/g, (m, raw: string) => {
+          const mapped = blockMap.get(raw.trim());
+          return mapped ? `{{${mapped}}}` : m;
+        });
+      }
+    }
+  }
   let logic = root.logic;
   if (Array.isArray(logic)) {
     logic = (logic as unknown[]).map((r, i) => {
@@ -235,7 +265,12 @@ export function parseGeneratedTheme(raw: unknown, brand?: BrandKit | null): Form
 export function parseGeneratedSettings(raw: unknown): FormSettings {
   const parsed = formSettingsSchema.safeParse(raw ?? {});
   const s = parsed.success ? parsed.data : {};
-  return { autoAdvance: s.autoAdvance ?? true, showProgress: s.showProgress ?? true, ...(s.buttonLabelSubmit ? { buttonLabelSubmit: s.buttonLabelSubmit } : {}) };
+  return {
+    autoAdvance: s.autoAdvance ?? true,
+    showProgress: s.showProgress ?? true,
+    ...(s.buttonLabelSubmit ? { buttonLabelSubmit: s.buttonLabelSubmit } : {}),
+    ...(s.quizMode ? { quizMode: true } : {}),
+  };
 }
 
 /** Call the provider and return a validated draft. Throws with safe messages. */

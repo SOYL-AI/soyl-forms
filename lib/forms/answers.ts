@@ -123,7 +123,8 @@ function checkBlock(block: Block, raw: unknown): Checked {
 
     case "number":
     case "rating":
-    case "opinion_scale": {
+    case "opinion_scale":
+    case "nps": {
       if (typeof v !== "number" || !Number.isFinite(v)) {
         return fail(block, "answer must be a number.");
       }
@@ -131,6 +132,10 @@ function checkBlock(block: Block, raw: unknown): Checked {
         const max = block.max ?? 5;
         if (!Number.isInteger(v) || v < 1 || v > max) {
           return fail(block, `pick a whole number from 1 to ${max}.`);
+        }
+      } else if (block.type === "nps") {
+        if (!Number.isInteger(v) || v < 0 || v > 10) {
+          return fail(block, "pick a whole number from 0 to 10.");
         }
       } else if (block.type === "opinion_scale") {
         const min = block.min ?? 0;
@@ -211,17 +216,37 @@ function checkBlock(block: Block, raw: unknown): Checked {
       const grid = v as Record<string, unknown>;
       const rows = new Set(block.rows.map((r) => r.id));
       const cols = new Set(block.columns.map((c) => c.id));
-      const out: Record<string, string> = {};
-      for (const [rowId, colId] of Object.entries(grid)) {
+      const out: Record<string, string | string[]> = {};
+      for (const [rowId, pick] of Object.entries(grid)) {
         if (!rows.has(rowId)) return fail(block, "unknown row.");
-        if (typeof colId !== "string" || !cols.has(colId)) return fail(block, "unknown column.");
-        out[rowId] = colId;
+        if (block.multiple) {
+          if (!Array.isArray(pick) || pick.some((c) => typeof c !== "string" || !cols.has(c))) {
+            return fail(block, "unknown column.");
+          }
+          const picks = [...new Set(pick as string[])];
+          if (picks.length > 0) out[rowId] = picks;
+        } else {
+          if (typeof pick !== "string" || !cols.has(pick)) return fail(block, "unknown column.");
+          out[rowId] = pick;
+        }
       }
       if (block.required && Object.keys(out).length < block.rows.length) {
         return fail(block, "answer every row.");
       }
       if (Object.keys(out).length === 0) return fail(block, "answer at least one row.");
       return { ok: true, value: { type: "matrix", value: out } };
+    }
+
+    case "ranking": {
+      if (!Array.isArray(v) || v.some((x) => typeof x !== "string")) {
+        return fail(block, "answer must be an ordered list.");
+      }
+      const ids = block.options.map((o) => o.id);
+      const order = v as string[];
+      if (order.length !== ids.length || new Set(order).size !== ids.length || order.some((id) => !ids.includes(id))) {
+        return fail(block, "rank every option exactly once.");
+      }
+      return { ok: true, value: { type: "ranking", value: order } };
     }
 
     case "legal": {
@@ -275,7 +300,13 @@ export function displayAnswer(block: Block, answer: AnswerValue | undefined): st
     case "number":
     case "rating":
     case "opinion_scale":
+    case "nps":
       return String(answer.value);
+    case "ranking": {
+      const label = (id: string) =>
+        block.type === "ranking" ? (block.options.find((o) => o.id === id)?.label ?? id) : id;
+      return answer.value.map((id, i) => `${i + 1}. ${label(id)}`).join("; ");
+    }
     case "single_choice":
     case "dropdown":
       return answer.value === OTHER_OPTION_ID && answer.otherText
@@ -291,11 +322,12 @@ export function displayAnswer(block: Block, answer: AnswerValue | undefined): st
         .join("; ");
     case "matrix": {
       if (block.type !== "matrix") return JSON.stringify(answer.value);
+      const colLabel = (id: string) => block.columns.find((c) => c.id === id)?.label ?? id;
       return block.rows
         .filter((r) => answer.value[r.id])
         .map((r) => {
-          const col = block.columns.find((c) => c.id === answer.value[r.id]);
-          return `${r.label}: ${col?.label ?? answer.value[r.id]}`;
+          const pick = answer.value[r.id] as string | string[];
+          return `${r.label}: ${Array.isArray(pick) ? pick.map(colLabel).join(", ") : colLabel(pick)}`;
         })
         .join("; ");
     }

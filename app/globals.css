@@ -29,6 +29,10 @@
     --info: #2f5fd3;
     --info-soft: #e8eefc;
     --foreground: var(--ink);
+    /* Inverse surface: a dark panel in both themes (CTA bands, featured cards). */
+    --inverse: #101012;
+    --inverse-ink: #f4f3ee;
+    --inverse-line: rgba(244, 243, 238, 0.14);
     color-scheme: light;
   }
 
@@ -53,6 +57,9 @@
     --info: #6f95f0;
     --info-soft: rgba(111, 149, 240, 0.14);
     --foreground: var(--ink);
+    --inverse: #1b1b1f;
+    --inverse-ink: #f4f3ee;
+    --inverse-line: rgba(244, 243, 238, 0.12);
     color-scheme: dark;
   }
 

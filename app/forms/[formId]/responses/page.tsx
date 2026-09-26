@@ -7,10 +7,18 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getAppContext } from "@/lib/app-context";
 import { getFormForOwner } from "@/lib/forms/actions";
 import { formSchemaV1 } from "@/lib/forms/schema";
-import { choiceDistribution, matrixDistribution, numericDistribution } from "@/lib/forms/distributions";
+import {
+  choiceDistribution,
+  matrixDistribution,
+  npsScore,
+  numericDistribution,
+  rankingDistribution,
+} from "@/lib/forms/distributions";
+import { scoreAnswers } from "@/lib/forms/quiz";
+import { recallLabels } from "@/lib/forms/recall";
 import { displayAnswer } from "@/lib/forms/answers";
 import { isAnswerable } from "@/lib/forms/logic";
-import type { AnswerValue, Block } from "@/types/forms";
+import type { AnswerValue, Block, FormSettings } from "@/types/forms";
 import { AppShell } from "@/components/app/AppShell";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
 import { FormSubnav } from "@/components/app/FormSubnav";
@@ -57,7 +65,7 @@ function Bars({ rows, max }: { rows: Array<{ label: string; count: number }>; ma
   );
 }
 
-async function Analytics({ formId, blocks }: { formId: string; blocks: Block[] | null }) {
+async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Block[] | null; quiz: boolean }) {
   const admin = getServiceSupabase();
   if (!admin) return null;
 
@@ -92,13 +100,78 @@ async function Analytics({ formId, blocks }: { formId: string; blocks: Block[] |
 
   const answerMaps = submissions.map((s) => s.answers);
   const sections: React.ReactNode[] = [];
+
+  if (quiz && blocks && answerMaps.length > 0) {
+    const results = answerMaps.map((a) => scoreAnswers({ blocks }, a));
+    const max = results[0]?.max ?? 0;
+    if (max > 0) {
+      const avg = results.reduce((s, r) => s + r.points, 0) / results.length;
+      const perQuestion = blocks
+        .filter((b) => results[0]?.perQuestion.some((q) => q.id === b.id))
+        .map((b) => ({
+          label: recallLabels(b.title, blocks),
+          count: results.filter((r) => r.perQuestion.find((q) => q.id === b.id)?.correct).length,
+        }));
+      sections.push(
+        <Card key="__quiz" className="md:col-span-2">
+          <p className="text-sm font-semibold">Quiz results</p>
+          <p className="mt-2 font-display text-3xl tracking-tight">
+            {Math.round(avg * 10) / 10} / {max}
+            <span className="ml-2 align-middle font-sans text-xs font-normal text-ink-faint">average score</span>
+          </p>
+          <p className="mt-4 text-xs font-medium text-ink-faint">Answered correctly</p>
+          <Bars rows={perQuestion} max={Math.max(1, results.length)} />
+        </Card>,
+      );
+    }
+  }
+
   for (const block of blocks ?? []) {
+    const nps = npsScore(block, answerMaps);
+    if (nps && nps.total > 0) {
+      sections.push(
+        <Card key={block.id}>
+          <p className="text-sm font-semibold">{recallLabels(block.title, blocks ?? [])}</p>
+          <p className="mt-2 font-display text-3xl tracking-tight">
+            {nps.score}
+            <span className="ml-2 align-middle font-sans text-xs font-normal text-ink-faint">NPS · {nps.total} answers</span>
+          </p>
+          <Bars
+            rows={[
+              { label: "Promoters (9–10)", count: nps.promoters },
+              { label: "Passives (7–8)", count: nps.passives },
+              { label: "Detractors (0–6)", count: nps.detractors },
+            ]}
+            max={Math.max(1, nps.total)}
+          />
+        </Card>,
+      );
+      continue;
+    }
+    const ranking = rankingDistribution(block, answerMaps);
+    if (ranking && ranking.total > 0) {
+      sections.push(
+        <Card key={block.id}>
+          <p className="text-sm font-semibold">{recallLabels(block.title, blocks ?? [])}</p>
+          <ol className="mt-3 space-y-2 text-sm">
+            {ranking.options.map((o, i) => (
+              <li key={o.id} className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-paper-deep text-xs font-semibold">{i + 1}</span>
+                <span className="flex-1 truncate">{o.label}</span>
+                <span className="text-xs tabular-nums text-ink-faint">avg. #{o.averagePosition}</span>
+              </li>
+            ))}
+          </ol>
+        </Card>,
+      );
+      continue;
+    }
     const choice = choiceDistribution(block, answerMaps);
     if (choice) {
       const max = Math.max(1, ...choice.map((c) => c.count));
       sections.push(
         <Card key={block.id}>
-          <p className="text-sm font-semibold">{block.title}</p>
+          <p className="text-sm font-semibold">{recallLabels(block.title, blocks ?? [])}</p>
           <Bars rows={choice.map((c) => ({ label: c.label, count: c.count }))} max={max} />
         </Card>,
       );
@@ -109,7 +182,7 @@ async function Analytics({ formId, blocks }: { formId: string; blocks: Block[] |
       const max = Math.max(1, ...numeric.counts.map((c) => c.count));
       sections.push(
         <Card key={block.id}>
-          <p className="text-sm font-semibold">{block.title}</p>
+          <p className="text-sm font-semibold">{recallLabels(block.title, blocks ?? [])}</p>
           <p className="mt-2 font-display text-3xl tracking-tight">
             {numeric.average}
             <span className="ml-2 align-middle font-sans text-xs font-normal text-ink-faint">average · {numeric.total} answers</span>
@@ -130,7 +203,7 @@ async function Analytics({ formId, blocks }: { formId: string; blocks: Block[] |
     if (matrix && matrix.rows.some((r) => r.total > 0)) {
       sections.push(
         <Card key={block.id} className="md:col-span-2">
-          <p className="text-sm font-semibold">{block.title}</p>
+          <p className="text-sm font-semibold">{recallLabels(block.title, blocks ?? [])}</p>
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -224,11 +297,15 @@ export default async function ResponsesPage({
   const { data: formRow } = await admin.from("forms").select("published_version_id").eq("id", form.id).single();
   const publishedId = (formRow as { published_version_id: string | null } | null)?.published_version_id;
   let blocks: Block[] | null = null;
+  let versionSettings: FormSettings = {};
   if (publishedId) {
-    const { data: version } = await admin.from("form_versions").select("schema").eq("id", publishedId).single();
-    const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
+    const { data: version } = await admin.from("form_versions").select("schema, settings").eq("id", publishedId).single();
+    const v = version as { schema: unknown; settings: FormSettings | null } | null;
+    const parsed = formSchemaV1.safeParse(v?.schema);
     if (parsed.success) blocks = parsed.data.blocks;
+    versionSettings = v?.settings ?? {};
   }
+  const quiz = Boolean(versionSettings.quizMode && blocks);
 
   let query = admin
     .from("submissions")
@@ -263,7 +340,7 @@ export default async function ResponsesPage({
         }
       />
 
-      <Analytics formId={form.id} blocks={blocks} />
+      <Analytics formId={form.id} blocks={blocks} quiz={quiz} />
 
       <form method="get" className="mt-8 flex flex-wrap items-end gap-2">
         <label className="text-xs font-semibold text-ink-soft">
@@ -318,6 +395,12 @@ export default async function ResponsesPage({
                   <p className="mt-1 text-xs text-ink-faint">
                     {formatDateTime(r.submitted_at)}
                     {r.source ? ` · via ${r.source}` : ""}
+                    {quiz && blocks
+                      ? (() => {
+                          const s = scoreAnswers({ blocks }, r.answers);
+                          return s.max > 0 ? ` · score ${s.points}/${s.max}` : "";
+                        })()
+                      : ""}
                   </p>
                 </Link>
               </li>

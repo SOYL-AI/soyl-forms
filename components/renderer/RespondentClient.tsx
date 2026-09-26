@@ -55,7 +55,9 @@ export function RespondentClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
-  async function submit(answers: Answers): Promise<{ ok: boolean; error?: string }> {
+  async function submit(
+    answers: Answers,
+  ): Promise<{ ok: boolean; error?: string; score?: { points: number; max: number } }> {
     const params = new URLSearchParams(window.location.search);
     const hidden: Record<string, string> = {};
     params.forEach((value, key) => {
@@ -85,7 +87,8 @@ export function RespondentClient({
       } catch {
         /* ignore */
       }
-      return { ok: true };
+      const data = (await res.json().catch(() => null)) as { score?: { points: number; max: number } } | null;
+      return { ok: true, score: data?.score };
     }
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
     return { ok: false, error: data?.error ?? "Couldn't save your response. Try again." };
@@ -93,16 +96,16 @@ export function RespondentClient({
 
   if (alreadyDone) {
     return (
-      <div className="rounded-2xl border border-line bg-paper p-8 text-center">
-        <h1 className="font-display text-2xl tracking-tight">You&apos;ve already responded</h1>
-        <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-ink-soft">
-          This form accepts one response per device. If that wasn&apos;t you, or you were
-          asked to answer again, you can continue.
+      <div className="text-center">
+        <h1 className="font-display text-3xl tracking-tight">You&apos;ve already responded</h1>
+        <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed opacity-70">
+          This form accepts one response per device.
         </p>
         <button
           type="button"
           onClick={() => setAlreadyDone(false)}
-          className="mt-5 rounded-full border border-line-strong px-5 py-2.5 text-sm font-semibold hover:border-ink/40"
+          className="mt-6 rounded-full border px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-80"
+          style={{ borderColor: "color-mix(in srgb, currentColor 30%, transparent)" }}
         >
           Respond again
         </button>

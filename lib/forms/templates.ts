@@ -487,6 +487,88 @@ export const TEMPLATES: FormTemplate[] = [
       logic: [],
     },
   },
+  {
+    id: "class-quiz",
+    name: "Class quiz",
+    category: "Education",
+    description: "A graded quiz with instant scores — correct answers stay hidden from students.",
+    minutes: 3,
+    popular: true,
+    theme: preset("ocean"),
+    settings: { quizMode: true, showScore: true, autoAdvance: false },
+    schema: {
+      schemaVersion: 1,
+      title: "Science quiz",
+      blocks: [
+        { id: "t_quiz_welcome", type: "welcome", title: "Quick science quiz", description: "Five questions. Your score appears at the end.", buttonLabel: "Begin" },
+        { id: "t_quiz_name", type: "short_text", title: "What's your name?", required: true, placeholder: "Full name" },
+        {
+          id: "t_quiz_planet", type: "single_choice", title: "Good luck, {{t_quiz_name}}! Which planet is closest to the Sun?", required: true,
+          options: [
+            { id: "t_quiz_planet_mercury", label: "Mercury" },
+            { id: "t_quiz_planet_venus", label: "Venus" },
+            { id: "t_quiz_planet_mars", label: "Mars" },
+            { id: "t_quiz_planet_earth", label: "Earth" },
+          ],
+          quiz: { correct: ["t_quiz_planet_mercury"], points: 1 },
+        },
+        {
+          id: "t_quiz_gases", type: "multiple_choice", title: "Which of these are noble gases?", description: "Pick all that apply.", required: true,
+          options: [
+            { id: "t_quiz_gas_helium", label: "Helium" },
+            { id: "t_quiz_gas_oxygen", label: "Oxygen" },
+            { id: "t_quiz_gas_neon", label: "Neon" },
+            { id: "t_quiz_gas_nitrogen", label: "Nitrogen" },
+          ],
+          quiz: { correct: ["t_quiz_gas_helium", "t_quiz_gas_neon"], points: 2 },
+        },
+        { id: "t_quiz_water", type: "yes_no", title: "Does water boil at 100 °C at sea level?", required: true, quiz: { correct: ["yes"], points: 1 } },
+        { id: "t_quiz_symbol", type: "short_text", title: "What is the chemical symbol for gold?", required: true, placeholder: "Two letters", quiz: { correct: ["Au"], points: 1 } },
+        { id: "t_quiz_thanks", type: "thank_you", title: "Well done, {{t_quiz_name}}!", description: "Your answers have been submitted." },
+      ],
+      logic: [],
+    },
+  },
+  {
+    id: "team-availability",
+    name: "Team availability",
+    category: "Operations",
+    description: "Collect shift availability in a checkbox grid and rank preferred roles.",
+    minutes: 2,
+    theme: preset("slate"),
+    schema: {
+      schemaVersion: 1,
+      title: "Availability",
+      blocks: [
+        { id: "t_avail_name", type: "short_text", title: "Your name", required: true },
+        {
+          id: "t_avail_grid", type: "matrix", title: "When can you work next week?", description: "Tick every slot that works.", required: true, multiple: true,
+          rows: [
+            { id: "t_avail_mon", label: "Monday" },
+            { id: "t_avail_tue", label: "Tuesday" },
+            { id: "t_avail_wed", label: "Wednesday" },
+            { id: "t_avail_thu", label: "Thursday" },
+            { id: "t_avail_fri", label: "Friday" },
+          ],
+          columns: [
+            { id: "t_avail_am", label: "Morning" },
+            { id: "t_avail_pm", label: "Afternoon" },
+            { id: "t_avail_eve", label: "Evening" },
+          ],
+        },
+        {
+          id: "t_avail_roles", type: "ranking", title: "Rank the roles you'd like, {{t_avail_name}}", required: true,
+          options: [
+            { id: "t_avail_role_front", label: "Front desk" },
+            { id: "t_avail_role_kitchen", label: "Kitchen" },
+            { id: "t_avail_role_delivery", label: "Delivery" },
+          ],
+        },
+        { id: "t_avail_thanks", type: "thank_you", title: "Thanks — the rota goes out on Friday." },
+      ],
+      logic: [],
+    },
+  },
 ];
 
 export const TEMPLATE_CATEGORIES: TemplateCategory[] = [

@@ -1,14 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowDown, ArrowUp, Copy, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Trash2, X } from "lucide-react";
 import type { Block, ChoiceOption, LogicRule } from "@/types/forms";
 import { BLOCK_TYPE_LABELS } from "@/lib/forms/builder";
 import { isAnswerable } from "@/lib/forms/logic";
+import { hasRecall, recallLabels, recallToken } from "@/lib/forms/recall";
+import { isGradable } from "@/lib/forms/quiz";
 import { BLOCK_ICONS } from "@/lib/forms/blockIcons";
 import { Field, Input, Select, Switch, Textarea } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { AssetUpload } from "./AssetUpload";
+import { AssetUpload, uploadOwnerAsset } from "./AssetUpload";
 import { LogicEditor } from "./LogicEditor";
 
 const FILE_TYPES: Array<{ mime: string; label: string }> = [
@@ -29,13 +31,30 @@ function OptionList({
   min,
   onChange,
   idPrefix,
+  imageFormId,
 }: {
   label: string;
   options: ChoiceOption[];
   min: number;
   onChange: (next: ChoiceOption[]) => void;
   idPrefix: string;
+  /** Enables picture choice: an image slot per option. */
+  imageFormId?: string;
 }) {
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  async function setImage(optId: string, file: File | undefined) {
+    if (!file) return;
+    setUploading(optId);
+    setImageError(null);
+    const res = await uploadOwnerAsset(file, "question_media", { formId: imageFormId });
+    setUploading(null);
+    if (!res.ok || !res.publicUrl) {
+      setImageError(res.ok ? "Image uploaded but has no public link." : res.error);
+      return;
+    }
+    onChange(options.map((o) => (o.id === optId ? { ...o, imageUrl: res.publicUrl as string } : o)));
+  }
   function move(i: number, dir: -1 | 1) {
     const j = i + dir;
     if (j < 0 || j >= options.length) return;
@@ -51,6 +70,28 @@ function OptionList({
       <ul className="flex flex-col gap-1.5">
         {options.map((opt, i) => (
           <li key={opt.id} className="flex items-center gap-1">
+            {imageFormId !== undefined && (
+              <label
+                className="relative flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-lg border border-line-strong text-ink-faint hover:border-ink/40"
+                title={opt.imageUrl ? "Replace image" : "Add image"}
+              >
+                {uploading === opt.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : opt.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={opt.imageUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <ImagePlus className="h-3.5 w-3.5" />
+                )}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="sr-only"
+                  aria-label={`Image for ${opt.label || `option ${i + 1}`}`}
+                  onChange={(e) => void setImage(opt.id, e.target.files?.[0])}
+                />
+              </label>
+            )}
             <Input
               value={opt.label}
               aria-label={`${label} ${i + 1}`}
@@ -88,15 +129,93 @@ function OptionList({
           </li>
         ))}
       </ul>
-      <button
-        type="button"
-        onClick={() =>
-          onChange([...options, { id: `${idPrefix}_${Date.now().toString(36)}`, label: `Option ${options.length + 1}` }])
-        }
-        className="mt-2 text-xs font-semibold text-ink underline underline-offset-2"
-      >
-        + Add
-      </button>
+      <div className="mt-2 flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            onChange([...options, { id: `${idPrefix}_${Date.now().toString(36)}`, label: `Option ${options.length + 1}` }])
+          }
+          className="text-xs font-semibold text-ink underline underline-offset-2"
+        >
+          + Add
+        </button>
+        {imageFormId !== undefined && options.some((o) => o.imageUrl) && (
+          <button
+            type="button"
+            onClick={() => onChange(options.map(({ imageUrl: _img, ...o }) => o))}
+            className="text-xs text-ink-soft hover:text-ink"
+          >
+            Remove images
+          </button>
+        )}
+      </div>
+      {imageError && <p className="mt-1.5 text-xs text-danger">{imageError}</p>}
+    </div>
+  );
+}
+
+/** Quiz answer key for one gradable question. */
+function QuizKeyEditor({ block, onPatch }: { block: Block; onPatch: (patch: Record<string, unknown>) => void }) {
+  const key = block.quiz ?? { correct: [] };
+  const setKey = (next: { correct: string[]; points?: number }) =>
+    onPatch({ quiz: next.correct.length > 0 || next.points !== undefined ? next : undefined });
+  const choices: ChoiceOption[] =
+    block.type === "yes_no"
+      ? [
+          { id: "yes", label: "Yes" },
+          { id: "no", label: "No" },
+        ]
+      : "options" in block
+        ? block.options
+        : [];
+  const multi = block.type === "multiple_choice";
+  return (
+    <div className="flex flex-col gap-3 rounded-2xl border border-line bg-paper-deep/40 p-3.5">
+      <p className="text-xs font-semibold text-ink">Answer key</p>
+      {block.type === "short_text" ? (
+        <Field label="Accepted answers" hint="Comma separated. Not case-sensitive.">
+          <Input
+            value={key.correct.join(", ")}
+            onChange={(e) =>
+              setKey({ ...key, correct: e.target.value.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 20) })
+            }
+            placeholder="Paris, paris france"
+          />
+        </Field>
+      ) : (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Correct answer">
+          {choices.map((o) => {
+            const on = key.correct.includes(o.id);
+            return (
+              <button
+                key={o.id}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  setKey({
+                    ...key,
+                    correct: multi ? (on ? key.correct.filter((c) => c !== o.id) : [...key.correct, o.id]) : on ? [] : [o.id],
+                  })
+                }
+                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${on ? "border-positive bg-positive-soft text-positive" : "border-line-strong text-ink-soft"}`}
+              >
+                {on ? "✓ " : ""}
+                {o.label || "Untitled"}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <Field label="Points">
+        <Input
+          type="number"
+          min={0}
+          max={100}
+          value={key.points ?? 1}
+          onChange={(e) => setKey({ ...key, points: e.target.value === "" ? undefined : Number(e.target.value) })}
+          className="w-24"
+        />
+      </Field>
     </div>
   );
 }
@@ -110,7 +229,9 @@ export function SettingsPanel({
   onRulesChange,
   onDuplicate,
   onDelete,
+  quizMode,
 }: {
+  quizMode?: boolean;
   block: Block | undefined;
   blocks: Block[];
   /** Rules originating from this block. */
@@ -162,6 +283,33 @@ export function SettingsPanel({
           }}
         />
       </Field>
+      {(() => {
+        const earlier = blocks.slice(0, Math.max(0, blocks.findIndex((b) => b.id === block.id))).filter((b) => isAnswerable(b.type));
+        if (earlier.length === 0) return null;
+        return (
+          <div className="-mt-2 flex flex-col gap-1.5">
+            <Select
+              aria-label="Insert an earlier answer"
+              value=""
+              onChange={(e) => {
+                if (!e.target.value) return;
+                onPatch({ title: `${block.title.trimEnd()} ${recallToken(e.target.value)}`.slice(0, 500) });
+              }}
+              className="!py-1.5 text-xs"
+            >
+              <option value="">Insert an earlier answer…</option>
+              {earlier.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.title.length > 48 ? `${b.title.slice(0, 47)}…` : b.title}
+                </option>
+              ))}
+            </Select>
+            {hasRecall(block.title) && (
+              <p className="text-xs text-ink-faint">Shows as: {recallLabels(block.title, blocks)}</p>
+            )}
+          </div>
+        );
+      })()}
 
       <Field label="Description" hint="Optional. Line breaks are kept.">
         <Textarea
@@ -256,6 +404,7 @@ export function SettingsPanel({
             min={2}
             idPrefix={`${block.id}_o`}
             onChange={(options) => onPatch({ options })}
+            imageFormId={block.type === "dropdown" ? undefined : formId}
           />
           <Switch
             checked={block.allowOther ?? false}
@@ -298,8 +447,31 @@ export function SettingsPanel({
         <>
           <OptionList label="Rows" options={block.rows} min={1} idPrefix={`${block.id}_r`} onChange={(rows) => onPatch({ rows })} />
           <OptionList label="Columns" options={block.columns} min={2} idPrefix={`${block.id}_c`} onChange={(columns) => onPatch({ columns })} />
+          <Switch
+            checked={block.multiple ?? false}
+            onChange={(v) => onPatch({ multiple: v || undefined })}
+            label="Several answers per row"
+            description="Checkboxes instead of one choice per row."
+          />
         </>
       )}
+
+      {block.type === "ranking" && (
+        <OptionList label="Options to rank" options={block.options} min={2} idPrefix={`${block.id}_o`} onChange={(options) => onPatch({ options })} />
+      )}
+
+      {block.type === "nps" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="0 label">
+            <Input value={block.minLabel ?? ""} placeholder="Not likely" onChange={(e) => onPatch({ minLabel: e.target.value || undefined })} maxLength={100} />
+          </Field>
+          <Field label="10 label">
+            <Input value={block.maxLabel ?? ""} placeholder="Very likely" onChange={(e) => onPatch({ maxLabel: e.target.value || undefined })} maxLength={100} />
+          </Field>
+        </div>
+      )}
+
+      {quizMode && isGradable(block.type) && <QuizKeyEditor block={block} onPatch={onPatch} />}
 
       {block.type === "rating" && (
         <div className="grid grid-cols-2 gap-2">

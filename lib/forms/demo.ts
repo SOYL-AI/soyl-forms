@@ -9,7 +9,7 @@ export const demoForm: FormSchemaV1 = {
       id: "blk_welcome",
       type: "welcome",
       title: "Help us shape something people love answering",
-      description: "Five quick questions · about a minute · no account needed",
+      description: "About a minute · no account needed",
       buttonLabel: "Start",
     },
     {
@@ -24,7 +24,7 @@ export const demoForm: FormSchemaV1 = {
     {
       id: "q_role",
       type: "single_choice",
-      title: "What best describes you?",
+      title: "Nice to meet you, {{q_name}}. What best describes you?",
       required: true,
       options: [
         { id: "opt_founder", label: "Founder" },
@@ -55,9 +55,22 @@ export const demoForm: FormSchemaV1 = {
       ],
     },
     {
+      id: "q_rank",
+      type: "ranking",
+      title: "What matters most in a form builder?",
+      description: "Move your top pick to the top.",
+      required: true,
+      options: [
+        { id: "opt_design", label: "Beautiful design" },
+        { id: "opt_price", label: "Fair pricing" },
+        { id: "opt_ai", label: "AI that builds it for me" },
+        { id: "opt_data", label: "Clear results" },
+      ],
+    },
+    {
       id: "q_recommend",
-      type: "yes_no",
-      title: "Would you recommend a form like this to a friend?",
+      type: "nps",
+      title: "How likely are you to recommend a form like this to a friend?",
       required: true,
     },
     {
@@ -80,7 +93,7 @@ export const demoForm: FormSchemaV1 = {
     {
       id: "blk_thanks",
       type: "thank_you",
-      title: "Thanks — that's everything.",
+      title: "Thanks, {{q_name}} — that's everything.",
       description: "This is a demo, so nothing was stored. The real thing saves every response.",
     },
   ],

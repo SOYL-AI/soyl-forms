@@ -1,4 +1,6 @@
 import type { ReactNode } from "react";
+import { ArrowRight } from "lucide-react";
+import { ButtonLink } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export function Section({
@@ -17,7 +19,7 @@ export function Section({
       id={id}
       className={cn(
         tone === "paper" && "border-y border-line bg-paper",
-        tone === "ink" && "bg-ink text-paper",
+        tone === "ink" && "bg-inverse text-inverse-ink",
         className,
       )}
     >
@@ -42,15 +44,37 @@ export function SectionHeading({
   return (
     <div className={cn("max-w-2xl", align === "center" && "mx-auto text-center")}>
       {eyebrow ? (
-        <p className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", invert ? "text-paper/60" : "text-ink-faint")}>
+        <p className={cn("text-[11px] font-semibold uppercase tracking-[0.16em]", invert ? "text-inverse-ink/60" : "text-ink-faint")}>
           {eyebrow}
         </p>
       ) : null}
       <h2 className="mt-2 font-display text-[2rem] leading-[1.08] tracking-tight sm:text-[2.6rem]">{title}</h2>
       {lede ? (
-        <p className={cn("mt-4 text-lg leading-relaxed", invert ? "text-paper/70" : "text-ink-soft")}>{lede}</p>
+        <p className={cn("mt-4 text-lg leading-relaxed", invert ? "text-inverse-ink/70" : "text-ink-soft")}>{lede}</p>
       ) : null}
     </div>
+  );
+}
+
+/** Closing call to action on a dark band (dark in both site themes). */
+export function CtaBand({ title = "Your next form takes five minutes." }: { title?: ReactNode }) {
+  return (
+    <section className="px-5 pb-20 sm:px-6 sm:pb-24">
+      <div className="relative mx-auto max-w-page overflow-hidden rounded-[2rem] bg-inverse px-6 py-16 text-center text-inverse-ink ring-1 ring-inverse-line sm:py-24">
+        <div className="pointer-events-none absolute -right-40 -top-40 h-[640px] w-[640px] text-inverse-ink/[0.07]">
+          <RadialLines className="inset-0 h-full w-full" />
+        </div>
+        <h2 className="relative mx-auto max-w-2xl font-display text-[2.25rem] leading-[1.05] tracking-tight sm:text-[3.2rem]">{title}</h2>
+        <div className="relative mt-9 flex flex-wrap justify-center gap-3">
+          <ButtonLink href="/signup" variant="accent" size="lg">
+            Start free <ArrowRight className="h-4 w-4" />
+          </ButtonLink>
+          <ButtonLink href="/templates" variant="ghost" size="lg" className="text-inverse-ink/80 hover:bg-inverse-ink/10 hover:text-inverse-ink">
+            Browse templates
+          </ButtonLink>
+        </div>
+      </div>
+    </section>
   );
 }
 

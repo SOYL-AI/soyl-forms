@@ -6,6 +6,7 @@ import { SiteHeader } from "@/components/marketing/site-header";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { UseTemplateButton } from "@/components/marketing/UseTemplateButton";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
+import { recallLabels } from "@/lib/forms/recall";
 import { AppShell } from "@/components/app/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { getAppContext } from "@/lib/app-context";
@@ -78,7 +79,7 @@ export default async function TemplatePage({
                 <li key={b.id} className="flex items-center gap-3 px-4 py-3 text-sm">
                   <span className="w-5 text-right text-xs tabular-nums text-ink-faint">{i + 1}</span>
                   <Icon className="h-4 w-4 shrink-0 text-ink-faint" />
-                  <span className="min-w-0 flex-1 truncate">{b.title}</span>
+                  <span className="min-w-0 flex-1 truncate">{recallLabels(b.title, template.schema.blocks)}</span>
                   <span className="shrink-0 text-xs text-ink-faint">{BLOCK_TYPE_LABELS[b.type]}</span>
                 </li>
               );

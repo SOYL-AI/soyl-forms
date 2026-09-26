@@ -12,6 +12,21 @@ export interface NumericStat {
   counts: Array<{ value: number; count: number }>;
 }
 
+export interface NpsStat {
+  /** −100 … 100, or null with no answers. */
+  score: number | null;
+  promoters: number;
+  passives: number;
+  detractors: number;
+  total: number;
+}
+
+export interface RankingStat {
+  /** Options sorted best-first by average position (1 = top). */
+  options: Array<{ id: string; label: string; averagePosition: number | null }>;
+  total: number;
+}
+
 export interface MatrixStat {
   columns: Array<{ id: string; label: string }>;
   rows: Array<{ id: string; label: string; counts: number[]; total: number }>;
@@ -81,7 +96,8 @@ export function numericDistribution(
   if (
     block.type !== "rating" &&
     block.type !== "opinion_scale" &&
-    block.type !== "number"
+    block.type !== "number" &&
+    block.type !== "nps"
   ) {
     return null;
   }
@@ -90,7 +106,7 @@ export function numericDistribution(
     const v = a[block.id];
     if (
       v &&
-      (v.type === "rating" || v.type === "opinion_scale" || v.type === "number") &&
+      (v.type === "rating" || v.type === "opinion_scale" || v.type === "number" || v.type === "nps") &&
       typeof v.value === "number"
     ) {
       values.push(v.value);
@@ -127,14 +143,63 @@ export function matrixDistribution(
   for (const a of answers) {
     const v = a[block.id];
     if (!v || v.type !== "matrix") continue;
-    for (const [rowId, colId] of Object.entries(v.value)) {
+    for (const [rowId, pick] of Object.entries(v.value)) {
       const ri = rowIndex.get(rowId);
-      const ci = colIndex.get(colId);
-      if (ri === undefined || ci === undefined) continue;
+      if (ri === undefined) continue;
       const row = rows[ri] as (typeof rows)[number];
-      row.counts[ci] = (row.counts[ci] ?? 0) + 1;
-      row.total += 1;
+      for (const colId of Array.isArray(pick) ? pick : [pick]) {
+        const ci = colIndex.get(colId);
+        if (ci === undefined) continue;
+        row.counts[ci] = (row.counts[ci] ?? 0) + 1;
+        row.total += 1;
+      }
     }
   }
   return { columns: block.columns.map((c) => ({ id: c.id, label: c.label })), rows };
+}
+
+/** NPS = % promoters (9–10) − % detractors (0–6), rounded to a whole number. */
+export function npsScore(block: Block, answers: Array<Record<string, AnswerValue>>): NpsStat | null {
+  if (block.type !== "nps") return null;
+  let promoters = 0;
+  let passives = 0;
+  let detractors = 0;
+  for (const a of answers) {
+    const v = a[block.id];
+    if (!v || v.type !== "nps") continue;
+    if (v.value >= 9) promoters += 1;
+    else if (v.value >= 7) passives += 1;
+    else detractors += 1;
+  }
+  const total = promoters + passives + detractors;
+  return {
+    score: total > 0 ? Math.round(((promoters - detractors) / total) * 100) : null,
+    promoters,
+    passives,
+    detractors,
+    total,
+  };
+}
+
+/** Average rank per option (1 = ranked first), best first. */
+export function rankingDistribution(block: Block, answers: Array<Record<string, AnswerValue>>): RankingStat | null {
+  if (block.type !== "ranking") return null;
+  const sums = new Map(block.options.map((o) => [o.id, 0]));
+  let total = 0;
+  for (const a of answers) {
+    const v = a[block.id];
+    if (!v || v.type !== "ranking") continue;
+    total += 1;
+    v.value.forEach((id, i) => {
+      if (sums.has(id)) sums.set(id, (sums.get(id) ?? 0) + i + 1);
+    });
+  }
+  const options = block.options
+    .map((o) => ({
+      id: o.id,
+      label: o.label,
+      averagePosition: total > 0 ? Math.round(((sums.get(o.id) ?? 0) / total) * 10) / 10 : null,
+    }))
+    .sort((x, y) => (x.averagePosition ?? 99) - (y.averagePosition ?? 99));
+  return { options, total };
 }

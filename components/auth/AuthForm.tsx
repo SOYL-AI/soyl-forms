@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Loader2, Mail } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { PLANS, isPlanCode } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
@@ -167,7 +167,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
           </p>
         )}
         <Button type="submit" variant="accent" size="lg" disabled={busy !== null || !configured}>
-          {busy === "email" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+          {busy === "email" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {busy === "email" ? (mode === "login" ? "Logging in…" : "Creating account…") : mode === "login" ? "Log in" : "Create free account"}
         </Button>
       </form>

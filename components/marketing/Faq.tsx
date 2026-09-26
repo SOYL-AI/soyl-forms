@@ -8,27 +8,27 @@ export interface FaqItem {
 export const HOME_FAQS: FaqItem[] = [
   {
     q: "How is this different from a Google Form?",
-    a: "Respondents see one focused question at a time with keyboard-first navigation instead of a long scrolling page, which is why more people finish. You also get branching logic, brand-matched design, QR codes, webhooks, and an AI that drafts the whole form from a description.",
+    a: "One question at a time instead of a long scrolling page, so more people finish. Plus branching, your branding, QR codes, webhooks and AI drafting.",
   },
   {
     q: "What does “brand-aware AI” actually do?",
-    a: "You upload a logo, a brand-guidelines PDF, or paste your website once. We extract your colours, typography and tone of voice into a brand kit. From then on, describe a form in a sentence and the draft arrives already styled — right palette, right fonts, questions written in your voice — for you to review and publish.",
+    a: "Add your logo, guidelines PDF or website once. Every form you describe then arrives in your colours, fonts and tone, ready to review.",
   },
   {
     q: "What does the free plan include?",
-    a: "2 live forms, 250 responses a month, every question type, branching logic, QR codes, embeds, CSV export, 8 theme presets and 10 AI credits a month. No card needed. Custom colours and your logo publish on Starter.",
+    a: "2 live forms, 250 responses a month, every question type, logic, QR codes, embeds, CSV export and 10 AI credits a month. No card needed.",
   },
   {
     q: "How do respondents open my form?",
-    a: "Every published form gets a short link, an embed snippet, and a downloadable QR code (PNG and SVG) — on every plan. Scans are tagged so you can see how many responses came from print.",
+    a: "By short link, embed or QR code — on every plan.",
   },
   {
     q: "How does billing work?",
-    a: "Paid plans run on Razorpay subscriptions in INR — UPI, cards and netbanking — billed monthly or yearly. Cancel anytime; downgrading never deletes forms, responses or files, it only changes your limits.",
+    a: "Monthly or yearly in INR through Razorpay — UPI, cards or netbanking. Cancel anytime; your data stays.",
   },
   {
     q: "Is my respondents’ data safe?",
-    a: "Responses are stored in a Postgres database with row-level security scoped to your workspace. File uploads live in a private bucket and are only ever served through short-lived, owner-authorised links. Public submissions go through a rate-limited server endpoint — never straight to the database.",
+    a: "Yes. Responses are private to your workspace, uploads are served only through expiring links, and submissions are rate-limited.",
   },
 ];
 

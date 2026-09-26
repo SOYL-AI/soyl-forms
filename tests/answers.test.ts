@@ -7,7 +7,8 @@ const good = {
   q_role: { type: "single_choice", value: "opt_student" },
   q_college: { type: "short_text", value: "IIT" },
   q_topics: { type: "multiple_choice", value: ["opt_pricing", "opt_mobile"] },
-  q_recommend: { type: "yes_no", value: "yes" },
+  q_rank: { type: "ranking", value: ["opt_ai", "opt_design", "opt_price", "opt_data"] },
+  q_recommend: { type: "nps", value: 9 },
   q_rating: { type: "rating", value: 5 },
   q_notes: { type: "long_text", value: "Lovely." },
 };
