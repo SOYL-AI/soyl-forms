@@ -22,7 +22,7 @@ function planHref(code: PlanCode, interval: BillingInterval): string {
 }
 
 const HIGHLIGHTS: Record<PlanCode, string[]> = {
-  free: ["2 live forms", "250 responses / month", "All 20 question types & logic", "QR code, embed, CSV export", "8 theme presets", "10 AI credits / month"],
+  free: ["2 live forms", "250 responses / month", "Every question type & logic", "QR code, embed, CSV export", "8 theme presets", "10 AI credits / month"],
   starter: ["15 live forms", "5,000 responses / month", "Custom colours, fonts & logo", "Brand kits (3) for AI drafts", "Remove SOYL branding", "Email notifications", "40 AI credits / month"],
   pro: ["100 live forms", "25,000 responses / month", "Everything in Starter", "10 brand kits", "Advanced analytics", "20 webhooks per form", "150 AI credits / month"],
 };
@@ -54,7 +54,7 @@ export function PricingTable({ compact }: { compact?: boolean }) {
               aria-label={`${plan.name} plan`}
               className={cn(
                 "relative flex flex-col rounded-3xl border p-6 sm:p-7",
-                featured ? "border-ink bg-ink text-paper shadow-pop" : "border-line bg-paper",
+                featured ? "border-inverse bg-inverse text-inverse-ink shadow-pop ring-1 ring-accent/40" : "border-line bg-paper",
               )}
             >
               {featured && (
@@ -63,21 +63,21 @@ export function PricingTable({ compact }: { compact?: boolean }) {
                 </span>
               )}
               <p className="font-display text-lg font-semibold">{plan.name}</p>
-              <p className={cn("mt-1 text-sm", featured ? "text-paper/70" : "text-ink-soft")}>{plan.audience}</p>
+              <p className={cn("mt-1 text-sm", featured ? "text-inverse-ink/70" : "text-ink-soft")}>{plan.audience}</p>
               <p className="mt-5 flex items-baseline gap-1">
                 <span className="font-display text-[2.75rem] leading-none tracking-tight">{formatINR(price)}</span>
-                <span className={cn("text-sm", featured ? "text-paper/70" : "text-ink-faint")}>
+                <span className={cn("text-sm", featured ? "text-inverse-ink/70" : "text-ink-faint")}>
                   {plan.monthlyPaise === 0 ? "forever" : "/ month"}
                 </span>
               </p>
               {plan.monthlyPaise > 0 && (
-                <p className={cn("mt-1 text-xs", featured ? "text-paper/60" : "text-ink-faint")}>
+                <p className={cn("mt-1 text-xs", featured ? "text-inverse-ink/60" : "text-ink-faint")}>
                   {interval === "yearly"
                     ? `${formatINR(plan.yearlyPaise)} billed yearly`
                     : `or ${formatINR(yearlyPerMonthPaise(plan))}/mo billed yearly`}
                 </p>
               )}
-              <ul className={cn("mt-6 flex-1 space-y-2.5 text-sm", featured ? "text-paper/85" : "text-ink-soft")}>
+              <ul className={cn("mt-6 flex-1 space-y-2.5 text-sm", featured ? "text-inverse-ink/85" : "text-ink-soft")}>
                 {HIGHLIGHTS[code].slice(0, compact ? 4 : undefined).map((line) => (
                   <li key={line} className="flex items-start gap-2.5">
                     <Check className={cn("mt-0.5 h-4 w-4 shrink-0", featured ? "text-accent" : "text-positive")} />
@@ -93,20 +93,15 @@ export function PricingTable({ compact }: { compact?: boolean }) {
               >
                 {plan.monthlyPaise === 0 ? "Start free" : `Start with ${plan.name}`}
               </ButtonLink>
-              {plan.monthlyPaise > 0 && (
-                <p className={cn("mt-2 text-center text-[11px]", featured ? "text-paper/50" : "text-ink-faint")}>
-                  Razorpay · UPI, cards, netbanking · cancel anytime
-                </p>
-              )}
             </section>
           );
         })}
       </div>
 
       {compact ? (
-        <p className="mt-6 text-center text-sm text-ink-soft">
-          <Link href="/pricing" className="font-semibold text-ink underline underline-offset-2">
-            Compare every limit and feature →
+        <p className="mt-8 text-center text-sm">
+          <Link href="/pricing" className="font-semibold text-ink hover:underline hover:underline-offset-4">
+            Compare plans →
           </Link>
         </p>
       ) : (
@@ -122,7 +117,7 @@ function ComparisonTable({ interval }: { interval: BillingInterval }) {
     { label: "Live (published) forms", values: PLAN_ORDER.map((c) => String(e(c).maxActiveForms)) },
     { label: "Responses per month", values: PLAN_ORDER.map((c) => e(c).monthlySubmissions.toLocaleString("en-IN")) },
     { label: "File upload storage", values: PLAN_ORDER.map((c) => formatBytes(e(c).storageBytes)) },
-    { label: "Question types (incl. grid, consent, files)", values: [true, true, true] },
+    { label: "Every question type", values: [true, true, true] },
     { label: "Branching logic", values: [true, true, true] },
     { label: "QR code, embed, CSV export", values: [true, true, true] },
     { label: "Theme presets", values: [true, true, true] },
@@ -137,10 +132,7 @@ function ComparisonTable({ interval }: { interval: BillingInterval }) {
   ];
   return (
     <div className="mt-16">
-      <h3 className="font-display text-2xl tracking-tight">Every limit, side by side</h3>
-      <p className="mt-2 text-sm text-ink-soft">
-        Limits are enforced on the server. We warn you at 80% and 95%; at 100% new responses pause with your closed message — nothing is silently overcharged.
-      </p>
+      <h3 className="font-display text-2xl tracking-tight">Compare plans</h3>
       <div className="mt-6 overflow-x-auto rounded-2xl border border-line bg-paper">
         <table className="w-full min-w-[640px] text-sm">
           <thead>
@@ -187,7 +179,7 @@ function ComparisonTable({ interval }: { interval: BillingInterval }) {
         <div>
           <h3 className="font-display text-2xl tracking-tight">AI credits</h3>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            Every plan includes monthly credits. A form draft costs 1 credit; a brand extraction (reading your PDF or website) costs 2. Need more? Buy a pack — credits never expire.
+            1 credit per AI draft, 2 per brand extraction. Packs never expire.
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">

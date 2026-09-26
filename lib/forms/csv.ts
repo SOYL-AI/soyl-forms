@@ -1,6 +1,7 @@
 import type { AnswerValue, Block } from "@/types/forms";
 import { displayAnswer } from "./answers";
 import { isAnswerable } from "./logic";
+import { recallLabels } from "./recall";
 
 export interface CsvRow {
   id: string;
@@ -33,17 +34,19 @@ export function submissionsToCsv(blocks: Block[], rows: CsvRow[]): string {
   for (const b of answerable) {
     if (b.type === "matrix") {
       for (const row of b.rows) {
-        headers.push(uniqueTitle(`${b.title} — ${row.label}`));
+        headers.push(uniqueTitle(`${recallLabels(b.title, blocks)} — ${row.label}`));
         columns.push((answers) => {
           const a = answers[b.id];
           if (!a || a.type !== "matrix") return "";
-          const colId = a.value[row.id];
-          return colId ? (b.columns.find((c) => c.id === colId)?.label ?? colId) : "";
+          const pick = a.value[row.id];
+          const label = (id: string) => b.columns.find((c) => c.id === id)?.label ?? id;
+          if (!pick) return "";
+          return Array.isArray(pick) ? pick.map(label).join("; ") : label(pick);
         });
       }
       continue;
     }
-    headers.push(uniqueTitle(b.title));
+    headers.push(uniqueTitle(recallLabels(b.title, blocks)));
     columns.push((answers) => displayAnswer(b, answers[b.id]));
   }
 

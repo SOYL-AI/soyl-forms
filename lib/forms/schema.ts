@@ -25,6 +25,11 @@ const safeUrl = z
     { message: "Use an https URL." },
   );
 
+const quizKey = z.object({
+  correct: z.array(z.string().min(1).max(200)).max(50),
+  points: z.number().int().min(0).max(100).optional(),
+});
+
 const baseBlock = {
   id: blockId,
   title: z.string().min(1).max(500),
@@ -32,6 +37,7 @@ const baseBlock = {
   required: z.boolean().optional(),
   imageUrl: safeUrl.optional(),
   imageAlt: z.string().max(200).optional(),
+  quiz: quizKey.optional(),
 };
 
 const welcomeBlock = z.object({
@@ -69,6 +75,7 @@ const numberBlock = z.object({
 const choiceOption = z.object({
   id: blockId,
   label: z.string().min(1).max(200),
+  imageUrl: safeUrl.optional(),
 });
 
 const choiceBlock = (type: "single_choice" | "multiple_choice" | "dropdown") =>
@@ -108,6 +115,20 @@ const matrixBlock = z.object({
   type: z.literal("matrix"),
   rows: z.array(choiceOption).min(1).max(20),
   columns: z.array(choiceOption).min(2).max(10),
+  multiple: z.boolean().optional(),
+});
+
+const rankingBlock = z.object({
+  ...baseBlock,
+  type: z.literal("ranking"),
+  options: z.array(choiceOption).min(2).max(20),
+});
+
+const npsBlock = z.object({
+  ...baseBlock,
+  type: z.literal("nps"),
+  minLabel: z.string().max(100).optional(),
+  maxLabel: z.string().max(100).optional(),
 });
 
 const legalBlock = z.object({
@@ -156,6 +177,8 @@ export const blockSchema = z.discriminatedUnion("type", [
   dateBlock,
   timeBlock,
   matrixBlock,
+  rankingBlock,
+  npsBlock,
   legalBlock,
   fileUploadBlock,
   statementBlock,
@@ -237,6 +260,8 @@ export const formSettingsSchema = z.object({
   buttonLabelSubmit: z.string().max(30).optional(),
   redirectUrl: httpsUrl.nullable().optional(),
   notifyEmails: z.array(z.string().email().max(200)).max(5).optional(),
+  quizMode: z.boolean().optional(),
+  showScore: z.boolean().optional(),
 });
 
 /**
@@ -252,7 +277,8 @@ export function validateLogicGraph(schema: FormSchemaV1Input): string[] {
     if (
       (block.type === "single_choice" ||
         block.type === "multiple_choice" ||
-        block.type === "dropdown") &&
+        block.type === "dropdown" ||
+        block.type === "ranking") &&
       new Set(block.options.map((o) => o.id)).size !== block.options.length
     ) {
       errors.push(`Block "${block.id}" has duplicate option ids.`);

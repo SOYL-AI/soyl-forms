@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { validateAnswers } from "@/lib/forms/answers";
+import { scoreAnswers } from "@/lib/forms/quiz";
 import { PLANS } from "@/lib/plans";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { clientIp, formAcceptance, resolvePublicForm } from "@/lib/forms/public";
@@ -141,9 +142,17 @@ export async function POST(
       .is("completed_at", null);
   }
 
+  // Quiz mode: grade against the stored answer key (never sent to the browser).
+  let score: { points: number; max: number } | undefined;
+  if (form.settings.quizMode && form.settings.showScore !== false) {
+    const graded = scoreAnswers(form.schema, checked.value);
+    if (graded.max > 0) score = { points: graded.points, max: graded.max };
+  }
+
   return NextResponse.json({
     ok: true,
     submissionId: out.submission_id,
     duplicate: out.duplicate ?? false,
+    ...(score ? { score } : {}),
   });
 }

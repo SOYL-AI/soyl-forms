@@ -1,6 +1,6 @@
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { formSchemaV1 } from "./schema";
-import type { FormSchemaV1 } from "@/types/forms";
+import type { FormSchemaV1, FormSettings } from "@/types/forms";
 
 export interface PublicForm {
   id: string;
@@ -8,13 +8,7 @@ export interface PublicForm {
   title: string;
   slug: string;
   status: string;
-  settings: {
-    showProgress?: boolean;
-    closeAt?: string | null;
-    submissionLimit?: number | null;
-    closedMessage?: string;
-    collectQueryParams?: boolean;
-  };
+  settings: FormSettings;
   theme: Record<string, unknown>;
   versionId: string;
   schema: FormSchemaV1;

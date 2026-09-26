@@ -3,6 +3,7 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { deliverToWebhook, type DeliveryEvent } from "@/lib/webhooks/deliver";
 import { formSchemaV1, formSettingsSchema } from "@/lib/forms/schema";
 import { displayAnswer } from "@/lib/forms/answers";
+import { recallText } from "@/lib/forms/recall";
 import { isAnswerable } from "@/lib/forms/logic";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { PLANS } from "@/lib/plans";
@@ -47,7 +48,7 @@ async function notifyOwners(
   const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
   const answers = (submission.answers ?? {}) as Record<string, AnswerValue>;
   const rows = parsed.success
-    ? parsed.data.blocks.filter((b) => isAnswerable(b.type)).map((b) => ({ question: b.title, answer: displayAnswer(b, answers[b.id]) }))
+    ? parsed.data.blocks.filter((b) => isAnswerable(b.type)).map((b) => ({ question: recallText(b.title, parsed.data.blocks, answers), answer: displayAnswer(b, answers[b.id]) }))
     : Object.entries(answers).map(([k, v]) => ({ question: k, answer: typeof v.value === "string" ? v.value : JSON.stringify(v.value) }));
 
   const mail = responseEmail({

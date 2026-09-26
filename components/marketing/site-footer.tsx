@@ -41,11 +41,8 @@ export function SiteFooter() {
             <BrandMark size={26} />
             <span className="font-display text-base font-semibold tracking-tight">{name}</span>
           </p>
-          <p className="mt-3 max-w-xs text-sm leading-relaxed text-ink-soft">
-            Conversational forms that your brand would be proud of. Built in India by SOYL AI, priced in rupees.
-          </p>
-          <p className="mt-4 text-sm text-ink-soft">
-            <a href={`mailto:${getSupportEmail()}`} className="font-medium text-ink underline underline-offset-2">
+          <p className="mt-4 text-sm">
+            <a href={`mailto:${getSupportEmail()}`} className="text-ink-soft hover:text-ink">
               {getSupportEmail()}
             </a>
           </p>
@@ -67,8 +64,7 @@ export function SiteFooter() {
       </div>
       <div className="border-t border-line">
         <p className="mx-auto flex max-w-page flex-wrap items-center justify-between gap-2 px-5 py-5 text-xs text-ink-faint sm:px-6">
-          <span>© {new Date().getFullYear()} SOYL AI. All rights reserved.</span>
-          <span>Payments by Razorpay · Data hosted on Supabase</span>
+          <span>© {new Date().getFullYear()} SOYL AI</span>
         </p>
       </div>
     </footer>

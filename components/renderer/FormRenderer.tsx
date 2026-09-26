@@ -13,6 +13,8 @@ import {
 } from "@/types/forms";
 import { estimateProgress, getNextBlockId, isAnswerable } from "@/lib/forms/logic";
 import { resolveTheme, themeCssVars, themeFontsHref } from "@/lib/forms/themes";
+import { recallText } from "@/lib/forms/recall";
+import { scoreAnswers } from "@/lib/forms/quiz";
 import {
   BlockShell,
   ChoiceButton,
@@ -20,6 +22,8 @@ import {
   LegalCheck,
   MatrixGrid,
   OtherInput,
+  PictureChoice,
+  RankingList,
   RatingRow,
   ScaleButton,
   TextField,
@@ -27,7 +31,9 @@ import {
 } from "./blocks";
 import { cn } from "@/lib/utils";
 
-type DraftValue = string | string[] | number | Record<string, string> | null;
+type DraftValue = string | string[] | number | Record<string, string | string[]> | null;
+
+type Score = { points: number; max: number };
 
 interface PersistedState {
   versionKey: string;
@@ -59,7 +65,10 @@ function toAnswer(block: Block, draft: DraftValue, other: string): AnswerValue |
     case "number":
     case "rating":
     case "opinion_scale":
+    case "nps":
       return typeof draft === "number" ? ({ type: block.type, value: draft } as AnswerValue) : null;
+    case "ranking":
+      return Array.isArray(draft) ? { type: "ranking", value: draft } : null;
     case "yes_no":
       return typeof draft === "string" ? { type: "yes_no", value: draft } : null;
     case "single_choice":
@@ -102,6 +111,7 @@ function validateBlock(block: Block, draft: DraftValue, other: string): string |
         return "Pick Yes or No to continue.";
       case "rating":
       case "opinion_scale":
+      case "nps":
         return "Pick a value to continue.";
       case "matrix":
         return "Answer each row to continue.";
@@ -186,7 +196,7 @@ function shuffled<T>(items: T[], seed: number): T[] {
   return out;
 }
 
-const AUTO_ADVANCE_TYPES = new Set(["single_choice", "yes_no", "rating", "opinion_scale", "dropdown"]);
+const AUTO_ADVANCE_TYPES = new Set(["single_choice", "yes_no", "rating", "opinion_scale", "nps", "dropdown"]);
 
 export function FormRenderer({
   schema,
@@ -212,7 +222,7 @@ export function FormRenderer({
    * return ok. On failure the respondent stays on their answers with the
    * error shown — success is never displayed before persistence.
    */
-  onBeforeComplete?: (answers: Answers) => Promise<{ ok: boolean; error?: string }>;
+  onBeforeComplete?: (answers: Answers) => Promise<{ ok: boolean; error?: string; score?: Score }>;
   /** Enables real uploads for file questions. Absent in previews/demos. */
   uploads?: { slug: string };
   /** sessionStorage key: answers survive a refresh on the public route. */
@@ -237,6 +247,7 @@ export function FormRenderer({
   const [stepKey, setStepKey] = useState(0);
   const [completed, setCompleted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [score, setScore] = useState<Score | null>(null);
   const [restored, setRestored] = useState(!persistKey);
   const submittedOnce = useRef(false);
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -343,6 +354,7 @@ export function FormRenderer({
             return;
           }
           submittedOnce.current = true;
+          if (res.score) setScore(res.score);
           if (persistKey) {
             try {
               window.sessionStorage.removeItem(persistKey);
@@ -353,10 +365,14 @@ export function FormRenderer({
         } finally {
           setSubmitting(false);
         }
+      } else if (completing && settings?.quizMode) {
+        // Preview: the creator's schema still carries the answer key.
+        const r = scoreAnswers(schema, snapshot);
+        if (r.max > 0) setScore({ points: r.points, max: r.max });
       }
       goTo(next, snapshot);
     },
-    [byId, current, onBeforeComplete, goTo, persistKey],
+    [byId, current, onBeforeComplete, goTo, persistKey, settings?.quizMode, schema],
   );
 
   const isLastAnswerable = useCallback(
@@ -384,7 +400,11 @@ export function FormRenderer({
         void finish(next, answers);
         return;
       }
-      const draft: DraftValue = draftOverride !== undefined ? draftOverride : drafts[current.id] ?? null;
+      let draft: DraftValue = draftOverride !== undefined ? draftOverride : drafts[current.id] ?? null;
+      // An untouched ranking accepts the order shown (required) or is skipped (optional).
+      if (current.type === "ranking" && draft === null && current.required) {
+        draft = current.options.map((o) => o.id);
+      }
       const other = others[current.id] ?? "";
       const problem = validateBlock(current, draft, other);
       if (problem) {
@@ -513,7 +533,7 @@ export function FormRenderer({
       <ThemeFontLink href={fontHref} />
       {/* Screen-reader announcements for question changes. */}
       <div aria-live="polite" className="sr-only">
-        {current.title}
+        {recallText(current.title, schema.blocks, answers)}
       </div>
 
       {themed.logoUrl ? (
@@ -551,7 +571,7 @@ export function FormRenderer({
             title="Thanks — your response was saved."
             description={settings?.redirectUrl && !preview ? "Taking you onward…" : "You can close this page now."}
           >
-            <SuccessMark />
+            {settings?.quizMode && settings.showScore !== false && score ? <ScoreCard score={score} /> : <SuccessMark />}
           </BlockShell>
         ) : (
           renderStep()
@@ -605,10 +625,12 @@ export function FormRenderer({
 
   function renderStep() {
     if (!current) return null;
+    const recall = (text?: string) => (text ? recallText(text, schema.blocks, answers, preview ? "…" : "") : text);
+    const showScore = settings?.quizMode && settings.showScore !== false && score;
     const common = {
       step: stepNumber,
-      title: current.title,
-      description: current.description,
+      title: recall(current.title) as string,
+      description: recall(current.description),
       error,
       optional: isAnswerable(current.type) && !current.required,
       imageUrl: current.imageUrl,
@@ -617,29 +639,22 @@ export function FormRenderer({
     switch (current.type) {
       case "welcome":
         return (
-          <BlockShell large title={current.title} description={current.description} imageUrl={current.imageUrl} imageAlt={current.imageAlt}>
-            {!minimal && (
-              <p className="f-faint text-sm">
-                Takes {Math.max(1, Math.round(progress.total * 0.3))} min · press{" "}
-                <kbd className="f-kbd">Enter ↵</kbd> to begin
-              </p>
-            )}
-          </BlockShell>
+          <BlockShell large title={common.title} description={common.description} imageUrl={current.imageUrl} imageAlt={current.imageAlt} />
         );
       case "thank_you":
         return (
-          <BlockShell large title={current.title} description={current.description} imageUrl={current.imageUrl} imageAlt={current.imageAlt}>
-            <SuccessMark />
+          <BlockShell large title={common.title} description={common.description} imageUrl={current.imageUrl} imageAlt={current.imageAlt}>
+            {showScore ? <ScoreCard score={score} /> : <SuccessMark />}
           </BlockShell>
         );
       case "statement":
-        return <BlockShell title={current.title} description={current.description} imageUrl={current.imageUrl} imageAlt={current.imageAlt} />;
+        return <BlockShell title={common.title} description={common.description} imageUrl={current.imageUrl} imageAlt={current.imageAlt} />;
       case "short_text":
       case "email":
       case "phone":
       case "url":
         return (
-          <BlockShell {...common} hint={minimal ? undefined : "Press Enter ↵ to continue"}>
+          <BlockShell {...common}>
             <TextField
               id={`field-${current.id}`}
               value={typeof draft === "string" ? draft : ""}
@@ -668,7 +683,7 @@ export function FormRenderer({
       case "number": {
         const raw = typeof draft === "number" ? String(draft) : "";
         return (
-          <BlockShell {...common} hint={minimal ? undefined : "Press Enter ↵ to continue"}>
+          <BlockShell {...common}>
             <input
               id={`field-${current.id}`}
               data-autofocus
@@ -691,9 +706,16 @@ export function FormRenderer({
       }
       case "single_choice": {
         const opts = visibleOptions(current);
+        if (opts.some((o) => o.imageUrl)) {
+          return (
+            <BlockShell {...common}>
+              <PictureChoice options={opts} selected={typeof draft === "string" ? [draft] : []} onToggle={(id) => pick(id)} />
+            </BlockShell>
+          );
+        }
         return (
           <BlockShell {...common} hint={minimal ? undefined : "Press 1–9 to pick"}>
-            <div role="listbox" aria-label={current.title} className="flex flex-col gap-2.5">
+            <div role="listbox" aria-label={common.title} className="flex flex-col gap-2.5">
               {opts.map((opt, i) => (
                 <ChoiceButton
                   key={opt.id}
@@ -757,6 +779,13 @@ export function FormRenderer({
         const opts = visibleOptions(current);
         const toggle = (id: string) =>
           pick(selected.includes(id) ? selected.filter((s) => s !== id) : [...selected, id], { noAdvance: true });
+        if (opts.some((o) => o.imageUrl)) {
+          return (
+            <BlockShell {...common}>
+              <PictureChoice multi options={opts} selected={selected} onToggle={toggle} />
+            </BlockShell>
+          );
+        }
         return (
           <BlockShell
             {...common}
@@ -768,7 +797,7 @@ export function FormRenderer({
                   : "Tap all that apply"
             }
           >
-            <div className="flex flex-col gap-2.5" role="group" aria-label={current.title}>
+            <div className="flex flex-col gap-2.5" role="group" aria-label={common.title}>
               {opts.map((opt) => (
                 <ChoiceButton key={opt.id} multi selected={selected.includes(opt.id)} onSelect={() => toggle(opt.id)}>
                   {opt.label}
@@ -795,7 +824,7 @@ export function FormRenderer({
       case "yes_no":
         return (
           <BlockShell {...common} hint={minimal ? undefined : "Press Y or N"}>
-            <div className="grid grid-cols-2 gap-2.5" role="group" aria-label={current.title}>
+            <div className="grid grid-cols-2 gap-2.5" role="group" aria-label={common.title}>
               {(["yes", "no"] as const).map((v) => (
                 <ChoiceButton key={v} selected={draft === v} kbd={v === "yes" ? "Y" : "N"} onSelect={() => pick(v)}>
                   {v === "yes" ? "Yes" : "No"}
@@ -821,7 +850,7 @@ export function FormRenderer({
         const picked = typeof draft === "number" ? draft : null;
         return (
           <BlockShell {...common}>
-            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label={current.title}>
+            <div className="flex flex-wrap items-center gap-2" role="radiogroup" aria-label={common.title}>
               {Array.from({ length: max - min + 1 }, (_, i) => min + i).map((n) => (
                 <ScaleButton key={n} value={n} size="sm" selected={picked === n} onSelect={() => pick(n)} label={`${n}`} />
               ))}
@@ -839,7 +868,37 @@ export function FormRenderer({
         const grid = draft && typeof draft === "object" && !Array.isArray(draft) ? draft : {};
         return (
           <BlockShell {...common}>
-            <MatrixGrid rows={current.rows} columns={current.columns} value={grid} onChange={(v) => pick(v, { noAdvance: true })} />
+            <MatrixGrid
+              rows={current.rows}
+              columns={current.columns}
+              value={grid}
+              multiple={current.multiple}
+              onChange={(v) => pick(v, { noAdvance: true })}
+            />
+          </BlockShell>
+        );
+      }
+      case "nps": {
+        const picked = typeof draft === "number" ? draft : null;
+        return (
+          <BlockShell {...common}>
+            <div className="grid grid-cols-6 gap-1.5 sm:grid-cols-11" role="radiogroup" aria-label={common.title}>
+              {Array.from({ length: 11 }, (_, n) => (
+                <ScaleButton key={n} value={n} size="sm" selected={picked === n} onSelect={() => pick(n)} label={`${n} out of 10`} />
+              ))}
+            </div>
+            <div className="f-faint mt-3 flex justify-between text-xs">
+              <span>{current.minLabel || "Not likely"}</span>
+              <span>{current.maxLabel || "Very likely"}</span>
+            </div>
+          </BlockShell>
+        );
+      }
+      case "ranking": {
+        const order = Array.isArray(draft) ? draft : current.options.map((o) => o.id);
+        return (
+          <BlockShell {...common}>
+            <RankingList options={current.options} order={order} onChange={(next) => pick(next, { noAdvance: true })} />
           </BlockShell>
         );
       }
@@ -858,7 +917,7 @@ export function FormRenderer({
       case "date":
       case "time":
         return (
-          <BlockShell {...common} hint={minimal ? undefined : "Press Enter ↵ to continue"}>
+          <BlockShell {...common}>
             <input
               id={`field-${current.id}`}
               data-autofocus
@@ -899,6 +958,23 @@ export function FormRenderer({
         return null;
     }
   }
+}
+
+function ScoreCard({ score }: { score: Score }) {
+  const pctScore = score.max > 0 ? Math.round((score.points / score.max) * 100) : 0;
+  return (
+    <div
+      className="inline-flex items-baseline gap-3 rounded-2xl px-6 py-4"
+      style={{ background: "var(--f-surface-strong)" }}
+      role="status"
+    >
+      <span className="text-4xl font-semibold tabular-nums" style={{ fontFamily: "var(--f-font-heading)" }}>
+        {score.points}
+        <span className="f-muted text-2xl"> / {score.max}</span>
+      </span>
+      <span className="f-muted text-sm">{pctScore}%</span>
+    </div>
+  );
 }
 
 function SuccessMark() {

@@ -82,7 +82,7 @@ function SortableRow({
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">
-            {block.title || <span className="text-ink-faint">Untitled</span>}
+            {block.title ? block.title.replace(/\{\{\s*[A-Za-z0-9_-]+\s*\}\}/g, "…") : <span className="text-ink-faint">Untitled</span>}
           </span>
           <span className="flex items-center gap-1.5 text-[11px] text-ink-faint">
             {BLOCK_TYPE_LABELS[block.type]}

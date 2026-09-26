@@ -24,7 +24,7 @@ describe("getNextBlockId", () => {
   });
 
   it("falls back to linear order without rules", () => {
-    expect(getNextBlockId(demoForm, "q_topics", {})).toBe("q_recommend");
+    expect(getNextBlockId(demoForm, "q_topics", {})).toBe("q_rank");
   });
 
   it("returns null after the thank-you screen", () => {

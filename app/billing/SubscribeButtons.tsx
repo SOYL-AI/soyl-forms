@@ -139,16 +139,16 @@ export function SubscribeButtons({
           const isCurrent = currentPlan === code;
           const featured = code === "starter" && currentPlan === "free";
           return (
-            <div key={code} className={cn("rounded-2xl border p-6", featured ? "border-ink bg-ink text-paper" : "border-line bg-paper")}>
+            <div key={code} className={cn("rounded-2xl border p-6", featured ? "border-inverse bg-inverse text-inverse-ink ring-1 ring-accent/40" : "border-line bg-paper")}>
               <p className="font-display text-lg font-semibold">{plan.name}</p>
               <p className="mt-2 flex items-baseline gap-1">
                 <span className="font-display text-3xl tracking-tight">{formatINR(perMonth)}</span>
-                <span className={cn("text-xs", featured ? "text-paper/60" : "text-ink-faint")}>/ month</span>
+                <span className={cn("text-xs", featured ? "text-inverse-ink/60" : "text-ink-faint")}>/ month</span>
               </p>
-              <p className={cn("text-xs", featured ? "text-paper/60" : "text-ink-faint")}>
+              <p className={cn("text-xs", featured ? "text-inverse-ink/60" : "text-ink-faint")}>
                 {interval === "yearly" ? `${formatINR(plan.yearlyPaise)} billed yearly` : `or ${formatINR(yearlyPerMonthPaise(plan))}/mo yearly`}
               </p>
-              <ul className={cn("mt-4 space-y-1.5 text-sm", featured ? "text-paper/85" : "text-ink-soft")}>
+              <ul className={cn("mt-4 space-y-1.5 text-sm", featured ? "text-inverse-ink/85" : "text-ink-soft")}>
                 {PERKS[code].map((p) => (
                   <li key={p} className="flex items-start gap-2">
                     <Check className={cn("mt-0.5 h-3.5 w-3.5 shrink-0", featured ? "text-accent" : "text-positive")} /> {p}

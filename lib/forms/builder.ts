@@ -59,6 +59,20 @@ export function createBlock(type: BlockType): Block {
           { id: `${id}_c4`, label: "Excellent" },
         ],
       };
+    case "ranking":
+      return {
+        id, type, title: "Rank these in order of importance", required: true,
+        options: [
+          { id: `${id}_a`, label: "Price" },
+          { id: `${id}_b`, label: "Quality" },
+          { id: `${id}_c`, label: "Speed" },
+        ],
+      };
+    case "nps":
+      return {
+        id, type, title: "How likely are you to recommend us to a friend?", required: true,
+        minLabel: "Not likely", maxLabel: "Very likely",
+      };
     case "legal":
       return {
         id, type, title: "Before you continue", required: true,
@@ -109,7 +123,8 @@ export function duplicateBlock(block: Block): Block {
   if (
     (copy.type === "single_choice" ||
       copy.type === "multiple_choice" ||
-      copy.type === "dropdown") &&
+      copy.type === "dropdown" ||
+      copy.type === "ranking") &&
     Array.isArray(copy.options)
   ) {
     copy.options = copy.options.map((o, i) => ({
@@ -141,6 +156,8 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   date: "Date",
   time: "Time",
   matrix: "Grid",
+  ranking: "Ranking",
+  nps: "Net Promoter Score",
   legal: "Consent",
   file_upload: "File upload",
   statement: "Statement",
@@ -167,7 +184,9 @@ export const BLOCK_TYPE_META: Record<BlockType, { group: BlockGroup; hint: strin
   legal: { group: "choice", hint: "Consent checkbox with link" },
   rating: { group: "scale", hint: "Stars or numbers 1–5 / 1–10" },
   opinion_scale: { group: "scale", hint: "0–10 with end labels" },
-  matrix: { group: "scale", hint: "Rows × columns grid" },
+  matrix: { group: "scale", hint: "Rows × columns, one or many per row" },
+  ranking: { group: "scale", hint: "Put options in order" },
+  nps: { group: "scale", hint: "0–10 with an NPS score" },
   date: { group: "input", hint: "Calendar date" },
   time: { group: "input", hint: "Time of day" },
   file_upload: { group: "input", hint: "Files up to 100 MB" },

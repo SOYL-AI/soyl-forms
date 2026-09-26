@@ -101,6 +101,7 @@ export function supportsEqualityRules(type: string): boolean {
     "yes_no",
     "rating",
     "opinion_scale",
+    "nps",
     "number",
     "short_text",
     "email",
@@ -109,7 +110,7 @@ export function supportsEqualityRules(type: string): boolean {
 }
 
 export function supportsNumericRules(type: string): boolean {
-  return type === "rating" || type === "opinion_scale" || type === "number";
+  return type === "rating" || type === "opinion_scale" || type === "nps" || type === "number";
 }
 
 /**

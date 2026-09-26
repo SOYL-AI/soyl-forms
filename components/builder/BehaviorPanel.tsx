@@ -56,6 +56,24 @@ export function BehaviorPanel({
       </section>
 
       <section className="flex flex-col gap-3 border-t border-line pt-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Quiz</p>
+        <Switch
+          checked={settings.quizMode ?? false}
+          onChange={(v) => onSettingsPatch({ quizMode: v || undefined })}
+          label="Make this a quiz"
+          description="Set correct answers and points on each question."
+        />
+        {settings.quizMode && (
+          <Switch
+            checked={settings.showScore ?? true}
+            onChange={(v) => onSettingsPatch({ showScore: v })}
+            label="Show score at the end"
+            description="Respondents see their score after submitting."
+          />
+        )}
+      </section>
+
+      <section className="flex flex-col gap-3 border-t border-line pt-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Limits & closing</p>
         <Field label="Response limit" hint="Blank = unlimited (your plan’s monthly cap still applies).">
           <Input

@@ -30,6 +30,8 @@ export type BlockType =
   | "date"
   | "time"
   | "matrix"
+  | "ranking"
+  | "nps"
   | "legal"
   | "file_upload"
   | "statement"
@@ -38,6 +40,20 @@ export type BlockType =
 export interface ChoiceOption {
   id: string;
   label: string;
+  /** Picture choice: an image shown on the option card. */
+  imageUrl?: string;
+}
+
+/** Quiz grading for a question (only used when the form's quiz mode is on). */
+export interface QuizKey {
+  /**
+   * Accepted answers: option ids for choice questions ("yes"/"no" for yes/no),
+   * accepted texts for short text (case-insensitive). Multiple choice needs
+   * the exact set.
+   */
+  correct: string[];
+  /** Points for a correct answer. Defaults to 1. */
+  points?: number;
 }
 
 interface BaseBlock {
@@ -50,6 +66,8 @@ interface BaseBlock {
   /** Optional illustration shown above the title (creator-uploaded asset URL). */
   imageUrl?: string;
   imageAlt?: string;
+  /** Quiz answer key. Stripped from the schema sent to respondents. */
+  quiz?: QuizKey;
 }
 
 export interface WelcomeBlock extends BaseBlock {
@@ -121,6 +139,21 @@ export interface MatrixBlock extends BaseBlock {
   type: "matrix";
   rows: ChoiceOption[];
   columns: ChoiceOption[];
+  /** Checkbox grid: several columns may be picked per row. */
+  multiple?: boolean;
+}
+
+/** Order every option from most to least preferred. */
+export interface RankingBlock extends BaseBlock {
+  type: "ranking";
+  options: ChoiceOption[];
+}
+
+/** Net Promoter Score: fixed 0–10 scale, scored as promoters − detractors. */
+export interface NpsBlock extends BaseBlock {
+  type: "nps";
+  minLabel?: string;
+  maxLabel?: string;
 }
 
 /** Consent checkbox with an optional policy link. */
@@ -161,6 +194,8 @@ export type Block =
   | DateBlock
   | TimeBlock
   | MatrixBlock
+  | RankingBlock
+  | NpsBlock
   | LegalBlock
   | FileUploadBlock
   | StatementBlock
@@ -234,6 +269,10 @@ export interface FormSettings {
   redirectUrl?: string | null;
   /** Owner addresses to notify on each completed response (paid plans). */
   notifyEmails?: string[];
+  /** Quiz mode: questions with an answer key are graded. */
+  quizMode?: boolean;
+  /** Quiz mode: show the respondent their score at the end (default on). */
+  showScore?: boolean;
 }
 
 /** Answer payload keyed by stable block id (never array index). */
@@ -244,10 +283,11 @@ export type AnswerValue =
       type: "short_text" | "long_text" | "email" | "phone" | "url" | "date" | "time";
       value: string;
     }
-  | { type: "number" | "rating" | "opinion_scale"; value: number }
+  | { type: "number" | "rating" | "opinion_scale" | "nps"; value: number }
   | { type: "single_choice" | "dropdown"; value: string; otherText?: string }
   | { type: "yes_no"; value: string }
   | { type: "multiple_choice"; value: string[]; otherText?: string }
-  | { type: "matrix"; value: Record<string, string> }
+  | { type: "matrix"; value: Record<string, string | string[]> }
+  | { type: "ranking"; value: string[] }
   | { type: "legal"; value: "accepted" }
   | { type: "file_upload"; value: string[] };

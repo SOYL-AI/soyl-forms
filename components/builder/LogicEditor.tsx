@@ -192,7 +192,7 @@ export function LogicEditor({
                   >
                     {targets.map((b) => (
                       <option key={b.id} value={b.id}>
-                        {b.title.slice(0, 60) || BLOCK_TYPE_LABELS[b.type]}
+                        {b.title.replace(/\{\{\s*[A-Za-z0-9_-]+\s*\}\}/g, "…").slice(0, 60) || BLOCK_TYPE_LABELS[b.type]}
                       </option>
                     ))}
                   </Select>

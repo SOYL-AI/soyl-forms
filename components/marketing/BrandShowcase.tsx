@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import type { FormSchemaV1, FormTheme } from "@/types/forms";
 import { resolveTheme } from "@/lib/forms/themes";
-import { FONTS } from "@/lib/forms/fonts";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
 import { cn } from "@/lib/utils";
 
@@ -123,9 +122,7 @@ export function BrandShowcase() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">{b.name}</span>
-                  <span className="block text-xs text-ink-faint">
-                    {b.kind} · {FONTS.find((f) => f.id === b.theme.headingFont)?.label} · {b.tone}
-                  </span>
+                  <span className="block text-xs text-ink-faint">{b.kind}</span>
                 </span>
                 <span className="flex -space-x-1.5" aria-hidden>
                   {[t.accent, t.background, t.text].map((c, i) => (
@@ -136,9 +133,7 @@ export function BrandShowcase() {
             );
           })}
         </div>
-        <p className="mt-4 text-xs leading-relaxed text-ink-faint">
-          Sample brands for illustration. Yours would use your actual logo, palette and voice — extracted from a PDF, a URL, or a few notes.
-        </p>
+        <p className="mt-3 text-xs text-ink-faint">Sample brands</p>
       </div>
       <div
         className="overflow-hidden rounded-[1.75rem] border border-line shadow-lift transition-colors duration-300"
@@ -147,9 +142,6 @@ export function BrandShowcase() {
         <div className="flex items-center justify-between px-6 pt-5" style={{ color: resolved.text }}>
           <span className="text-sm font-semibold" style={{ fontFamily: resolved.heading.stack }}>
             {active.name}
-          </span>
-          <span className="rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ background: `${resolved.accent}22`, color: resolved.accent }}>
-            Live · try it
           </span>
         </div>
         <div className="px-6 pb-8 pt-6 sm:px-9">

@@ -44,13 +44,10 @@ export default function PricingPage() {
       <SiteHeader />
       <main>
         <section className="mx-auto max-w-page px-5 pb-4 pt-16 text-center sm:px-6 lg:pt-24">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-faint">Pricing</p>
-          <h1 className="mx-auto mt-3 max-w-2xl font-display text-[2.75rem] leading-[1.02] tracking-tightest sm:text-[3.6rem]">
+          <h1 className="mx-auto max-w-2xl font-display text-[2.75rem] leading-[1.02] tracking-tightest sm:text-[3.6rem]">
             Simple pricing, in rupees.
           </h1>
-          <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-ink-soft">
-            Start free. Upgrade when your forms outgrow the limits. Yearly billing saves about two months.
-          </p>
+          <p className="mx-auto mt-5 max-w-xl text-lg leading-relaxed text-ink-soft">Start free. Upgrade when you need more.</p>
         </section>
         <Section>
           <PricingTable />

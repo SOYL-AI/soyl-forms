@@ -290,6 +290,7 @@ export default function BuilderClient({
           onRulesChange={(rules) => selected && setRulesFor(selected.id, rules)}
           onDuplicate={duplicateSelected}
           onDelete={deleteSelected}
+          quizMode={settings.quizMode ?? false}
         />
       )}
       {rightTab === "design" && (

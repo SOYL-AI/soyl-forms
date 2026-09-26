@@ -21,9 +21,7 @@ export default async function TemplatesPage({ searchParams }: { searchParams?: {
     return (
       <AppShell ctx={ctx.ctx} active="templates" wide>
         <PageHeader
-          eyebrow="Templates"
-          title="Start from something that already works"
-          description="Every template is a complete form with real questions, logic and a theme. Use one, then apply your brand kit in the Design tab."
+          title="Templates"
         />
         <div className="mt-8">
           <TemplateGallery category={searchParams?.category} signedIn />
@@ -36,13 +34,9 @@ export default async function TemplatesPage({ searchParams }: { searchParams?: {
     <div className="min-h-screen">
       <SiteHeader />
       <main className="mx-auto max-w-page px-5 pb-24 pt-16 sm:px-6 lg:pt-24">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-ink-faint">Templates</p>
-        <h1 className="mt-3 max-w-2xl font-display text-[2.75rem] leading-[1.02] tracking-tightest sm:text-[3.6rem]">
-          Start from something that already works
+        <h1 className="max-w-2xl font-display text-[2.75rem] leading-[1.02] tracking-tightest sm:text-[3.6rem]">
+          Start from a template
         </h1>
-        <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-soft">
-          {TEMPLATES.length} templates with real questions, branching and themes. Preview any of them as a respondent, then make it yours.
-        </p>
         <div className="mt-12">
           <TemplateGallery category={searchParams?.category} signedIn={signedIn} />
         </div>

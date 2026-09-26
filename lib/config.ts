@@ -5,7 +5,7 @@ export function getProductName(): string {
 }
 
 export function getSupportEmail(): string {
-  return process.env.SUPPORT_EMAIL?.trim() || "support@example.com";
+  return process.env.SUPPORT_EMAIL?.trim() || "ryan.gomez@soyl.cloud";
 }
 
 export function getAppUrl(): string {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { Heart, Star } from "lucide-react";
+import { Check, ChevronDown, ChevronUp, Heart, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChoiceOption } from "@/types/forms";
 
@@ -308,12 +308,32 @@ export function MatrixGrid({
   columns,
   value,
   onChange,
+  multiple,
 }: {
   rows: ChoiceOption[];
   columns: ChoiceOption[];
-  value: Record<string, string>;
-  onChange: (next: Record<string, string>) => void;
+  value: Record<string, string | string[]>;
+  onChange: (next: Record<string, string | string[]>) => void;
+  /** Checkbox grid: several columns per row. */
+  multiple?: boolean;
 }) {
+  const isOn = (rowId: string, colId: string) => {
+    const pick = value[rowId];
+    return Array.isArray(pick) ? pick.includes(colId) : pick === colId;
+  };
+  const toggle = (rowId: string, colId: string) => {
+    if (!multiple) {
+      onChange({ ...value, [rowId]: colId });
+      return;
+    }
+    const cur = Array.isArray(value[rowId]) ? (value[rowId] as string[]) : [];
+    const next = cur.includes(colId) ? cur.filter((c) => c !== colId) : [...cur, colId];
+    const out = { ...value };
+    if (next.length) out[rowId] = next;
+    else delete out[rowId];
+    onChange(out);
+  };
+  const role = multiple ? "checkbox" : "radio";
   return (
     <>
       <div className="hidden sm:block">
@@ -330,22 +350,25 @@ export function MatrixGrid({
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} role="radiogroup" aria-label={r.label}>
+              <tr key={r.id} role={multiple ? "group" : "radiogroup"} aria-label={r.label}>
                 <th scope="row" className="py-3 pr-3 text-left text-[15px] font-medium">
                   {r.label}
                 </th>
                 {columns.map((c) => {
-                  const on = value[r.id] === c.id;
+                  const on = isOn(r.id, c.id);
                   return (
                     <td key={c.id} className="py-3 text-center">
                       <button
                         type="button"
-                        role="radio"
+                        role={role}
                         aria-checked={on}
                         aria-label={`${r.label}: ${c.label}`}
-                        onClick={() => onChange({ ...value, [r.id]: c.id })}
-                        className="f-radio"
-                      />
+                        onClick={() => toggle(r.id, c.id)}
+                        data-checked={on}
+                        className={multiple ? "f-check" : "f-radio"}
+                      >
+                        {multiple && on ? <Check className="h-3.5 w-3.5" strokeWidth={3} /> : null}
+                      </button>
                     </td>
                   );
                 })}
@@ -356,18 +379,18 @@ export function MatrixGrid({
       </div>
       <div className="flex flex-col gap-5 sm:hidden">
         {rows.map((r) => (
-          <div key={r.id} role="radiogroup" aria-label={r.label}>
+          <div key={r.id} role={multiple ? "group" : "radiogroup"} aria-label={r.label}>
             <p className="mb-2 text-[15px] font-medium">{r.label}</p>
             <div className="flex flex-wrap gap-2">
               {columns.map((c) => {
-                const on = value[r.id] === c.id;
+                const on = isOn(r.id, c.id);
                 return (
                   <button
                     key={c.id}
                     type="button"
-                    role="radio"
+                    role={role}
                     aria-checked={on}
-                    onClick={() => onChange({ ...value, [r.id]: c.id })}
+                    onClick={() => toggle(r.id, c.id)}
                     className="f-choice !min-h-0 !w-auto !px-3.5 !py-2 !text-sm"
                   >
                     {c.label}
@@ -561,4 +584,97 @@ export function ThemeFontLink({ href }: { href: string | null }) {
     document.head.append(pre, link);
   }, [href]);
   return null;
+}
+
+/** Picture choice: image cards in a responsive grid. */
+export function PictureChoice({
+  options,
+  selected,
+  onToggle,
+  multi,
+}: {
+  options: ChoiceOption[];
+  selected: string[];
+  onToggle: (id: string) => void;
+  multi?: boolean;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3" role={multi ? "group" : "listbox"}>
+      {options.map((opt, i) => {
+        const on = selected.includes(opt.id);
+        return (
+          <button
+            key={opt.id}
+            type="button"
+            role={multi ? "checkbox" : "option"}
+            aria-checked={multi ? on : undefined}
+            aria-selected={multi ? undefined : on}
+            onClick={() => onToggle(opt.id)}
+            className="f-choice !flex-col !items-stretch !gap-0 !p-2 text-left"
+          >
+            <span className="relative block aspect-[4/3] overflow-hidden rounded-[calc(var(--f-radius)*0.7)]" style={{ background: "var(--f-surface-strong)" }}>
+              {opt.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={opt.imageUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+              ) : null}
+              <span aria-hidden className="f-key absolute left-2 top-2" style={{ background: on ? undefined : "var(--f-bg)" }}>
+                {on ? "✓" : i < 9 ? String(i + 1) : ""}
+              </span>
+            </span>
+            <span className="px-1.5 pb-1 pt-2.5 text-[15px] leading-snug">{opt.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Ranking: move options up or down; the list order is the answer. */
+export function RankingList({
+  options,
+  order,
+  onChange,
+}: {
+  options: ChoiceOption[];
+  order: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const byId = new Map(options.map((o) => [o.id, o]));
+  const move = (i: number, dir: -1 | 1) => {
+    const j = i + dir;
+    if (j < 0 || j >= order.length) return;
+    const next = [...order];
+    [next[i], next[j]] = [next[j] as string, next[i] as string];
+    onChange(next);
+  };
+  return (
+    <ol className="flex flex-col gap-2.5" aria-label="Your ranking, top first">
+      {order.map((id, i) => (
+        <li key={id} className="f-choice !cursor-default !py-2.5">
+          <span aria-hidden className="f-key">{i + 1}</span>
+          <span className="flex-1">{byId.get(id)?.label ?? id}</span>
+          <span className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => move(i, -1)}
+              disabled={i === 0}
+              aria-label={`Move ${byId.get(id)?.label ?? "option"} up`}
+              className="f-btn-secondary flex h-9 w-9 items-center justify-center disabled:opacity-30"
+            >
+              <ChevronUp className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => move(i, 1)}
+              disabled={i === order.length - 1}
+              aria-label={`Move ${byId.get(id)?.label ?? "option"} down`}
+              className="f-btn-secondary flex h-9 w-9 items-center justify-center disabled:opacity-30"
+            >
+              <ChevronDown className="h-4 w-4" />
+            </button>
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
 }

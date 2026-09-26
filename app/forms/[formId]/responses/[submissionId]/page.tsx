@@ -8,6 +8,8 @@ import { getAppContext } from "@/lib/app-context";
 import { getFormForOwner } from "@/lib/forms/actions";
 import { formSchemaV1 } from "@/lib/forms/schema";
 import { displayAnswer } from "@/lib/forms/answers";
+import { scoreAnswers } from "@/lib/forms/quiz";
+import { recallLabels } from "@/lib/forms/recall";
 import { isAnswerable } from "@/lib/forms/logic";
 import { BLOCK_ICONS } from "@/lib/forms/blockIcons";
 import type { AnswerValue, Block } from "@/types/forms";
@@ -47,9 +49,12 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
   if (!submission) notFound();
 
   // The exact version this respondent answered (history never rewrites).
-  const { data: version } = await admin.from("form_versions").select("schema, version_number").eq("id", submission.form_version_id).maybeSingle();
+  const { data: version } = await admin.from("form_versions").select("schema, settings, version_number").eq("id", submission.form_version_id).maybeSingle();
   const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
   const blocks: Block[] = parsed.success ? parsed.data.blocks.filter((b) => isAnswerable(b.type)) : [];
+  const quizOn = Boolean((version as { settings: { quizMode?: boolean } | null } | null)?.settings?.quizMode);
+  const graded = quizOn ? scoreAnswers({ blocks }, submission.answers) : null;
+  const gradeOf = new Map((graded?.perQuestion ?? []).map((q) => [q.id, q]));
   const versionNumber = (version as { version_number: number } | null)?.version_number;
   const hidden = Object.entries(submission.hidden_fields ?? {});
 
@@ -66,6 +71,12 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
           {submission.duration_ms ? ` · took ${Math.round(submission.duration_ms / 1000)}s` : ""}
           {versionNumber ? ` · form v${versionNumber}` : ""}
         </p>
+        {graded && graded.max > 0 && (
+          <p className="mt-3 font-display text-3xl tracking-tight">
+            {graded.points} / {graded.max}
+            <span className="ml-2 align-middle font-sans text-xs text-ink-faint">score</span>
+          </p>
+        )}
       </div>
 
       <Card className="mt-5 !p-0">
@@ -81,7 +92,14 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
               <div key={b.id} className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-6">
                 <dt className="flex items-start gap-2 text-sm text-ink-soft">
                   <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-faint" />
-                  {b.title}
+                  <span className="flex-1">{recallLabels(b.title, blocks)}</span>
+                  {gradeOf.has(b.id) && (
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${gradeOf.get(b.id)?.correct ? "bg-positive-soft text-positive" : "bg-danger-soft text-danger"}`}
+                    >
+                      {gradeOf.get(b.id)?.correct ? `+${gradeOf.get(b.id)?.points}` : "0"}
+                    </span>
+                  )}
                 </dt>
                 <dd className="whitespace-pre-wrap text-[15px] leading-relaxed">
                   {files && files.length > 0 ? (

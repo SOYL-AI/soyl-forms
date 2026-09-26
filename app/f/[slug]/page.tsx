@@ -4,6 +4,7 @@ import { BrandMark } from "@/components/brand";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { formAcceptance, resolvePublicForm } from "@/lib/forms/public";
 import { RespondentClient } from "@/components/renderer/RespondentClient";
+import { publicSchema } from "@/lib/forms/quiz";
 import { getProductName } from "@/lib/config";
 import { resolveTheme, themeFontsHref } from "@/lib/forms/themes";
 import { getWorkspacePlan } from "@/lib/billing/plan";
@@ -27,15 +28,17 @@ function Shell({
   embed,
   theme,
   children,
+  footer,
 }: {
   embed: boolean;
   theme?: ReturnType<typeof resolveTheme>;
   children: React.ReactNode;
+  footer?: React.ReactNode;
 }) {
   const fontHref = theme ? themeFontsHref(theme) : null;
   return (
     <div
-      className="min-h-screen"
+      className={embed ? undefined : "flex min-h-[100svh] flex-col"}
       style={theme ? { backgroundColor: theme.background, color: theme.text, fontFamily: theme.body.stack } : undefined}
     >
       {fontHref ? (
@@ -46,7 +49,10 @@ function Shell({
           <link rel="stylesheet" href={fontHref} />
         </>
       ) : null}
-      <main className={embed ? "mx-auto w-full max-w-2xl px-4 py-6" : "mx-auto w-full max-w-2xl px-5 pb-16 pt-10 sm:pt-16"}>{children}</main>
+      <main className={embed ? "mx-auto w-full max-w-2xl px-4 py-6" : "mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center px-5 py-12 sm:py-16"}>
+        {children}
+      </main>
+      {footer}
     </div>
   );
 }
@@ -98,23 +104,28 @@ export default async function PublicFormPage({
   const theme = resolveTheme(form.theme);
 
   return (
-    <Shell embed={embed} theme={theme}>
+    <Shell
+      embed={embed}
+      theme={theme}
+      footer={
+        showBranding && !embed ? (
+          <footer className="px-5 pb-6 text-center text-xs" style={{ color: `${theme.text}99` }}>
+            <Link href="/?utm_source=form-footer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-opacity hover:opacity-100" style={{ opacity: 0.85 }}>
+              <BrandMark size={16} />
+              Made with {getProductName()}
+            </Link>
+          </footer>
+        ) : null
+      }
+    >
       <RespondentClient
         slug={form.slug}
-        schema={form.schema}
+        schema={publicSchema(form.schema)}
         versionId={form.versionId}
         minimal={embed}
         theme={form.theme as FormTheme}
         settings={form.settings as FormSettings}
       />
-      {showBranding && !embed && (
-        <footer className="mt-12 border-t pt-5 text-center text-xs" style={{ borderColor: `${theme.text}22`, color: `${theme.text}99` }}>
-          <Link href="/?utm_source=form-footer" className="inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 transition-opacity hover:opacity-100" style={{ opacity: 0.85 }}>
-            <BrandMark size={16} />
-            Made with {getProductName()} — create yours free
-          </Link>
-        </footer>
-      )}
       {showBranding && embed && (
         <p className="mt-6 text-center text-[11px]" style={{ color: `${theme.text}80` }}>
           <a href="/?utm_source=embed" target="_blank" rel="noreferrer" className="underline underline-offset-2">

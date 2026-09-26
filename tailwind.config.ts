@@ -47,6 +47,11 @@ const config: Config = {
           soft: token("ink-soft"),
           faint: token("ink-faint"),
         },
+        inverse: {
+          DEFAULT: token("inverse"),
+          ink: token("inverse-ink"),
+          line: token("inverse-line"),
+        },
         line: {
           DEFAULT: token("line"),
           strong: token("line-strong"),
