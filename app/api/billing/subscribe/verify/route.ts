@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const secret = process.env.RAZORPAY_KEY_SECRET;
-  if (!secret) return NextResponse.json({ error: "Billing isn't connected." }, { status: 503 });
+  if (!secret) return NextResponse.json({ error: "Payments are temporarily unavailable. Please contact support." }, { status: 503 });
   const body = schema.safeParse(await req.json().catch(() => null));
   if (!body.success) return NextResponse.json({ error: "Invalid payload." }, { status: 400 });
 

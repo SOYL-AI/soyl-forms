@@ -27,6 +27,7 @@ const COLUMNS: Array<{ title: string; links: Array<{ href: string; label: string
       { href: "/contact", label: "Contact" },
       { href: "/privacy", label: "Privacy" },
       { href: "/terms", label: "Terms" },
+      { href: "/refunds", label: "Refunds" },
     ],
   },
 ];

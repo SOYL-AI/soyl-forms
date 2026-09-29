@@ -28,7 +28,7 @@ const STEPS = [
 ];
 
 const FEATURES = [
-  { icon: MessageSquare, title: "One question at a time", body: "Keyboard-first, with honest progress." },
+  { icon: MessageSquare, title: "One question at a time", body: "Keyboard-friendly, with a clear progress bar." },
   { icon: ListChecks, title: "Every question type", body: "Choices, ratings, grids, dates, files and consent." },
   { icon: GitBranch, title: "Branching logic", body: "Skip what doesn't apply." },
   { icon: QrCode, title: "Link, embed and QR", body: "Share anywhere, track print scans." },

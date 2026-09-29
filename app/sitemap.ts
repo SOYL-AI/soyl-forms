@@ -5,7 +5,7 @@ import { TEMPLATES } from "@/lib/forms/templates";
 export default function sitemap(): MetadataRoute.Sitemap {
   const base = getAppUrl();
   const now = new Date();
-  const statics = ["", "/features", "/pricing", "/templates", "/f/demo", "/privacy", "/terms", "/contact", "/signup", "/login"].map((p) => ({
+  const statics = ["", "/features", "/pricing", "/templates", "/f/demo", "/privacy", "/terms", "/refunds", "/contact", "/signup", "/login"].map((p) => ({
     url: `${base}${p}`,
     lastModified: now,
     changeFrequency: p === "" ? ("weekly" as const) : ("monthly" as const),

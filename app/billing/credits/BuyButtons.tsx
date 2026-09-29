@@ -81,7 +81,7 @@ export function BuyButtons({ packs, configured }: { packs: CreditPack[]; configu
   }
 
   if (!configured) {
-    return <Notice tone="warn">Payments aren&apos;t connected in this environment, so packs are preview-only.</Notice>;
+    return <Notice tone="warn">Credit packs are temporarily unavailable. Please check back soon.</Notice>;
   }
 
   return (

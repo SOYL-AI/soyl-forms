@@ -439,7 +439,7 @@ export default function BuilderClient({
             style={{ maxWidth: device === "mobile" ? 400 : 760 }}
           >
             <p className="mb-3 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
-              Live preview · follows the selected question
+              Live preview
             </p>
             <div
               className="overflow-hidden rounded-[1.75rem] border border-line shadow-lift"

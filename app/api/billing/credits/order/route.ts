@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   }
   if (!isRazorpayConfigured()) {
     return NextResponse.json(
-      { error: "Payments aren't connected yet (missing Razorpay keys)." },
+      { error: "Payments are temporarily unavailable. Please try again later." },
       { status: 503 },
     );
   }

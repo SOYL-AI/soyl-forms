@@ -115,12 +115,12 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     <div className="flex flex-col gap-4">
       {plan && isPlanCode(plan) && plan !== "free" && (
         <Notice tone="info">
-          You picked <strong>{PLANS[plan].name}</strong>. Create your account and checkout opens next — you can still start on Free.
+          You picked <strong>{PLANS[plan].name}</strong>. Create your account to continue to checkout.
         </Notice>
       )}
       {!configured && (
         <Notice tone="warn">
-          Auth isn&apos;t configured in this environment. The page renders, but sign-in is disabled until Supabase keys are set.
+          Sign-in is temporarily unavailable. Please try again in a few minutes.
         </Notice>
       )}
       <Button type="button" variant="secondary" size="lg" onClick={withGoogle} disabled={!configured || busy !== null}>

@@ -4,23 +4,22 @@ import { SiteHeader } from "@/components/marketing/site-header";
 import { SiteFooter } from "@/components/marketing/site-footer";
 import { CtaBand, Section, SectionHeading } from "@/components/marketing/primitives";
 import { BrandShowcase } from "@/components/marketing/BrandShowcase";
-import { getProductName } from "@/lib/config";
 
 export const metadata: Metadata = {
   title: "Features",
   description:
-    "One-question-at-a-time forms with brand-aware AI drafting, every question type, branching logic, QR sharing, webhooks and server-enforced limits.",
+    "One-question-at-a-time forms with brand-aware AI drafting, every question type, branching logic, QR sharing, webhooks and analytics.",
 };
 
 const GROUPS: Array<{ title: string; lede: string; points: string[] }> = [
   {
-    title: "The filling experience is the product",
+    title: "Built for the people filling it in",
     lede: "One focused question per screen, on any device.",
     points: [
       "Keyboard shortcuts: Enter, number keys, Y/N",
       "Auto-advance on single choice and ratings",
       "Answers survive a refresh",
-      "Accessible: reduced motion, focus, screen readers",
+      "Accessible, including for screen readers",
     ],
   },
   {
@@ -34,13 +33,13 @@ const GROUPS: Array<{ title: string; lede: string; points: string[] }> = [
     ],
   },
   {
-    title: "A builder that previews the truth",
+    title: "A builder with a live preview",
     lede: "Outline, live preview and settings side by side.",
     points: [
       "Choices, ratings, grids, dates, files, consent and more",
-      "Branching logic that can't break a publish",
-      "Images, “Other” answers, shuffled options",
-      "Autosave and versioned publishes",
+      "Branching logic",
+      "Question images, “Other” answers and shuffled options",
+      "Autosave and version history",
     ],
   },
   {
@@ -65,18 +64,17 @@ const GROUPS: Array<{ title: string; lede: string; points: string[] }> = [
   },
   {
     title: "Your data stays yours",
-    lede: "Limits and privacy enforced on the server.",
+    lede: "Private by default, secure by design.",
     points: [
-      "Workspace-scoped access control",
+      "Responses visible only to your workspace",
       "Private file storage with expiring links",
-      "Rate-limited public submissions",
+      "Spam and abuse protection",
       "Downgrading never deletes anything",
     ],
   },
 ];
 
 export default function FeaturesPage() {
-  const name = getProductName();
   return (
     <div className="min-h-screen">
       <SiteHeader />
@@ -86,7 +84,7 @@ export default function FeaturesPage() {
             Everything a form needs. Nothing it doesn&apos;t.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-ink-soft">
-            {name} is built around one idea: the filling experience is the product.
+            Forms that feel like a conversation, so more people finish them.
           </p>
         </section>
 

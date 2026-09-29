@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   }
   if (!isRazorpayConfigured()) {
     return NextResponse.json(
-      { error: "Billing isn't connected yet (missing Razorpay keys). Test mode first." },
+      { error: "Payments are temporarily unavailable. Please try again later." },
       { status: 503 },
     );
   }
@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   const providerPlanId = razorpayPlanIdFor(plan, interval);
   if (!providerPlanId) {
     return NextResponse.json(
-      { error: `No Razorpay plan configured for ${plan} ${interval}.` },
+      { error: "This plan isn't available right now. Please contact support." },
       { status: 500 },
     );
   }

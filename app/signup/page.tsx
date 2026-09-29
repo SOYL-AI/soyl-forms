@@ -9,7 +9,7 @@ export default function SignupPage() {
   return (
     <AuthShell
       title="Create your account"
-      subtitle="Free for 2 live forms and 250 responses a month. No card. Your first form is minutes away."
+      subtitle="Free for 2 live forms and 250 responses a month. No card needed."
     >
       <Suspense>
         <AuthForm mode="signup" />

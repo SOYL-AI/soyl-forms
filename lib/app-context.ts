@@ -29,7 +29,7 @@ export type AppContextResult =
  */
 export async function getAppContext(): Promise<AppContextResult> {
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, reason: "error", message: "Supabase is not configured." };
+  if (!supabase) return { ok: false, reason: "error", message: "Service temporarily unavailable. Please try again." };
   const {
     data: { user },
   } = await supabase.auth.getUser();

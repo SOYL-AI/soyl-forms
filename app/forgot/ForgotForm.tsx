@@ -40,7 +40,7 @@ export function ForgotForm() {
   }
   return (
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
-      {!configured && <Notice tone="warn">Auth isn&apos;t configured in this environment.</Notice>}
+      {!configured && <Notice tone="warn">Password reset is temporarily unavailable.</Notice>}
       <Field label="Email" htmlFor="email">
         <Input id="email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="!py-3 text-base" />
       </Field>

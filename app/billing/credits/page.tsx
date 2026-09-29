@@ -37,7 +37,7 @@ export default async function CreditsPage() {
         <BuyButtons packs={AI_CREDIT_PACKS} configured={isRazorpayConfigured() && ctx.flags.upgradesEnabled} />
       </div>
       <p className="mt-6 max-w-xl text-xs leading-relaxed text-ink-faint">
-        One-time payments via Razorpay (UPI, cards, netbanking). Credits are tied to your workspace and are only spent when a draft or extraction actually succeeds.
+        One-time payment by UPI, card or netbanking. Credits are used only when a draft is created successfully.
       </p>
     </AppShell>
   );

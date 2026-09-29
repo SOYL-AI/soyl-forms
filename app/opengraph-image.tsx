@@ -29,10 +29,9 @@ export default function OpenGraphImage() {
           <span style={{ color: "#8e8b84", fontWeight: 400 }}>by SOYL AI</span>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
-          <div style={{ fontSize: 88, fontWeight: 700, letterSpacing: -4, lineHeight: 1 }}>
-            Forms people
-            <br />
-            actually finish.
+          <div style={{ display: "flex", flexDirection: "column", fontSize: 88, fontWeight: 700, letterSpacing: -4, lineHeight: 1 }}>
+            <span>Forms people</span>
+            <span>actually finish.</span>
           </div>
           <div style={{ fontSize: 30, color: "#aba89f", maxWidth: 900, lineHeight: 1.35 }}>
             One question at a time. Drafted by AI in your brand. Shared by link or QR. Priced in rupees.
@@ -42,7 +41,7 @@ export default function OpenGraphImage() {
           <div style={{ padding: "14px 28px", borderRadius: 999, background: "#f2b418", color: "#1a1400", fontSize: 26, fontWeight: 700 }}>
             Start free
           </div>
-          <div style={{ fontSize: 24, color: "#8e8b84" }}>Upgrade from ₹199/mo</div>
+          <div style={{ fontSize: 24, color: "#8e8b84" }}>No card needed</div>
         </div>
       </div>
     ),

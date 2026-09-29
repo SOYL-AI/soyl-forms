@@ -83,7 +83,7 @@ export async function signalsFromPdf(
     const { text, totalPages } = await extractText(bytes, { mergePages: true });
     const body = (Array.isArray(text) ? text.join("\n") : text).replace(/\s+/g, " ").trim();
     if (!body) {
-      signals.notes.push(`${label}: no selectable text (scanned PDF?) — colours were not read.`);
+      signals.notes.push(`${label}: we couldn’t read any text from this file. If it’s a scanned PDF, add your colours manually.`);
       return;
     }
     addColors(signals, extractHexColors(body), label, 3);
@@ -95,8 +95,8 @@ export async function signalsFromPdf(
       addColors(signals, [hex], label, 3);
     }
     signals.textSamples.push({ source: `${label} (${totalPages} pages)`, text: body.slice(0, 6000) });
-  } catch (e) {
-    signals.notes.push(`${label}: couldn't be parsed (${e instanceof Error ? e.message.slice(0, 80) : "unknown error"}).`);
+  } catch {
+    signals.notes.push(`${label}: we couldn’t read this file.`);
   }
 }
 
@@ -196,12 +196,12 @@ function stripTags(html: string): string {
 export async function signalsFromWebsite(rawUrl: string, signals: BrandSignals): Promise<void> {
   const url = isFetchableUrl(rawUrl);
   if (!url) {
-    signals.notes.push("Website URL was skipped (must be a public https address).");
+    signals.notes.push("Website skipped. Use a public address starting with https://.");
     return;
   }
   const html = await fetchText(url.toString(), 1_500_000, "text/html,*/*;q=0.8");
   if (!html) {
-    signals.notes.push(`Couldn't load ${url.hostname} — it may block bots. Colours/fonts came from other sources.`);
+    signals.notes.push(`We couldn’t read ${url.hostname}. Colours and fonts came from your other sources.`);
     return;
   }
   const label = url.hostname;
@@ -284,7 +284,7 @@ export function heuristicProfile(signals: BrandSignals, fallbackName: string) {
     notes: [
       ...signals.notes,
       ...(signals.colors.length === 0 ? ["No colours were found in the sources — set them manually."] : []),
-      ...(signals.fontMatches.length === 0 ? ["No fonts were detected — defaults chosen."] : []),
+      ...(signals.fontMatches.length === 0 ? ["No fonts were found, so we picked defaults. You can change them below."] : []),
     ],
   };
 }

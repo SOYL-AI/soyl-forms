@@ -11,7 +11,7 @@ export async function POST() {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   }
   if (!isRazorpayConfigured()) {
-    return NextResponse.json({ error: "Billing isn't connected yet." }, { status: 503 });
+    return NextResponse.json({ error: "Billing is temporarily unavailable. Please contact support." }, { status: 503 });
   }
   const workspaceId = await getUserWorkspaceId(userId);
   if (!workspaceId) {

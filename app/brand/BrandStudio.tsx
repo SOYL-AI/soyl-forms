@@ -124,7 +124,7 @@ export function BrandStudio({
         <EmptyState
           icon={<Palette className="h-5 w-5" />}
           title="No brand kit yet"
-          description="Upload your logo and guidelines (or just paste your website) and we'll pull out the colours, fonts and tone. Every form and AI draft can then wear your brand."
+          description="Upload your logo and guidelines, or paste your website, and we'll pick up your colours, fonts and tone."
           action={
             <Button variant="accent" onClick={() => setEditing("new")}>
               <Sparkles className="h-4 w-4" /> Create your brand kit
@@ -302,7 +302,7 @@ function KitEditor({
       if (up.ok && up.publicUrl) {
         patch({ logoUrl: up.publicUrl, logoFileId: up.fileId });
       } else if (!up.ok) {
-        setError(up.unavailable ? "Storage isn't connected, so the logo can't be stored — but we read its colours." : up.error);
+        setError(up.unavailable ? "Logo uploads are temporarily unavailable, but we picked up its colours." : up.error);
       }
     } finally {
       setBusy(null);
@@ -317,7 +317,7 @@ function KitEditor({
       for (const file of Array.from(list).slice(0, 5 - files.length)) {
         const up = await uploadOwnerAsset(file, "brand_source");
         if (!up.ok) {
-          setError(up.unavailable ? "Storage isn't connected — paste the key parts of your guidelines in the notes instead." : up.error);
+          setError(up.unavailable ? "File uploads are temporarily unavailable. Paste the key parts of your guidelines into the notes instead." : up.error);
           break;
         }
         setFiles((f) => [...f, { fileId: up.fileId, name: file.name }]);
@@ -540,7 +540,7 @@ function KitEditor({
           {step === "review" && (
             <div className="flex flex-col gap-4">
               {extractNotes.length > 0 && (
-                <Notice tone={usedAi ? "info" : "warn"} title={usedAi ? "What we found" : "Extracted without AI"}>
+                <Notice tone={usedAi ? "info" : "warn"} title="What we found">
                   <ul className="list-disc pl-4">
                     {extractNotes.map((n, i) => (
                       <li key={i}>{n}</li>

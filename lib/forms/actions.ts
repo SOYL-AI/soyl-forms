@@ -36,7 +36,7 @@ async function getOwnedForm(
   userId: string,
 ): Promise<{ form: OwnedForm } | { error: string }> {
   const admin = getServiceSupabase();
-  if (!admin) return { error: "Supabase is not configured." as const };
+  if (!admin) return { error: "Service temporarily unavailable. Please try again." as const };
 
   const { data: form } = await admin
     .from("forms")
@@ -69,7 +69,7 @@ export async function createForm(args: {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in to create a form." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
 
   const {
     data: { user },
@@ -111,7 +111,7 @@ export async function saveDraft(args: {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in to save." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
 
   const owned = await getOwnedForm(args.formId, userId);
   if ("error" in owned) return { ok: false, error: owned.error };
@@ -175,7 +175,7 @@ export async function renameForm(args: {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   const owned = await getOwnedForm(args.formId, userId);
   if ("error" in owned) return { ok: false, error: owned.error };
   const title = args.title.trim().slice(0, 200);
@@ -193,7 +193,7 @@ export async function duplicateForm(args: {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   const owned = await getOwnedForm(args.formId, userId);
   if ("error" in owned) return { ok: false, error: owned.error };
 
@@ -240,7 +240,7 @@ export async function setFormArchived(args: {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   const owned = await getOwnedForm(args.formId, userId);
   if ("error" in owned) return { ok: false, error: owned.error };
   const { error } = await supabase
@@ -371,7 +371,7 @@ export async function closeForm(args: { formId: string }): Promise<ActionResult>
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   const owned = await getOwnedForm(args.formId, userId);
   if ("error" in owned) return { ok: false, error: owned.error };
   const { error } = await supabase
@@ -442,7 +442,7 @@ export async function createWebhook(args: {
   if (!isSecretEncryptionConfigured()) {
     return {
       ok: false,
-      error: "Webhook storage isn't configured (WEBHOOK_ENCRYPTION_KEY). Ask the app owner.",
+      error: "Integrations are temporarily unavailable. Please try again later.",
     };
   }
 
@@ -454,7 +454,7 @@ export async function createWebhook(args: {
   }
   const local = parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1";
   if (parsed.protocol !== "https:" && !local) {
-    return { ok: false, error: "Webhook URLs must use https (http is allowed for localhost testing only)." };
+    return { ok: false, error: "The URL must start with https://." };
   }
 
   const admin = getServiceSupabase();
@@ -543,7 +543,7 @@ export async function reopenForm(args: { formId: string }): Promise<ActionResult
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   const owned = await getOwnedForm(args.formId, userId);
   if ("error" in owned) return { ok: false, error: owned.error };
 
@@ -596,7 +596,7 @@ export async function createFormFromDraft(args: {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in to create a form." };
   const supabase = getServerSupabase();
-  if (!supabase) return { ok: false, error: "Supabase is not configured." };
+  if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
 
   const parsed = formSchemaV1.safeParse(args.schema);
   if (!parsed.success) return { ok: false, error: "This draft has invalid questions." };

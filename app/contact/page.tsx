@@ -13,9 +13,9 @@ export default function ContactPage() {
     <div className="min-h-screen">
       <SiteHeader />
       <main className="mx-auto max-w-2xl px-5 pb-28 pt-20 text-center sm:px-6 lg:pt-28">
-        <h1 className="font-display text-[2.75rem] leading-[1.02] tracking-tightest sm:text-[3.6rem]">Talk to a person</h1>
+        <h1 className="font-display text-[2.75rem] leading-[1.02] tracking-tightest sm:text-[3.6rem]">Contact us</h1>
         <p className="mx-auto mt-5 max-w-md text-lg leading-relaxed text-ink-soft">
-          Plans, bugs, feature requests or discounts. We reply within one working day.
+          Questions about plans, billing or your forms? We reply within one business day.
         </p>
         <ButtonLink href={`mailto:${email}`} variant="accent" size="lg" className="mt-9">
           <Mail className="h-4 w-4" /> {email}

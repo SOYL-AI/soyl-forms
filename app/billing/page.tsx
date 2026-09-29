@@ -13,7 +13,6 @@ import { ConfigRequired } from "@/components/app/ConfigRequired";
 import { Card, PageHeader } from "@/components/ui/card";
 import { Meter } from "@/components/ui/meter";
 import { Badge, StatusBadge } from "@/components/ui/badge";
-import { Notice } from "@/components/ui/notice";
 import { formatBytes, formatDate } from "@/lib/utils";
 import { SubscribeButtons } from "./SubscribeButtons";
 import { CancelButton } from "./CancelButton";
@@ -104,13 +103,8 @@ export default async function BillingPage({
 
       <h2 className="mt-12 font-display text-2xl tracking-tight">{effective.plan === "free" ? "Upgrade" : "Change plan"}</h2>
       <p className="mt-1 text-sm text-ink-soft">
-        {formatINR(PLANS.starter.monthlyPaise)}/mo Starter · {formatINR(PLANS.pro.monthlyPaise)}/mo Pro. Paid access activates when Razorpay confirms — usually seconds. Downgrades keep every form, response and file.
+        {formatINR(PLANS.starter.monthlyPaise)}/mo Starter · {formatINR(PLANS.pro.monthlyPaise)}/mo Pro. Your new plan starts as soon as payment is confirmed.
       </p>
-      {!ctx.flags.upgradesEnabled && (
-        <Notice tone="warn" className="mt-4">
-          Upgrades are paused right now. Your current plan continues as normal.
-        </Notice>
-      )}
       <div className="mt-5">
         <SubscribeButtons
           currentPlan={effective.plan}
