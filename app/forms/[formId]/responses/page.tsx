@@ -256,7 +256,7 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
           ))}
         </div>
       </Card>
-      {sections.length > 0 && <div className="mt-3 grid gap-3 md:grid-cols-2">{sections}</div>}
+      {sections.length > 0 && <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">{sections}</div>}
     </section>
   );
 }

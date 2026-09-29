@@ -133,7 +133,7 @@ export function BrandStudio({
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {kits.map((kit) => {
             const theme = resolveTheme(brandKitToTheme(kit));
             return (
@@ -398,7 +398,7 @@ function KitEditor({
         <ArrowLeft className="h-4 w-4" /> All brand kits
       </button>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div>
           <Segmented<Step>
             label="Brand kit steps"
@@ -426,7 +426,7 @@ function KitEditor({
                 <Input value={draft.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Kaveri Coffee Roasters" maxLength={80} />
               </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <span className="mb-1.5 block text-xs font-semibold text-ink-soft">Logo</span>
                   {draft.logoUrl ? (
@@ -615,7 +615,7 @@ function KitEditor({
                 {draft.fonts.detected.length > 0 && (
                   <p className="-mt-2 text-xs text-ink-faint">Detected in your sources: {draft.fonts.detected.join(", ")}</p>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <span className="mb-1.5 block text-xs font-semibold text-ink-soft">Corners</span>
                     <Segmented
@@ -649,7 +649,7 @@ function KitEditor({
 
               <Card className="flex flex-col gap-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Voice — how the AI writes your questions</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Tone">
                     <Input value={draft.voice.tone} onChange={(e) => patchVoice({ tone: e.target.value })} placeholder="Warm, direct, a little playful" maxLength={300} />
                   </Field>

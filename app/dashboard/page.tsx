@@ -98,7 +98,7 @@ export default async function DashboardPage() {
         }
       />
 
-      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card className="!p-4">
           <Meter label="Live forms" used={live} limit={e.maxActiveForms} />
         </Card>
@@ -142,7 +142,7 @@ export default async function DashboardPage() {
           }
         />
       ) : (
-        <ul className="mt-8 grid gap-3 md:grid-cols-2">
+        <ul className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2">
           {forms.map((f) => (
             <FormCard key={f.id} form={f} total={total.get(f.id) ?? 0} thisMonth={thisMonth.get(f.id) ?? 0} />
           ))}
@@ -152,7 +152,7 @@ export default async function DashboardPage() {
       {archived.length > 0 && (
         <details className="mt-10">
           <summary className="cursor-pointer text-sm font-semibold text-ink-soft">Archived ({archived.length})</summary>
-          <ul className="mt-3 grid gap-3 md:grid-cols-2">
+          <ul className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
             {archived.map((f) => (
               <FormCard key={f.id} form={f} total={total.get(f.id) ?? 0} thisMonth={thisMonth.get(f.id) ?? 0} archived />
             ))}

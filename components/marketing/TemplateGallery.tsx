@@ -93,7 +93,7 @@ export function TemplateGallery({
           );
         })}
       </nav>
-      <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {list.map((t) => (
           <TemplateCard key={t.id} template={t} signedIn={signedIn} />
         ))}

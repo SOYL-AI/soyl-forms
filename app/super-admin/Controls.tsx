@@ -80,7 +80,7 @@ export function OverrideForm({ workspaceId, currentPlan, hasOverride }: { worksp
       <summary className="cursor-pointer text-sm font-semibold">Manual entitlement override {hasOverride ? "(active)" : ""}</summary>
       <p className="mt-1 text-xs text-ink-soft">Grants a plan without payment for a bounded time. Requires a reason and an expiry; everything is audit-logged.</p>
       <form
-        className="mt-3 grid gap-3 sm:grid-cols-[120px_1fr_160px_auto] sm:items-end"
+        className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-[120px_1fr_160px_auto] sm:items-end"
         onSubmit={(e) => {
           e.preventDefault();
           setMessage(null);

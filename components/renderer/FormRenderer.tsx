@@ -314,6 +314,13 @@ export function FormRenderer({
     setStepKey((k) => k + 1);
   }, [preview, focusBlockId, order]);
 
+  // Keyboard hints mean nothing on touch screens; hide them there.
+  const [touch, setTouch] = useState(false);
+  useEffect(() => {
+    setTouch(window.matchMedia("(hover: none) and (pointer: coarse)").matches);
+  }, []);
+  const noKeyHints = minimal || touch;
+
   const progress = useMemo(
     () => estimateProgress(schema, currentId, history),
     [schema, currentId, history],
@@ -558,9 +565,12 @@ export function FormRenderer({
               style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
             />
           </div>
-          <span className="f-faint text-xs tabular-nums">
-            {Math.min(progress.done + 1, progress.total)} / {progress.total}
-          </span>
+          {/* With branching the total shifts as questions are skipped, so only the bar is shown. */}
+          {schema.logic.length === 0 && (
+            <span className="f-faint text-xs tabular-nums">
+              {Math.min(progress.done + 1, progress.total)} / {progress.total}
+            </span>
+          )}
         </div>
       )}
 
@@ -669,7 +679,7 @@ export function FormRenderer({
         );
       case "long_text":
         return (
-          <BlockShell {...common} hint={minimal ? undefined : "Shift + Enter for a new line · Enter to continue"}>
+          <BlockShell {...common} hint={noKeyHints ? undefined : "Shift + Enter for a new line · Enter to continue"}>
             <TextField
               id={`field-${current.id}`}
               multiline
@@ -714,7 +724,7 @@ export function FormRenderer({
           );
         }
         return (
-          <BlockShell {...common} hint={minimal ? undefined : "Press 1–9 to pick"}>
+          <BlockShell {...common} hint={noKeyHints ? undefined : "Press 1–9 to pick"}>
             <div role="listbox" aria-label={common.title} className="flex flex-col gap-2.5">
               {opts.map((opt, i) => (
                 <ChoiceButton
@@ -823,7 +833,7 @@ export function FormRenderer({
       }
       case "yes_no":
         return (
-          <BlockShell {...common} hint={minimal ? undefined : "Press Y or N"}>
+          <BlockShell {...common} hint={noKeyHints ? undefined : "Press Y or N"}>
             <div className="grid grid-cols-2 gap-2.5" role="group" aria-label={common.title}>
               {(["yes", "no"] as const).map((v) => (
                 <ChoiceButton key={v} selected={draft === v} kbd={v === "yes" ? "Y" : "N"} onSelect={() => pick(v)}>

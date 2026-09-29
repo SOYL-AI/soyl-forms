@@ -124,7 +124,7 @@ export function AiStudio({
   const questionCount = draft ? draft.schema.blocks.filter((b) => !["welcome", "statement", "thank_you"].includes(b.type)).length : 0;
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)]">
       {/* Composer */}
       <div className="flex flex-col gap-4">
         {!aiConfigured && (
@@ -221,7 +221,7 @@ export function AiStudio({
             </button>
           </div>
           {advanced && (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <Field label="Tone override" hint="Leave blank to use the brand kit's voice.">
                 <Input value={tone} onChange={(e) => setTone(e.target.value)} placeholder="Formal, playful, terse…" maxLength={80} />
               </Field>
