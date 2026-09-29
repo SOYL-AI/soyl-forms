@@ -16,12 +16,43 @@ const DEFAULT_MIMES = [
   "application/pdf",
   "text/plain",
   "text/csv",
+  "image/heic",
+  "image/heif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
+
+/**
+ * Browsers often misreport types: HEIC photos and extension-less files arrive
+ * as "" or application/octet-stream, and Windows labels .csv as an Excel file.
+ * When the reported type isn't accepted, fall back to the file extension.
+ */
+const EXTENSION_MIMES: Record<string, string> = {
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  gif: "image/gif",
+  webp: "image/webp",
+  heic: "image/heic",
+  heif: "image/heif",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  csv: "text/csv",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
+
+function acceptedMime(reported: string, fileName: string, allowed: string[]): string | null {
+  if (allowed.includes(reported)) return reported;
+  const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
+  const inferred = EXTENSION_MIMES[ext];
+  return inferred && allowed.includes(inferred) ? inferred : null;
+}
 
 const authorizeSchema = z.object({
   questionId: z.string().min(1).max(64),
-  fileName: z.string().min(1).max(200),
-  mimeType: z.string().min(1).max(100),
+  fileName: z.string().min(1).max(1000),
+  mimeType: z.string().max(200),
   sizeBytes: z.number().int().min(1).max(100 * 1024 * 1024),
 });
 
@@ -35,7 +66,7 @@ export async function POST(
   }
   if (!isR2Configured()) {
     return NextResponse.json(
-      { error: "File uploads aren't connected on this form yet." },
+      { error: "Uploads are temporarily unavailable. Please try again later." },
       { status: 503 },
     );
   }
@@ -46,7 +77,7 @@ export async function POST(
 
   const body = authorizeSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
-    return NextResponse.json({ error: "Invalid upload request." }, { status: 400 });
+    return NextResponse.json({ error: "We couldn't start this upload. Please try again." }, { status: 400 });
   }
 
   const resolved = await resolvePublicForm(params.slug);
@@ -72,7 +103,8 @@ export async function POST(
     );
   }
   const allowed = block.allowedMimes?.length ? block.allowedMimes : DEFAULT_MIMES;
-  if (!allowed.includes(body.data.mimeType)) {
+  const mimeType = acceptedMime(body.data.mimeType, body.data.fileName, allowed);
+  if (!mimeType) {
     return NextResponse.json({ error: "This file type isn't accepted here." }, { status: 400 });
   }
 
@@ -97,9 +129,9 @@ export async function POST(
   // respondent data (names/emails) goes into the key.
   const fileId = crypto.randomUUID();
   const key = newR2Key(form.workspaceId, form.id, fileId);
-  const uploadUrl = await presignedPutUrl(key, body.data.mimeType);
+  const uploadUrl = await presignedPutUrl(key, mimeType);
   if (!uploadUrl) {
-    return NextResponse.json({ error: "Upload service unavailable." }, { status: 503 });
+    return NextResponse.json({ error: "Uploads are temporarily unavailable. Please try again later." }, { status: 503 });
   }
 
   const safeName = body.data.fileName.replace(/[^\w.\-() ]+/g, "_").slice(0, 200);
@@ -111,12 +143,13 @@ export async function POST(
     question_id: block.id,
     r2_key: key,
     original_name: safeName,
-    mime_type: body.data.mimeType,
+    mime_type: mimeType,
     size_bytes: body.data.sizeBytes,
     status: "pending",
   });
   if (error) {
-    return NextResponse.json({ error: "Could not start upload." }, { status: 500 });
+    return NextResponse.json({ error: "We couldn't start this upload. Please try again." }, { status: 500 });
   }
-  return NextResponse.json({ fileId, uploadUrl });
+  // The URL is signed for this exact content type; the browser must send it.
+  return NextResponse.json({ fileId, uploadUrl, contentType: mimeType });
 }

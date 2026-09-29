@@ -75,6 +75,29 @@ export async function resolvePublicForm(
   };
 }
 
+/**
+ * A previously published version of this form, for respondents who opened the
+ * form before the owner re-published it. Null if it isn't one of this form's
+ * versions or no longer parses.
+ */
+export async function resolveFormVersion(
+  formId: string,
+  versionId: string,
+): Promise<{ versionId: string; schema: FormSchemaV1 } | null> {
+  const admin = getServiceSupabase();
+  if (!admin) return null;
+  const { data } = await admin
+    .from("form_versions")
+    .select("id, schema")
+    .eq("id", versionId)
+    .eq("form_id", formId)
+    .maybeSingle();
+  const v = data as { id: string; schema: unknown } | null;
+  if (!v) return null;
+  const parsed = formSchemaV1.safeParse(v.schema);
+  return parsed.success ? { versionId: v.id, schema: parsed.data } : null;
+}
+
 /** Is this published form currently accepting responses? */
 export function formAcceptance(form: {
   status: string;

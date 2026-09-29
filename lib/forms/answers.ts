@@ -1,4 +1,5 @@
 import { OTHER_OPTION_ID, type AnswerValue, type Block, type FormSchemaV1 } from "@/types/forms";
+import { respondentPath } from "./logic";
 
 export type NormalizedAnswers = Record<string, AnswerValue>;
 
@@ -8,35 +9,43 @@ export type NormalizedAnswers = Record<string, AnswerValue>;
  * found — the submission endpoint treats any failure as a 400.
  */
 export function validateAnswers(
-  schema: Pick<FormSchemaV1, "blocks">,
+  schema: Pick<FormSchemaV1, "blocks"> & { logic?: FormSchemaV1["logic"] },
   answers: unknown,
 ): { ok: true; value: NormalizedAnswers } | { ok: false; error: string } {
   if (!answers || typeof answers !== "object" || Array.isArray(answers)) {
     return { ok: false, error: "Answers must be an object keyed by question id." };
   }
   const input = answers as Record<string, unknown>;
-  const byId = new Map(schema.blocks.map((b) => [b.id, b]));
-  const out: NormalizedAnswers = {};
 
-  for (const key of Object.keys(input)) {
-    if (!byId.has(key)) {
-      return { ok: false, error: `Unknown question "${key}".` };
-    }
-  }
-
+  // Shape-check every answer for a known question. Keys for questions that
+  // don't exist (removed, or from an older draft) are ignored, not fatal.
+  const shaped: NormalizedAnswers = {};
+  const invalid = new Map<string, string>();
   for (const block of schema.blocks) {
     const raw = input[block.id];
-    if (raw === undefined || raw === null) {
-      if (isRequired(block)) {
-        return { ok: false, error: `“${block.title}” needs an answer.` };
-      }
-      continue;
-    }
+    if (raw === undefined || raw === null) continue;
     const checked = checkBlock(block, raw);
-    if (!checked.ok) return checked;
-    out[block.id] = checked.value;
+    if (checked.ok) shaped[block.id] = checked.value;
+    else invalid.set(block.id, checked.error);
+  }
+
+  // Only the questions the respondent passed through count: branching may
+  // skip required ones, and answers on an abandoned branch are dropped.
+  const path = respondentPath({ blocks: schema.blocks, logic: schema.logic ?? [] }, shaped);
+  const out: NormalizedAnswers = {};
+  for (const block of schema.blocks) {
+    if (!path.has(block.id)) continue;
+    const error = invalid.get(block.id);
+    if (error) return { ok: false, error };
+    if (shaped[block.id]) out[block.id] = shaped[block.id];
+    else if (isRequired(block)) return { ok: false, error: `“${block.title}” needs an answer.` };
   }
   return { ok: true, value: out };
+}
+
+/** Whether a single saved answer is still valid for this question (used when carrying answers across versions). */
+export function isValidAnswer(block: Block, raw: unknown): boolean {
+  return checkBlock(block, raw).ok;
 }
 
 function isRequired(block: Block): boolean {
