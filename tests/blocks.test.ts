@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { OTHER_OPTION_ID, type Block, type FormSchemaV1 } from "@/types/forms";
 import { formSchemaV1, formSettingsSchema, validateLogicGraph } from "@/lib/forms/schema";
 import { validateAnswers, displayAnswer } from "@/lib/forms/answers";
-import { submissionsToCsv } from "@/lib/forms/csv";
+import { submissionFields, submissionsToCsv } from "@/lib/forms/csv";
 import { choiceDistribution, matrixDistribution } from "@/lib/forms/distributions";
 import { getNextBlockId, estimateProgress } from "@/lib/forms/logic";
 import { createBlock, duplicateBlock, BLOCK_TYPE_LABELS, BLOCK_TYPE_META } from "@/lib/forms/builder";
@@ -97,6 +97,11 @@ describe("new block types", () => {
     expect(header).toContain("Rate us — Service");
     expect(row).toContain("Great");
     expect(row).toContain("Other: Gamma");
+
+    // Webhook/Google Sheets fields use the same labels and formatting as the CSV.
+    const fields = submissionFields(schema.blocks, answers);
+    expect(fields.map((f) => f.label)).toEqual(header.replace(/^﻿/, "").split(",").slice(2));
+    expect(fields.find((f) => f.label === "Pick one")?.value).toBe("Other: Gamma");
 
     const dist = matrixDistribution(matrix, [answers]);
     expect(dist?.rows[0]?.counts).toEqual([0, 0, 1]);

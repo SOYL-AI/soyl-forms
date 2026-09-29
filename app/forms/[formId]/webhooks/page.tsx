@@ -8,8 +8,9 @@ import { AppShell } from "@/components/app/AppShell";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
 import { FormSubnav } from "@/components/app/FormSubnav";
 import { WebhookManager } from "./WebhookManager";
+import { GoogleSheetsConnect, isGoogleSheetsUrl } from "./GoogleSheetsConnect";
 
-export const metadata: Metadata = { title: "Webhooks", robots: { index: false } };
+export const metadata: Metadata = { title: "Integrations", robots: { index: false } };
 
 export default async function WebhooksPage({ params }: { params: { formId: string } }) {
   if (!isSupabaseConfigured()) return <ConfigRequired area="webhooks" />;
@@ -23,14 +24,18 @@ export default async function WebhooksPage({ params }: { params: { formId: strin
   return (
     <AppShell ctx={res.ctx} active="forms">
       <FormSubnav formId={owned.form.id} title={owned.form.title} status={owned.form.status} slug={owned.form.slug} active="webhooks" />
-      <div className="mt-6 max-w-3xl">
-        <p className="text-sm leading-relaxed text-ink-soft">
-          Each completed response POSTs a signed <code className="font-mono text-xs">form.submission.completed</code> event to every active endpoint,
-          with bounded retries. Your {PLANS[res.ctx.plan].name} plan allows {PLANS[res.ctx.plan].entitlements.maxWebhooksPerForm} per form.
-        </p>
-        <div className="mt-6">
-          <WebhookManager formId={owned.form.id} initial={listed.webhooks} />
-        </div>
+      <div className="mt-6 flex max-w-3xl flex-col gap-10">
+        <GoogleSheetsConnect formId={owned.form.id} connected={listed.webhooks.some((w) => isGoogleSheetsUrl(w.url))} />
+        <section>
+          <h2 className="font-display text-xl tracking-tight">Connections</h2>
+          <p className="mt-0.5 text-sm text-ink-soft">
+            Send each new response to your own app with a webhook. Your {PLANS[res.ctx.plan].name} plan includes{" "}
+            {PLANS[res.ctx.plan].entitlements.maxWebhooksPerForm} per form.
+          </p>
+          <div className="mt-5">
+            <WebhookManager formId={owned.form.id} initial={listed.webhooks} />
+          </div>
+        </section>
       </div>
     </AppShell>
   );

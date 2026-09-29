@@ -47,6 +47,7 @@ export function submissionEventBody(args: {
   submissionId: string;
   submittedAt: string;
   answers: unknown;
+  fields?: Array<{ label: string; value: string }>;
 }): string {
   return JSON.stringify({
     id: args.eventId,
@@ -57,6 +58,7 @@ export function submissionEventBody(args: {
       submissionId: args.submissionId,
       submittedAt: args.submittedAt,
       answers: args.answers,
+      ...(args.fields ? { fields: args.fields } : {}),
     },
   });
 }

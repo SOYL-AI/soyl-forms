@@ -20,9 +20,34 @@ function escape(value: string): string {
  * test pins this.
  */
 export function submissionsToCsv(blocks: Block[], rows: CsvRow[]): string {
+  const { headers: questionHeaders, columns } = answerColumns(blocks);
+  const headers = ["submission_id", "submitted_at", ...questionHeaders];
+
+  const lines = [headers.map(escape).join(",")];
+  for (const row of rows) {
+    const cols = [row.id, row.submitted_at, ...columns.map((fn) => fn(row.answers))];
+    lines.push(cols.map(escape).join(","));
+  }
+  // BOM so Excel opens UTF-8 correctly.
+  return `﻿${lines.join("\n")}\n`;
+}
+
+/**
+ * One labelled value per column for a single submission, in form order and
+ * formatted exactly like the CSV export. Sent to webhooks as `data.fields`.
+ */
+export function submissionFields(blocks: Block[], answers: Record<string, AnswerValue>): Array<{ label: string; value: string }> {
+  const { headers, columns } = answerColumns(blocks);
+  return headers.map((label, i) => ({ label, value: columns[i](answers) }));
+}
+
+function answerColumns(blocks: Block[]): {
+  headers: string[];
+  columns: Array<(answers: Record<string, AnswerValue>) => string>;
+} {
   const answerable = blocks.filter((b) => isAnswerable(b.type));
   const seen = new Map<string, number>();
-  const headers = ["submission_id", "submitted_at"];
+  const headers: string[] = [];
   const columns: Array<(answers: Record<string, AnswerValue>) => string> = [];
 
   const uniqueTitle = (title: string): string => {
@@ -49,12 +74,5 @@ export function submissionsToCsv(blocks: Block[], rows: CsvRow[]): string {
     headers.push(uniqueTitle(recallLabels(b.title, blocks)));
     columns.push((answers) => displayAnswer(b, answers[b.id]));
   }
-
-  const lines = [headers.map(escape).join(",")];
-  for (const row of rows) {
-    const cols = [row.id, row.submitted_at, ...columns.map((fn) => fn(row.answers))];
-    lines.push(cols.map(escape).join(","));
-  }
-  // BOM so Excel opens UTF-8 correctly.
-  return `﻿${lines.join("\n")}\n`;
+  return { headers, columns };
 }
