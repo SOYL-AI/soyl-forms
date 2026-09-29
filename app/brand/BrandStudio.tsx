@@ -35,6 +35,7 @@ import { Field, Input, Segmented, Select, Textarea } from "@/components/ui/input
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty";
+import { AiSpark, AiThinking } from "@/components/ui/ai-thinking";
 import { cn } from "@/lib/utils";
 
 type Step = "sources" | "review";
@@ -522,7 +523,7 @@ function KitEditor({
 
               <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
                 <Button variant="accent" onClick={extract} disabled={busy !== null || !hasSources}>
-                  {busy === "extract" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  {busy === "extract" ? <AiSpark className="ai-spark h-4 w-4" /> : <Wand2 className="h-4 w-4" />}
                   {busy === "extract" ? "Reading your brand…" : "Extract brand"}
                 </Button>
                 <Button variant="ghost" onClick={() => setStep("review")}>
@@ -531,9 +532,23 @@ function KitEditor({
                 <span className="text-xs text-ink-faint">
                   {aiConfigured
                     ? `${AI_COST_PER_BRAND_EXTRACTION} credits per extraction · ${balance} available`
-                    : "AI isn't connected; extraction uses colour and font detection only."}
+                    : "We’ll detect your colours and fonts."}
                 </span>
               </div>
+              {busy === "extract" && (
+                <div className="rounded-2xl border border-line bg-paper-deep/30 px-4 py-3.5">
+                  <AiThinking
+                    messages={[
+                      "Reading your sources…",
+                      "Picking out your colours…",
+                      "Matching your fonts…",
+                      "Learning your tone of voice…",
+                      "Putting your brand kit together…",
+                      "Almost there…",
+                    ]}
+                  />
+                </div>
+              )}
             </Card>
           )}
 

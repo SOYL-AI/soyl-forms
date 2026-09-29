@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Loader2, Monitor, Pencil, RefreshCw, Smartphone, Sparkles, Wand2 } from "lucide-react";
@@ -10,6 +10,7 @@ import { createFormFromDraft } from "@/lib/forms/actions";
 import { resolveTheme } from "@/lib/forms/themes";
 import { AI_COST_PER_DRAFT } from "@/lib/plans";
 import { AI_PROMPT_MAX_CHARS } from "@/lib/ai/limits";
+import { AiFormSkeleton, AiSpark, AiThinking } from "@/components/ui/ai-thinking";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -61,6 +62,7 @@ export function AiStudio({
   const [balance, setBalance] = useState(initialBalance);
   const [device, setDevice] = useState<Device>("desktop");
 
+  const previewRef = useRef<HTMLDivElement>(null);
   const kit = kits.find((k) => k.id === kitId) ?? null;
   const resolved = useMemo(() => (draft ? resolveTheme(draft.theme) : null), [draft]);
   const canGenerate = aiConfigured && description.trim().length >= 10 && !busy && balance >= AI_COST_PER_DRAFT;
@@ -68,6 +70,10 @@ export function AiStudio({
   async function generate() {
     setError(null);
     setBusy(true);
+    // On stacked (mobile) layouts the preview is below the composer; bring the progress into view.
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      requestAnimationFrame(() => previewRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
     try {
       const res = await fetch("/api/ai/generate", {
         method: "POST",
@@ -238,7 +244,7 @@ export function AiStudio({
 
           <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
             <Button variant="accent" size="lg" onClick={generate} disabled={!canGenerate}>
-              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+              {busy ? <AiSpark className="ai-spark h-4 w-4" /> : <Wand2 className="h-4 w-4" />}
               {busy ? "Drafting…" : draft ? "Generate again" : "Generate draft"}
             </Button>
             <span className="text-xs text-ink-faint">
@@ -254,7 +260,7 @@ export function AiStudio({
       </div>
 
       {/* Preview */}
-      <div>
+      <div ref={previewRef} className="scroll-mt-20">
         <div className="mb-3 flex items-center justify-between">
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
             {draft ? `Preview · ${questionCount} questions` : "Preview"}
@@ -269,7 +275,25 @@ export function AiStudio({
             ]}
           />
         </div>
-        {draft && resolved ? (
+        {busy ? (
+          <div className="mx-auto" style={{ maxWidth: device === "mobile" ? 400 : 720 }}>
+            <div className="min-h-[520px] rounded-[1.75rem] border border-line bg-paper p-7 shadow-lift sm:p-9">
+              <AiThinking
+                messages={[
+                  "Reading your brief…",
+                  "Planning the questions…",
+                  "Choosing the right question types…",
+                  kit ? `Writing in ${kit.name}’s voice…` : "Writing the questions…",
+                  "Adding branching where it helps…",
+                  kit ? "Applying your colours and fonts…" : "Picking a theme…",
+                  "Polishing the wording…",
+                  "Almost there…",
+                ]}
+              />
+              <AiFormSkeleton className="mt-10" />
+            </div>
+          </div>
+        ) : draft && resolved ? (
           <div className="mx-auto transition-[max-width]" style={{ maxWidth: device === "mobile" ? 400 : 720 }}>
             <div className="overflow-hidden rounded-[1.75rem] border border-line shadow-lift" style={{ background: resolved.background }}>
               <div className={cn("min-h-[520px]", device === "mobile" ? "px-6 py-9" : "px-9 py-11")}>
