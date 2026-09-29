@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "./client";
+import { authCookieOptions } from "./cookies";
 
 /**
  * Server-side Supabase client (Server Components / Actions / Route Handlers).
@@ -14,6 +15,7 @@ export function getServerSupabase() {
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string,
     {
+      cookieOptions: authCookieOptions,
       cookies: {
         getAll() {
           return cookieStore.getAll();

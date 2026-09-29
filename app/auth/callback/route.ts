@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { authCookieOptions } from "@/lib/supabase/cookies";
 import { getAppUrl } from "@/lib/config";
 
 function safeNext(raw: string | null): string {
@@ -27,6 +28,7 @@ export async function GET(req: Request) {
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string,
     {
+      cookieOptions: authCookieOptions,
       cookies: {
         getAll() {
           return cookieStore.getAll();
