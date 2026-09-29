@@ -8,6 +8,20 @@ export interface DeliveryEvent {
   submissionId: string;
   submittedAt: string;
   answers: unknown;
+  /** Question title → formatted answer, as in the CSV export. */
+  fields?: Array<{ label: string; value: string }>;
+}
+
+/**
+ * Google Apps Script web apps run doPost, then answer with a 302 to a
+ * googleusercontent.com URL holding the output. The redirect means success.
+ */
+function isAppsScript(url: string): boolean {
+  try {
+    return new URL(url).hostname === "script.google.com";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -60,7 +74,8 @@ export async function deliverToWebhook(
     });
     status = res.status;
     await res.arrayBuffer().catch(() => null);
-    if (res.status < 200 || res.status >= 300) {
+    const redirectedOk = isAppsScript(hook.url) && res.status >= 300 && res.status < 400;
+    if ((res.status < 200 || res.status >= 300) && !redirectedOk) {
       error = `HTTP ${res.status}`;
     }
   } catch (e) {

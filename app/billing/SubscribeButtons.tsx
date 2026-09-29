@@ -116,7 +116,7 @@ export function SubscribeButtons({
   if (!configured) {
     return (
       <Notice tone="warn" role="note">
-        Billing isn&apos;t connected in this environment (missing Razorpay keys or upgrades paused). Plans below are preview-only.
+        Upgrades are temporarily unavailable. Your current plan continues as normal.
       </Notice>
     );
   }

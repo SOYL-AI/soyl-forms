@@ -3,6 +3,7 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { deliverToWebhook, type DeliveryEvent } from "@/lib/webhooks/deliver";
 import { formSchemaV1, formSettingsSchema } from "@/lib/forms/schema";
 import { displayAnswer } from "@/lib/forms/answers";
+import { submissionFields } from "@/lib/forms/csv";
 import { recallText } from "@/lib/forms/recall";
 import { isAnswerable } from "@/lib/forms/logic";
 import { getWorkspacePlan } from "@/lib/billing/plan";
@@ -127,12 +128,15 @@ export async function POST(req: Request) {
 
     let ok = true;
     if (submission && hooks && hooks.length > 0) {
+      const { data: version } = await admin.from("form_versions").select("schema").eq("id", submission.form_version_id).maybeSingle();
+      const schema = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
       const event: DeliveryEvent = {
         eventId: evt.id,
         formId: submission.form_id,
         submissionId: submission.id,
         submittedAt: submission.submitted_at,
         answers: submission.answers,
+        fields: schema.success ? submissionFields(schema.data.blocks, (submission.answers ?? {}) as Record<string, AnswerValue>) : undefined,
       };
       for (const h of hooks as Array<{ id: string }>) {
         const res = await deliverToWebhook(h.id, event, evt.attempts + 1);

@@ -67,7 +67,7 @@ export default async function TemplatePage({
           </span>
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-3">
-          <UseTemplateButton templateId={template.id} signedIn={signedIn} size="lg" label={signedIn ? "Use this template" : "Use this template — free"} />
+          <UseTemplateButton templateId={template.id} signedIn={signedIn} size="lg" label={signedIn ? "Use this template" : "Use this template, free"} />
           {!signedIn && <span className="text-sm text-ink-faint">Creates your account first.</span>}
         </div>
         <div className="mt-10">

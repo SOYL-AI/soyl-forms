@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty";
 import { formatDate } from "@/lib/utils";
+import { isGoogleSheetsUrl } from "./GoogleSheetsConnect";
 
 export function WebhookManager({ formId, initial }: { formId: string; initial: WebhookSummary[] }) {
   const router = useRouter();
@@ -50,7 +51,7 @@ export function WebhookManager({ formId, initial }: { formId: string; initial: W
           });
         }}
       >
-        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-server.example.com/hooks/forms" aria-label="Webhook endpoint URL" className="min-w-0 flex-1 !py-3" />
+        <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-app.com/webhooks/forms" aria-label="Webhook endpoint URL" className="min-w-0 flex-1 !py-3" />
         <Button type="submit" disabled={pending || !url.trim()}>
           Add webhook
         </Button>
@@ -60,8 +61,8 @@ export function WebhookManager({ formId, initial }: { formId: string; initial: W
         <Notice tone="warn" title="Copy this secret now — it won’t be shown again." className="mt-4">
           <p className="break-all font-mono text-xs text-ink">{onceSecret.secret}</p>
           <p className="mt-2 text-xs">
-            Verify deliveries with HMAC-SHA256 over <code>timestamp.body</code>; the signature arrives in <code>x-signature-256</code>, the timestamp in{" "}
-            <code>x-webhook-timestamp</code>.
+            Use it to verify that requests come from us: each request is signed with HMAC-SHA256 over <code>timestamp.body</code>, sent in the{" "}
+            <code>x-signature-256</code> and <code>x-webhook-timestamp</code> headers.
           </p>
         </Notice>
       )}
@@ -77,20 +78,20 @@ export function WebhookManager({ formId, initial }: { formId: string; initial: W
       )}
 
       {initial.length === 0 ? (
-        <EmptyState className="mt-6" icon={<Webhook className="h-5 w-5" />} title="No webhooks yet" description="Add an https endpoint above. You’ll get a signing secret once; test deliveries are one click." />
+        <EmptyState className="mt-6" icon={<Webhook className="h-5 w-5" />} title="No connections yet" description="Connect Google Sheets above, or add a webhook URL." />
       ) : (
         <ul className="mt-6 divide-y divide-line rounded-2xl border border-line bg-paper">
           {initial.map((w) => (
             <li key={w.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
               <div className="min-w-0">
-                <p className="flex items-center gap-2 truncate font-mono text-sm">
-                  {w.url}
+                <p className="flex items-center gap-2 truncate text-sm">
+                  {isGoogleSheetsUrl(w.url) ? <span className="font-semibold">Google Sheets</span> : <span className="truncate font-mono">{w.url}</span>}
                   <Badge tone={w.is_active ? "positive" : "neutral"}>{w.is_active ? "Active" : "Paused"}</Badge>
                 </p>
                 <p className="mt-0.5 text-xs text-ink-faint">Added {formatDate(w.created_at)}</p>
               </div>
               <div className="flex items-center gap-1">
-                <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => testWebhook({ webhookId: w.id }), "Test delivery accepted by your endpoint.")}>
+                <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => testWebhook({ webhookId: w.id }), "Test sent successfully.")}>
                   Send test
                 </Button>
                 <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => setWebhookActive({ webhookId: w.id, active: !w.is_active }))}>

@@ -25,25 +25,25 @@ export function BehaviorPanel({
           checked={settings.showProgress ?? true}
           onChange={(v) => onSettingsPatch({ showProgress: v })}
           label="Show progress"
-          description="A thin bar and “3 / 8” counter above each question."
+          description="Show respondents how far along they are."
         />
         <Switch
           checked={settings.autoAdvance ?? true}
           onChange={(v) => onSettingsPatch({ autoAdvance: v })}
           label="Auto-advance"
-          description="Single-choice, yes/no and rating questions move on right after a pick."
+          description="Move to the next question as soon as an option is picked."
         />
         <Switch
           checked={settings.allowMultipleSubmissions ?? true}
           onChange={(v) => onSettingsPatch({ allowMultipleSubmissions: v })}
           label="Allow repeat responses"
-          description="Off: one response per device (soft check, not a hard identity gate)."
+          description="When off, each device can respond once."
         />
         <Switch
           checked={settings.collectQueryParams ?? true}
           onChange={(v) => onSettingsPatch({ collectQueryParams: v })}
           label="Save URL parameters"
-          description="?utm_source=… and similar are stored as hidden fields."
+          description="Save tracking details such as utm_source from the form link."
         />
         <div className="grid grid-cols-2 gap-2">
           <Field label="Next button">
@@ -75,7 +75,7 @@ export function BehaviorPanel({
 
       <section className="flex flex-col gap-3 border-t border-line pt-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Limits & closing</p>
-        <Field label="Response limit" hint="Blank = unlimited (your plan’s monthly cap still applies).">
+        <Field label="Response limit" hint="Leave blank for no limit.">
           <Input
             type="number"
             min={1}
@@ -104,7 +104,7 @@ export function BehaviorPanel({
 
       <section className="flex flex-col gap-3 border-t border-line pt-4">
         <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">After submit</p>
-        <Field label="Redirect to" hint="Respondents go here 1–2 seconds after the thank-you screen. https only.">
+        <Field label="Redirect to" hint="Send respondents to this page after they submit.">
           <Input
             value={settings.redirectUrl ?? ""}
             placeholder="https://yoursite.com/thanks"

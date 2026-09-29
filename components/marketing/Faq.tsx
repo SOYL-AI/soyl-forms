@@ -28,7 +28,7 @@ export const HOME_FAQS: FaqItem[] = [
   },
   {
     q: "Is my respondents’ data safe?",
-    a: "Yes. Responses are private to your workspace, uploads are served only through expiring links, and submissions are rate-limited.",
+    a: "Yes. Responses are visible only to your workspace, uploaded files are stored privately, and forms are protected against spam.",
   },
 ];
 

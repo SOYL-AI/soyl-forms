@@ -39,7 +39,7 @@ export async function POST(req: Request) {
 
   if (!isR2Configured()) {
     return NextResponse.json(
-      { error: "File storage isn't connected yet. You can paste an image URL instead." },
+      { error: "Uploads are temporarily unavailable. You can paste an image URL instead." },
       { status: 503 },
     );
   }

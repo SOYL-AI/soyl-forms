@@ -26,7 +26,7 @@ export default async function BrandPage({ searchParams }: { searchParams?: { new
       <PageHeader
         eyebrow="Brand kit"
         title="Your brand, on every form"
-        description="Upload a logo, a guidelines PDF, or just your website. We extract the palette, type and tone once — then every AI draft and every form can wear it."
+        description="Add your logo, brand guidelines or website once. Every form and AI draft then uses your colours, fonts and tone."
       />
       <div className="mt-8">
         <BrandStudio

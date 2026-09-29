@@ -466,7 +466,7 @@ export function FileUploadInput({
   if (!slug) {
     return (
       <p className="f-muted rounded-[var(--f-radius)] border border-dashed px-5 py-4 text-sm" style={{ borderColor: "var(--f-border-strong)" }}>
-        File uploads work on the published form — answers stay safe until then.
+        File uploads are available on the published form.
       </p>
     );
   }

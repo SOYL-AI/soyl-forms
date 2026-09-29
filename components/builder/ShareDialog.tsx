@@ -91,14 +91,14 @@ export function ShareDialog({
       title={justPublishedVersion ? "You’re live" : "Share your form"}
       description={
         justPublishedVersion
-          ? `Version ${justPublishedVersion} is answering at the link below.`
-          : "Link, QR code, or embed — all point at the same live form."
+          ? "Your form is live at the link below."
+          : "Share a link, a QR code or an embed. They all open the same form."
       }
       size="lg"
     >
       {!published && (
         <Notice tone="warn" className="mb-4">
-          This form isn’t published yet. The link below will show “unavailable” until you publish.
+          This form isn’t published yet. Publish it to make the link work.
         </Notice>
       )}
 
@@ -120,24 +120,25 @@ export function ShareDialog({
         </ButtonLink>
       </div>
 
-      <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
-        <div>
-          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">QR code</p>
-          {svg ? (
-            <div
-              className="h-36 w-36 overflow-hidden rounded-xl border border-line bg-white p-1"
-              dangerouslySetInnerHTML={{ __html: svg }}
-              role="img"
-              aria-label={`QR code linking to ${qrUrl}`}
-            />
-          ) : (
-            <div className="flex h-36 w-36 items-center justify-center rounded-xl border border-line bg-paper-deep/40 text-xs text-ink-faint">
-              Drawing…
-            </div>
-          )}
-        </div>
-        <div className="flex flex-col justify-end gap-2">
-          <div className="flex flex-wrap gap-2">
+      <p className="mb-1.5 mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">QR code</p>
+      <div className="flex flex-col items-center gap-4 rounded-2xl border border-line bg-paper-deep/30 p-4 sm:flex-row sm:gap-6">
+        {svg ? (
+          <div
+            className="flex h-40 w-40 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-white [&>svg]:block [&>svg]:h-full [&>svg]:w-full"
+            dangerouslySetInnerHTML={{ __html: svg }}
+            role="img"
+            aria-label={`QR code linking to ${url}`}
+          />
+        ) : (
+          <div className="flex h-40 w-40 shrink-0 items-center justify-center rounded-xl border border-line bg-paper-deep/40 text-xs text-ink-faint">
+            Loading…
+          </div>
+        )}
+        <div className="flex flex-col items-center gap-3 text-center sm:items-start sm:text-left">
+          <p className="text-sm leading-relaxed text-ink-soft">
+            Print it on posters, menus or packaging. Responses from scans appear as “From QR” in your results.
+          </p>
+          <div className="flex flex-wrap justify-center gap-2 sm:justify-start">
             <Button variant="secondary" size="sm" onClick={downloadPng} disabled={!qrUrl}>
               <Download className="h-3.5 w-3.5" /> PNG
             </Button>
@@ -146,10 +147,6 @@ export function ShareDialog({
             </Button>
             <ScanQrButton />
           </div>
-          <p className="text-xs leading-relaxed text-ink-faint">
-            Print it on posters, menus, packaging or a check-in desk. Scans are tagged{" "}
-            <code className="font-mono">?src=qr</code> so you can see how many responses came from print.
-          </p>
         </div>
       </div>
 

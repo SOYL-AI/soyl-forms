@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, BarChart3, ExternalLink, PenLine, Webhook } from "lucide-react";
+import { ArrowLeft, BarChart3, ExternalLink, PenLine, Plug } from "lucide-react";
 import { StatusBadge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -24,7 +24,7 @@ export function FormSubnav({
   const tabs: Array<{ key: FormArea; href: string; label: string; icon: typeof PenLine }> = [
     { key: "builder", href: `/builder/${formId}`, label: "Build", icon: PenLine },
     { key: "responses", href: `/forms/${formId}/responses`, label: "Responses", icon: BarChart3 },
-    { key: "webhooks", href: `/forms/${formId}/webhooks`, label: "Webhooks", icon: Webhook },
+    { key: "webhooks", href: `/forms/${formId}/webhooks`, label: "Integrations", icon: Plug },
   ];
   return (
     <div className="border-b border-line pb-4">

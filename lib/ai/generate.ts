@@ -1,3 +1,4 @@
+import { AI_PROMPT_MAX_CHARS } from "./limits";
 import { formSchemaV1, formSettingsSchema, formThemeSchema, validateLogicGraph } from "@/lib/forms/schema";
 import { DEFAULT_THEME, resolveTheme } from "@/lib/forms/themes";
 import { FONTS } from "@/lib/forms/fonts";
@@ -92,7 +93,7 @@ function brandBlock(kit: BrandKit): string {
 
 export function buildUserPrompt(opts: GenerateOptions): string {
   const parts = [
-    `Create a form for this request:\n${opts.description.trim().slice(0, 3000)}`,
+    `Create a form for this request:\n${opts.description.trim().slice(0, AI_PROMPT_MAX_CHARS)}`,
     `Length: ${LENGTH_HINT[opts.length ?? "medium"]}.`,
   ];
   if (opts.tone) parts.push(`Tone override: ${opts.tone.slice(0, 80)}.`);

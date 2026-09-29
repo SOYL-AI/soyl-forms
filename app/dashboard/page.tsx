@@ -37,7 +37,7 @@ export default async function DashboardPage() {
       return (
         <main className="mx-auto max-w-xl px-5 py-24">
           <Notice tone="warn" title="New sign-ups are paused">
-            We&apos;re not provisioning new workspaces right now. Your account exists — check back soon or contact support.
+            We&apos;re not setting up new workspaces right now. Your account is saved — please check back soon.
           </Notice>
         </main>
       );
@@ -45,7 +45,7 @@ export default async function DashboardPage() {
     return (
       <main className="mx-auto max-w-xl px-5 py-24">
         <Notice tone="danger" title="Couldn't load your workspace">
-          {res.message} Check that the migrations in <code>supabase/migrations</code> have been run.
+          Something went wrong on our side. Please refresh the page, or contact support if it keeps happening.
         </Notice>
       </main>
     );

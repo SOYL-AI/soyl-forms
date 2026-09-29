@@ -14,7 +14,7 @@ export default async function SuperAdminLayout({ children }: { children: React.R
     return (
       <main className="mx-auto max-w-md px-5 py-24 text-center">
         <h1 className="font-display text-3xl tracking-tight">Not allowed here</h1>
-        <p className="mt-2 text-sm text-ink-soft">This console is for platform operators. Regular accounts get a 403 — by design.</p>
+        <p className="mt-2 text-sm text-ink-soft">This area is only available to SOYL administrators.</p>
         <p className="mt-6">
           <Link href="/dashboard" className="text-sm font-semibold underline underline-offset-2">
             Back to your forms

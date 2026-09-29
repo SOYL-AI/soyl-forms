@@ -70,7 +70,7 @@ export async function POST(req: Request) {
           if (!url) return;
           const res = await fetch(url, { signal: AbortSignal.timeout(15_000) }).catch(() => null);
           if (!res?.ok) {
-            signals.notes.push(`${f.original_name}: couldn't be downloaded.`);
+            signals.notes.push(`${f.original_name}: we couldn’t open this file.`);
             return;
           }
           if (f.mime_type === "application/pdf") {

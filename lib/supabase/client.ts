@@ -1,4 +1,5 @@
 import { createBrowserClient } from "@supabase/ssr";
+import { authCookieOptions } from "./cookies";
 
 /** True when Supabase env is present (required for any auth path). */
 export function isSupabaseConfigured(): boolean {
@@ -16,5 +17,6 @@ export function getBrowserSupabase() {
   return createBrowserClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string,
+    { cookieOptions: authCookieOptions },
   );
 }

@@ -9,6 +9,7 @@ import type { BrandKitSummary } from "@/lib/brand/types";
 import { createFormFromDraft } from "@/lib/forms/actions";
 import { resolveTheme } from "@/lib/forms/themes";
 import { AI_COST_PER_DRAFT } from "@/lib/plans";
+import { AI_PROMPT_MAX_CHARS } from "@/lib/ai/limits";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -121,8 +122,8 @@ export function AiStudio({
       {/* Composer */}
       <div className="flex flex-col gap-4">
         {!aiConfigured && (
-          <Notice tone="warn" title="AI isn't connected in this environment">
-            The app owner needs to set an AI provider key (see <code>.env.example</code>). Templates and the builder work without it.
+          <Notice tone="warn" title="AI drafting is temporarily unavailable">
+            You can still start from a template or build a form from scratch.
           </Notice>
         )}
         <Card className="flex flex-col gap-5">
@@ -163,7 +164,7 @@ export function AiStudio({
             </div>
             {kits.length === 0 && (
               <p className="mt-2 text-xs leading-relaxed text-ink-faint">
-                With a brand kit, the draft arrives in your colours, fonts and tone of voice — ready to publish.
+                Add a brand kit to get drafts in your colours, fonts and tone.
               </p>
             )}
           </div>
@@ -172,11 +173,14 @@ export function AiStudio({
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              rows={6}
-              maxLength={3000}
+              rows={8}
+              maxLength={AI_PROMPT_MAX_CHARS}
               placeholder={EXAMPLES[0]}
-              className="text-[15px]"
+              className="min-h-[180px] resize-y text-[15px]"
             />
+            <p className="mt-1 text-right text-xs tabular-nums text-ink-faint">
+              {description.length.toLocaleString("en-IN")} / {AI_PROMPT_MAX_CHARS.toLocaleString("en-IN")}
+            </p>
           </Field>
           <div className="-mt-2 flex flex-wrap gap-1.5">
             {EXAMPLES.slice(1).map((ex) => (
@@ -247,9 +251,6 @@ export function AiStudio({
             </span>
           </div>
         </Card>
-        <p className="text-xs leading-relaxed text-ink-faint">
-          Drafts land in your builder for review — nothing publishes automatically. Credits are only used when a draft is actually produced.
-        </p>
       </div>
 
       {/* Preview */}
@@ -299,7 +300,7 @@ export function AiStudio({
             </div>
             <p className="mt-4 text-base font-semibold">Your draft appears here</p>
             <p className="mt-1.5 max-w-sm text-sm leading-relaxed text-ink-soft">
-              Fully interactive — click through it, check the copy, then open it in the builder to fine-tune and publish.
+              Try it out here, then open it in the builder to edit and publish.
             </p>
           </div>
         )}

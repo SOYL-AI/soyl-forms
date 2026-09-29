@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 const BILLING_FAQS: FaqItem[] = [
   {
     q: "What happens when I hit a limit?",
-    a: "We warn you at 80% and 95% of your monthly responses. At 100%, new responses pause and respondents see your closed message. Nothing is silently charged. Your live-form limit only affects publishing new forms — existing ones keep running.",
+    a: "We warn you at 80% and 95% of your monthly responses. At 100%, new responses pause and respondents see your closed message. You're never charged automatically for going over. Your live-form limit only affects publishing new forms; existing ones keep running.",
   },
   {
     q: "Can I change or cancel my plan?",
@@ -30,11 +30,11 @@ const BILLING_FAQS: FaqItem[] = [
   },
   {
     q: "Is there a Business plan?",
-    a: "Not yet. If you need team seats, custom domains, or higher limits, write to us — we'll set up a plan that fits before we launch it publicly.",
+    a: "Not yet. If you need team seats, custom domains or higher limits, contact us and we'll set up a plan that fits.",
   },
   {
     q: "Do you offer discounts for students or non-profits?",
-    a: "The Free plan is generous on purpose. If you're running a student body, NGO or classroom and need more, email us with a short note about what you're doing.",
+    a: "Yes. If you're a student group, NGO or educator, email us with a short note about what you're working on.",
   },
 ];
 
@@ -54,7 +54,7 @@ export default function PricingPage() {
         </Section>
         <Section tone="paper">
           <div className="mx-auto max-w-3xl">
-            <Faq items={BILLING_FAQS} title="Billing, plainly" />
+            <Faq items={BILLING_FAQS} title="Billing questions" />
           </div>
         </Section>
       </main>

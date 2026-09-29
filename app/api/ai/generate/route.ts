@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { AI_PROMPT_MAX_CHARS } from "@/lib/ai/limits";
 import { getSessionUserId } from "@/lib/supabase/server";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { generateFormDraft, isAiConfigured } from "@/lib/ai/generate";
@@ -11,7 +12,7 @@ import { getBrandKit } from "@/lib/brand/actions";
 import { getPlatformFlags } from "@/lib/platform";
 
 const generateSchema = z.object({
-  description: z.string().min(10).max(3000),
+  description: z.string().min(10).max(AI_PROMPT_MAX_CHARS),
   brandKitId: z.string().uuid().nullable().optional(),
   length: z.enum(["short", "medium", "long"]).optional(),
   tone: z.string().max(80).optional(),
@@ -36,7 +37,7 @@ export async function POST(req: Request) {
   }
   if (!isAiConfigured()) {
     return NextResponse.json(
-      { error: "AI generation isn't connected yet — the app owner needs to add a provider key." },
+      { error: "AI drafting is temporarily unavailable. Please try again later." },
       { status: 503 },
     );
   }

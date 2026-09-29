@@ -23,7 +23,7 @@ export default async function AccountPage({ searchParams }: { searchParams?: { r
       <PageHeader eyebrow="Account" title="Settings" description="Your profile, workspace and sign-in." />
       {searchParams?.reset === "1" && (
         <Notice tone="info" className="mt-6">
-          You arrived from a password-reset link — set a new password below.
+          Choose a new password below.
         </Notice>
       )}
       <div className="mt-8 grid gap-4 lg:grid-cols-2">

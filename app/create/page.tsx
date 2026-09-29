@@ -27,7 +27,7 @@ export default async function CreatePage({ searchParams }: { searchParams?: { ki
       <PageHeader
         eyebrow="Create with AI"
         title="Describe it. We’ll draft it in your brand."
-        description="Say who’s answering and what you need to know. You get a complete, on-brand form to click through — then open it in the builder to fine-tune and publish."
+        description="Say who’s answering and what you need to know. Preview the draft, then fine-tune and publish it in the builder."
       />
       <div className="mt-8">
         <AiStudio kits={kits} initialKitId={initialKitId} balance={balance} aiConfigured={isAiConfigured() && ctx.flags.aiEnabled} />
