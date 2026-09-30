@@ -235,7 +235,7 @@ export function AiStudio({
             <Notice tone="danger">
               {error}{" "}
               {/credits/i.test(error) && (
-                <Link href="/billing/credits" className="font-semibold underline underline-offset-2">
+                <Link href="/billing/credits" className="native-hide font-semibold underline underline-offset-2">
                   Top up
                 </Link>
               )}
@@ -249,11 +249,13 @@ export function AiStudio({
             </Button>
             <span className="text-xs text-ink-faint">
               {AI_COST_PER_DRAFT} credit per draft ·{" "}
-              <span className={cn("font-semibold", balance < AI_COST_PER_DRAFT ? "text-danger" : "text-ink")}>{balance} left</span>{" "}
-              ·{" "}
-              <Link href="/billing/credits" className="font-semibold underline underline-offset-2">
-                Top up
-              </Link>
+              <span className={cn("font-semibold", balance < AI_COST_PER_DRAFT ? "text-danger" : "text-ink")}>{balance} left</span>
+              <span className="native-hide">
+                {" "}·{" "}
+                <Link href="/billing/credits" className="font-semibold underline underline-offset-2">
+                  Top up
+                </Link>
+              </span>
             </span>
           </div>
         </Card>

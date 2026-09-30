@@ -5,6 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import { isNativeApp } from "@/lib/native";
+import { signInWithGoogleInApp } from "@/lib/native-auth";
 import { PLANS, isPlanCode } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -52,6 +54,13 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     if (!supabase) return;
     setError(null);
     setBusy("google");
+    if (isNativeApp()) {
+      // Google blocks sign-in inside app WebViews; use the system browser.
+      const res = await signInWithGoogleInApp(supabase, next);
+      if (res.error) setError(res.error);
+      setBusy(null);
+      return;
+    }
     const { error: e } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}` },
@@ -67,7 +76,7 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     setError(null);
     const supabase = getBrowserSupabase();
     if (!supabase) {
-      setError("Sign-in isn't wired up yet — the app owner needs to set Supabase credentials.");
+      setError("Sign-in is temporarily unavailable. Please try again in a few minutes.");
       return;
     }
     if (mode === "signup" && password.length < 8) {

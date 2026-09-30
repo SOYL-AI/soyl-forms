@@ -6,16 +6,18 @@ import { NextResponse } from "next/server";
  * Serves the statement list that lets Android verify this domain
  * delegates link handling to the SOYL Forms app (com.soylai.forms).
  *
- * The SHA-256 fingerprint comes from Play App Signing (Play Console →
- * Setup → App signing → SHA-256 certificate fingerprint). Update this
- * value after enrolling in Play App Signing.
+ * ANDROID_CERT_SHA256 is a comma-separated list of SHA-256 certificate
+ * fingerprints (AA:BB:…): the Play App Signing key (Play Console → Test and
+ * release → App integrity → App signing) and, for sideloaded test builds, your
+ * upload key. See docs/android-release.md.
  *
- * To test: https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://forms.soylai.com
+ * To test: https://digitalassetlinks.googleapis.com/v1/statements:list?source.web.site=https://<your-domain>
  */
 
-const FINGERPRINTS = process.env.ANDROID_CERT_SHA256
-  ? [process.env.ANDROID_CERT_SHA256]
-  : [];
+const FINGERPRINTS = (process.env.ANDROID_CERT_SHA256 ?? "")
+  .split(",")
+  .map((f) => f.trim().toUpperCase())
+  .filter(Boolean);
 
 export async function GET() {
   const statements = [

@@ -3,6 +3,8 @@ import { Bricolage_Grotesque, Instrument_Sans, JetBrains_Mono } from "next/font/
 import { getAppUrl, getProductName } from "@/lib/config";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Analytics } from "@/components/Analytics";
+import { NativeBridge } from "@/components/NativeBridge";
+import { NATIVE_MARKER_SCRIPT } from "@/lib/native";
 import "./globals.css";
 
 const display = Bricolage_Grotesque({
@@ -53,6 +55,9 @@ export default function RootLayout({
       className={`${display.variable} ${sans.variable} ${mono.variable}`}
       suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: NATIVE_MARKER_SCRIPT }} />
+      </head>
       <body className="min-h-screen font-sans antialiased">
         <ThemeProvider
           attribute="class"
@@ -62,6 +67,7 @@ export default function RootLayout({
         >
           {children}
           <Analytics />
+          <NativeBridge />
         </ThemeProvider>
       </body>
     </html>

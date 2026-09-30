@@ -7,6 +7,7 @@ import { Dialog } from "@/components/ui/dialog";
 import { Button, ButtonLink } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { ScanQrButton } from "@/app/dashboard/FormActions";
+import { saveFile } from "@/lib/save-file";
 
 /**
  * Share dialog: canonical link, QR preview + PNG/SVG downloads, embed snippet.
@@ -58,20 +59,12 @@ export function ShareDialog({
   async function downloadPng() {
     if (!qrUrl) return;
     const dataUrl = await QRCode.toDataURL(qrUrl, { width: 1024, margin: 2, errorCorrectionLevel: "M" });
-    const a = document.createElement("a");
-    a.href = dataUrl;
-    a.download = `${slug}-qr.png`;
-    a.click();
+    await saveFile(`${slug}-qr.png`, await (await fetch(dataUrl)).blob());
   }
 
-  function downloadSvg() {
+  async function downloadSvg() {
     if (!svg) return;
-    const blob = new Blob([svg], { type: "image/svg+xml" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${slug}-qr.svg`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    await saveFile(`${slug}-qr.svg`, new Blob([svg], { type: "image/svg+xml" }));
   }
 
   async function copy(text: string, which: "link" | "embed") {

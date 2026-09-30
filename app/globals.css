@@ -206,6 +206,17 @@
   }
 }
 
+/* Android app (lib/native.ts): no purchases in-app; app-only notes. */
+.native-only {
+  display: none;
+}
+html[data-native] .native-only {
+  display: block;
+}
+html[data-native] .native-hide {
+  display: none !important;
+}
+
 /* Honor users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .step-animated,

@@ -2,6 +2,15 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { authCookieOptions } from "@/lib/supabase/cookies";
+import { isNativeUserAgent } from "@/lib/native";
+
+/** In the Android app, marketing and purchase pages lead to the app itself (Play Billing policy). */
+const NATIVE_REDIRECTS: Record<string, string> = {
+  "/": "/dashboard",
+  "/features": "/dashboard",
+  "/pricing": "/dashboard",
+  "/billing/credits": "/billing",
+};
 
 /**
  * Refreshes the Supabase session on every page request and writes the rotated
@@ -9,6 +18,11 @@ import { authCookieOptions } from "@/lib/supabase/cookies";
  * an expired access token was never persisted and users were signed out.
  */
 export async function middleware(request: NextRequest) {
+  if (isNativeUserAgent(request.headers.get("user-agent"))) {
+    const target = NATIVE_REDIRECTS[request.nextUrl.pathname];
+    if (target) return NextResponse.redirect(new URL(target, request.url));
+  }
+
   let response = NextResponse.next({ request });
   if (!isSupabaseConfigured()) return response;
 

@@ -93,30 +93,34 @@ export default async function BillingPage({
             <span className="ml-1.5 align-middle font-sans text-sm font-normal text-ink-faint">available</span>
           </p>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
-            {e.aiCreditsMonthly} credits arrive every month on {plan.name}. A draft costs 1, a brand extraction 2. Packs never expire.
+            {e.aiCreditsMonthly} credits arrive every month on {plan.name}. A draft costs 1, a brand extraction 2.
           </p>
-          <Link href="/billing/credits" className="mt-3 inline-block text-sm font-semibold text-ink underline underline-offset-2">
+          <Link href="/billing/credits" className="native-hide mt-3 inline-block text-sm font-semibold text-ink underline underline-offset-2">
             Buy a credit pack →
           </Link>
         </Card>
       </div>
 
-      <h2 className="mt-12 font-display text-2xl tracking-tight">{effective.plan === "free" ? "Upgrade" : "Change plan"}</h2>
-      <p className="mt-1 text-sm text-ink-soft">
-        {formatINR(PLANS.starter.monthlyPaise)}/mo Starter · {formatINR(PLANS.pro.monthlyPaise)}/mo Pro. Your new plan starts as soon as payment is confirmed.
-      </p>
-      <div className="mt-5">
-        <SubscribeButtons
-          currentPlan={effective.plan}
-          configured={isRazorpayConfigured() && ctx.flags.upgradesEnabled}
-          initialInterval={wantInterval}
-          autoOpenPlan={autoOpen ? wantPlan : null}
-        />
+      {/* Google Play: no purchases inside the Android app (see lib/native.ts). */}
+      <p className="native-only mt-10 text-sm text-ink-soft">Plan changes and credit packs aren&apos;t available in the app.</p>
+      <div className="native-hide">
+        <h2 className="mt-12 font-display text-2xl tracking-tight">{effective.plan === "free" ? "Upgrade" : "Change plan"}</h2>
+        <p className="mt-1 text-sm text-ink-soft">
+          {formatINR(PLANS.starter.monthlyPaise)}/mo Starter · {formatINR(PLANS.pro.monthlyPaise)}/mo Pro. Your new plan starts as soon as payment is confirmed.
+        </p>
+        <div className="mt-5">
+          <SubscribeButtons
+            currentPlan={effective.plan}
+            configured={isRazorpayConfigured() && ctx.flags.upgradesEnabled}
+            initialInterval={wantInterval}
+            autoOpenPlan={autoOpen ? wantPlan : null}
+          />
+        </div>
       </div>
 
       <div className="mt-10 flex flex-wrap items-center gap-3 border-t border-line pt-6">
         <CancelButton hasSubscription={hasLiveSub && !stored.cancel_at_period_end} />
-        <Link href="/contact" className="text-sm font-semibold text-ink-soft hover:text-ink">
+        <Link href="/contact" className="native-hide text-sm font-semibold text-ink-soft hover:text-ink">
           Need an invoice or a custom plan? Contact us
         </Link>
       </div>
