@@ -12,6 +12,7 @@ import {
   type FormTheme,
 } from "@/types/forms";
 import { estimateProgress, getNextBlockId, isAnswerable } from "@/lib/forms/logic";
+import { isValidAnswer } from "@/lib/forms/answers";
 import { resolveTheme, themeCssVars, themeFontsHref } from "@/lib/forms/themes";
 import { recallText } from "@/lib/forms/recall";
 import { scoreAnswers } from "@/lib/forms/quiz";
@@ -207,6 +208,7 @@ export function FormRenderer({
   onBeforeComplete,
   uploads,
   persistKey,
+  persistPrefix,
   preview,
   focusBlockId,
 }: {
@@ -227,6 +229,12 @@ export function FormRenderer({
   uploads?: { slug: string };
   /** sessionStorage key: answers survive a refresh on the public route. */
   persistKey?: string;
+  /**
+   * Key prefix shared by every version of this form. When there's nothing
+   * saved for `persistKey` (the form was re-published mid-answer), answers
+   * saved under an older version are carried over for questions that still exist.
+   */
+  persistPrefix?: string;
   /** Builder/marketing preview: no persistence, no redirects. */
   preview?: boolean;
   /** Builder: jump the preview to the block being edited. */
@@ -258,7 +266,7 @@ export function FormRenderer({
   const current: Block | undefined = byId.get(currentId);
   const autoAdvance = settings?.autoAdvance ?? true;
 
-  // Restore a half-finished session (same form version only).
+  // Restore a half-finished session: this version first, else an older version of the same form.
   useEffect(() => {
     if (!persistKey) return;
     try {
@@ -272,12 +280,37 @@ export function FormRenderer({
           setOthers(saved.others ?? {});
           setAnswers(saved.answers ?? {});
         }
+      } else if (persistPrefix) {
+        const olderKey = Object.keys(window.sessionStorage).find((k) => k.startsWith(persistPrefix) && k !== persistKey);
+        const older = olderKey ? (JSON.parse(window.sessionStorage.getItem(olderKey) ?? "null") as PersistedState | null) : null;
+        if (older) {
+          // Keep only answers that are still valid for questions that still exist.
+          const usable = new Set(
+            Object.entries(older.answers ?? {})
+              .filter(([id, a]) => {
+                const block = byId.get(id);
+                return block ? isValidAnswer(block, a) : false;
+              })
+              .map(([id]) => id),
+          );
+          const keep = <T,>(rec: Record<string, T> | undefined) =>
+            Object.fromEntries(Object.entries(rec ?? {}).filter(([id]) => usable.has(id))) as Record<string, T>;
+          setDrafts(keep(older.drafts));
+          setOthers(keep(older.others));
+          setAnswers(keep(older.answers));
+          // Resume where they were only if the whole trail still exists; otherwise start over with answers pre-filled.
+          if (order.includes(older.currentId) && older.history.every((id) => order.includes(id))) {
+            setCurrentId(older.currentId);
+            setHistory(older.history);
+          }
+        }
+        if (olderKey) window.sessionStorage.removeItem(olderKey);
       }
     } catch {
       /* storage unavailable — fine */
     }
     setRestored(true);
-  }, [persistKey, order]);
+  }, [persistKey, persistPrefix, order, byId]);
 
   useEffect(() => {
     if (!persistKey || !restored || completed) return;

@@ -492,21 +492,22 @@ export function FileUploadInput({
         const auth = (await authRes.json().catch(() => null)) as {
           fileId?: string;
           uploadUrl?: string;
+          contentType?: string;
           error?: string;
         } | null;
         if (!authRes.ok || !auth?.fileId || !auth?.uploadUrl) {
-          throw new Error(auth?.error ?? "Upload refused.");
+          throw new Error(auth?.error ?? `We couldn’t upload “${f.name}”. Please try again.`);
         }
         const put = await fetch(auth.uploadUrl, {
           method: "PUT",
-          headers: { "content-type": f.type || "application/octet-stream" },
+          headers: { "content-type": auth.contentType ?? (f.type || "application/octet-stream") },
           body: f,
         });
-        if (!put.ok) throw new Error("Upload failed — try again.");
+        if (!put.ok) throw new Error(`We couldn’t upload “${f.name}”. Please try again.`);
         next.push(auth.fileId);
         nextNames[auth.fileId] = f.name;
       } catch (e) {
-        setProblem(e instanceof Error ? e.message : "Upload failed.");
+        setProblem(e instanceof Error && e.message !== "Failed to fetch" ? e.message : "Upload failed. Check your connection and try again.");
         break;
       }
     }

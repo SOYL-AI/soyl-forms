@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { noStoreFetch } from "./fetch";
 
 /**
  * Service-role client. SERVER ONLY — it bypasses RLS.
@@ -11,5 +12,6 @@ export function getServiceSupabase() {
   if (!url || !key) return null;
   return createClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: noStoreFetch },
   });
 }

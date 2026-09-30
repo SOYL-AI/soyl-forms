@@ -6,7 +6,7 @@ import { clientIp, resolvePublicForm } from "@/lib/forms/public";
 
 const startSchema = z.object({
   sessionId: z.string().min(1).max(100),
-  source: z.string().max(20).optional(),
+  source: z.string().max(500).optional(),
 });
 
 export async function POST(
@@ -33,7 +33,7 @@ export async function POST(
     form_id: resolved.form.id,
     form_version_id: resolved.form.versionId,
     session_id: body.data.sessionId,
-    source: body.data.source ?? null,
+    source: body.data.source?.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20) || null,
   });
 
   return NextResponse.json({ ok: true });
