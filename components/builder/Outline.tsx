@@ -202,7 +202,7 @@ export function AddBlockPicker({
               <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">
                 {BLOCK_GROUP_LABELS[group]}
               </p>
-              <div className="grid gap-1.5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                 {types.map((t) => {
                   const Icon = BLOCK_ICONS[t];
                   return (

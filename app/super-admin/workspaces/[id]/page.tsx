@@ -66,14 +66,14 @@ export default async function AdminWorkspaceDetail({ params }: { params: { id: s
         <WorkspaceStatusButton workspaceId={ws.id} status={ws.status} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card>
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold">Effective plan: {PLANS[effective.plan].name}</p>
             <Badge tone={effective.source === "override" ? "warn" : effective.source === "subscription" ? "positive" : "neutral"}>{effective.source}</Badge>
             {stored?.status ? <StatusBadge status={String(stored.status)} /> : null}
           </div>
-          <dl className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+          <dl className="mt-3 grid grid-cols-1 gap-2 text-xs sm:grid-cols-2">
             <div>
               <dt className="text-ink-faint">Stored plan / status</dt>
               <dd>
@@ -121,7 +121,7 @@ export default async function AdminWorkspaceDetail({ params }: { params: { id: s
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card padded={false}>
           <p className="px-5 pt-5 text-sm font-semibold">Members</p>
           <div className="mt-3 border-t border-line">

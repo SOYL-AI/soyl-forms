@@ -97,7 +97,7 @@ export default function FeaturesPage() {
 
         {GROUPS.map((g, i) => (
           <Section key={g.title} tone={i % 2 === 1 ? "paper" : "plain"}>
-            <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr] lg:gap-14">
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[1fr_1.2fr] lg:gap-14">
               <SectionHeading title={g.title} lede={g.lede} />
               <ul className="divide-y divide-line self-start rounded-3xl border border-line bg-paper px-6">
                 {g.points.map((p) => (

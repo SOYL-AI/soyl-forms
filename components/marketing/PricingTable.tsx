@@ -43,7 +43,7 @@ export function PricingTable({ compact }: { compact?: boolean }) {
         />
       </div>
 
-      <div className="mt-8 grid gap-4 md:grid-cols-3 md:items-stretch">
+      <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3 md:items-stretch">
         {PLAN_ORDER.map((code) => {
           const plan = PLANS[code];
           const featured = code === "starter";
@@ -175,14 +175,14 @@ function ComparisonTable({ interval }: { interval: BillingInterval }) {
         </table>
       </div>
 
-      <div className="mt-10 grid gap-6 md:grid-cols-[1fr_1.2fr]">
+      <div className="mt-10 grid grid-cols-1 gap-6 md:grid-cols-[1fr_1.2fr]">
         <div>
           <h3 className="font-display text-2xl tracking-tight">AI credits</h3>
           <p className="mt-2 text-sm leading-relaxed text-ink-soft">
             1 credit per AI draft, 2 per brand extraction. Packs never expire.
           </p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {AI_CREDIT_PACKS.map((p) => (
             <div key={p.id} className="rounded-2xl border border-line bg-paper p-4">
               <p className="text-xs font-semibold text-ink-faint">{p.label}</p>

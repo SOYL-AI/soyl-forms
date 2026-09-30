@@ -89,7 +89,7 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
             const files = b.type === "file_upload" && ans?.type === "file_upload" ? ans.value : null;
             const Icon = BLOCK_ICONS[b.type];
             return (
-              <div key={b.id} className="grid gap-1 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-6">
+              <div key={b.id} className="grid grid-cols-1 gap-1 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-6">
                 <dt className="flex items-start gap-2 text-sm text-ink-soft">
                   <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-faint" />
                   <span className="flex-1">{recallLabels(b.title, blocks)}</span>
@@ -125,7 +125,7 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
       {hidden.length > 0 && (
         <Card className="mt-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">Hidden fields (from the URL)</p>
-          <dl className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
+          <dl className="mt-2 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
             {hidden.map(([k, v]) => (
               <div key={k} className="flex gap-2">
                 <dt className="font-mono text-xs text-ink-faint">{k}</dt>

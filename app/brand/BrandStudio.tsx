@@ -35,6 +35,7 @@ import { Field, Input, Segmented, Select, Textarea } from "@/components/ui/input
 import { Badge } from "@/components/ui/badge";
 import { Notice } from "@/components/ui/notice";
 import { EmptyState } from "@/components/ui/empty";
+import { AiSpark, AiThinking } from "@/components/ui/ai-thinking";
 import { cn } from "@/lib/utils";
 
 type Step = "sources" | "review";
@@ -132,7 +133,7 @@ export function BrandStudio({
           }
         />
       ) : (
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {kits.map((kit) => {
             const theme = resolveTheme(brandKitToTheme(kit));
             return (
@@ -397,7 +398,7 @@ function KitEditor({
         <ArrowLeft className="h-4 w-4" /> All brand kits
       </button>
 
-      <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
+      <div className="mt-4 grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_420px]">
         <div>
           <Segmented<Step>
             label="Brand kit steps"
@@ -425,7 +426,7 @@ function KitEditor({
                 <Input value={draft.name} onChange={(e) => patch({ name: e.target.value })} placeholder="Kaveri Coffee Roasters" maxLength={80} />
               </Field>
 
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <div>
                   <span className="mb-1.5 block text-xs font-semibold text-ink-soft">Logo</span>
                   {draft.logoUrl ? (
@@ -522,7 +523,7 @@ function KitEditor({
 
               <div className="flex flex-wrap items-center gap-3 border-t border-line pt-4">
                 <Button variant="accent" onClick={extract} disabled={busy !== null || !hasSources}>
-                  {busy === "extract" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wand2 className="h-4 w-4" />}
+                  {busy === "extract" ? <AiSpark className="ai-spark h-4 w-4" /> : <Wand2 className="h-4 w-4" />}
                   {busy === "extract" ? "Reading your brand…" : "Extract brand"}
                 </Button>
                 <Button variant="ghost" onClick={() => setStep("review")}>
@@ -531,9 +532,23 @@ function KitEditor({
                 <span className="text-xs text-ink-faint">
                   {aiConfigured
                     ? `${AI_COST_PER_BRAND_EXTRACTION} credits per extraction · ${balance} available`
-                    : "AI isn't connected; extraction uses colour and font detection only."}
+                    : "We’ll detect your colours and fonts."}
                 </span>
               </div>
+              {busy === "extract" && (
+                <div className="rounded-2xl border border-line bg-paper-deep/30 px-4 py-3.5">
+                  <AiThinking
+                    messages={[
+                      "Reading your sources…",
+                      "Picking out your colours…",
+                      "Matching your fonts…",
+                      "Learning your tone of voice…",
+                      "Putting your brand kit together…",
+                      "Almost there…",
+                    ]}
+                  />
+                </div>
+              )}
             </Card>
           )}
 
@@ -600,7 +615,7 @@ function KitEditor({
                 {draft.fonts.detected.length > 0 && (
                   <p className="-mt-2 text-xs text-ink-faint">Detected in your sources: {draft.fonts.detected.join(", ")}</p>
                 )}
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
                     <span className="mb-1.5 block text-xs font-semibold text-ink-soft">Corners</span>
                     <Segmented
@@ -634,7 +649,7 @@ function KitEditor({
 
               <Card className="flex flex-col gap-4">
                 <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Voice — how the AI writes your questions</p>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Tone">
                     <Input value={draft.voice.tone} onChange={(e) => patchVoice({ tone: e.target.value })} placeholder="Warm, direct, a little playful" maxLength={300} />
                   </Field>

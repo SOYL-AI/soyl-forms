@@ -120,7 +120,7 @@ export default async function SuperAdminOverview() {
         <Kpi label="AI credits spent" value={creditsSpent.toLocaleString("en-IN")} sub="last 30 days" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
           <p className="text-sm font-semibold">Responses · 30 days</p>
           <div className="mt-3">
@@ -135,7 +135,7 @@ export default async function SuperAdminOverview() {
         </Card>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.6fr]">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.6fr]">
         <Card>
           <p className="text-sm font-semibold">Plan mix</p>
           <p className="mt-0.5 text-xs text-ink-faint">

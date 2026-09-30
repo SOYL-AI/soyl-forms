@@ -63,7 +63,7 @@ export default async function BillingPage({
     <AppShell ctx={ctx} active="billing">
       <PageHeader eyebrow="Billing & usage" title={`${plan.name} plan`} description={plan.tagline} />
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1.2fr_1fr]">
+      <div className="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
         <Card>
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge status={stored.status} />
@@ -72,7 +72,7 @@ export default async function BillingPage({
             {stored.billing_interval && <span className="text-xs text-ink-faint">Billed {stored.billing_interval}</span>}
             {stored.current_period_end && <span className="text-xs text-ink-faint">· renews {formatDate(stored.current_period_end)}</span>}
           </div>
-          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Meter label="Live forms" used={activeForms ?? 0} limit={e.maxActiveForms} />
             <Meter label="Responses this month" used={used.completed_submissions ?? 0} limit={e.monthlySubmissions} />
             <Meter label="File storage" used={storage} limit={e.storageBytes} format={formatBytes} />

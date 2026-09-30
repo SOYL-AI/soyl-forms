@@ -86,7 +86,7 @@ export function BuyButtons({ packs, configured }: { packs: CreditPack[]; configu
 
   return (
     <div>
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {packs.map((p, i) => (
           <div key={p.id} className={`rounded-2xl border p-6 ${i === 1 ? "border-ink" : "border-line"} bg-paper`}>
             <div className="flex items-center justify-between">

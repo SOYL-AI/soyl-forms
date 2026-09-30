@@ -9,7 +9,7 @@ const POINTS = ["AI drafts forms in your brand", "Link, QR code and embed on eve
 /** Two-panel auth layout: product story left, form right. Stacks on phones. */
 export function AuthShell({ children, title, subtitle }: { children: ReactNode; title: string; subtitle: ReactNode }) {
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
+    <div className="grid grid-cols-1 min-h-screen lg:grid-cols-[1.05fr_1fr]">
       <aside className="relative hidden overflow-hidden bg-inverse text-inverse-ink lg:flex lg:flex-col lg:justify-between lg:p-12">
         <div className="pointer-events-none absolute -bottom-64 -left-48 h-[900px] w-[900px] text-inverse-ink/[0.06]">
           <RadialLines className="inset-0 h-full w-full" />

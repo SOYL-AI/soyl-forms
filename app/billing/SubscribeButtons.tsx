@@ -132,7 +132,7 @@ export function SubscribeButtons({
           { value: "yearly", label: `Yearly · save ${yearlySavingsPct(PLANS.starter)}%` },
         ]}
       />
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         {(["starter", "pro"] as Array<Exclude<PlanCode, "free">>).map((code) => {
           const plan = PLANS[code];
           const perMonth = interval === "monthly" ? plan.monthlyPaise : yearlyPerMonthPaise(plan);

@@ -51,7 +51,7 @@ export default async function TemplatePage({
   const questions = template.schema.blocks.filter((b) => isAnswerable(b.type));
 
   const body = (
-    <div className="grid gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
+    <div className="grid grid-cols-1 gap-10 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
       <div>
         <Link href="/templates" className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft hover:text-ink">
           <ArrowLeft className="h-4 w-4" /> All templates

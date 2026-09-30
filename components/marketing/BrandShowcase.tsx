@@ -95,7 +95,7 @@ export function BrandShowcase() {
   const resolved = useMemo(() => resolveTheme(active.theme), [active]);
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-start">
       <div>
         <div role="tablist" aria-label="Sample brands" className="flex flex-col gap-2">
           {BRANDS.map((b) => {

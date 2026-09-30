@@ -36,7 +36,7 @@ export function SiteFooter() {
   const name = getProductName();
   return (
     <footer className="border-t border-line bg-paper-deep/40">
-      <div className="mx-auto grid max-w-page gap-10 px-5 py-14 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
+      <div className="mx-auto grid grid-cols-1 max-w-page gap-10 px-5 py-14 sm:px-6 md:grid-cols-[1.4fr_1fr_1fr_1fr]">
         <div>
           <p className="flex items-center gap-2.5">
             <BrandMark size={26} />

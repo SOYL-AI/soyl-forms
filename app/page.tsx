@@ -54,7 +54,7 @@ export default function HomePage() {
       <main>
         {/* Hero */}
         <section className="relative overflow-hidden">
-          <div className="mx-auto grid max-w-page items-center gap-12 px-5 pb-16 pt-14 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-24 lg:pt-24">
+          <div className="mx-auto grid grid-cols-1 max-w-page items-center gap-12 px-5 pb-16 pt-14 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:pb-24 lg:pt-24">
             <div>
               <h1 className="rise font-display text-[2.75rem] leading-[1.02] tracking-tightest sm:text-[3.6rem] lg:text-[4.2rem]">
                 Forms people actually finish.
@@ -109,7 +109,7 @@ export default function HomePage() {
         {/* How it works */}
         <Section>
           <SectionHeading title="From a sentence to responses in minutes" />
-          <ol className="mt-12 grid gap-4 md:grid-cols-3">
+          <ol className="mt-12 grid grid-cols-1 gap-4 md:grid-cols-3">
             {STEPS.map((s) => (
               <li key={s.n} className="rounded-3xl border border-line bg-paper p-7">
                 <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent font-display text-sm font-semibold text-accent-ink">
@@ -125,7 +125,7 @@ export default function HomePage() {
         {/* Feature grid */}
         <Section tone="paper" id="features">
           <SectionHeading title="Everything a form needs." />
-          <div className="mt-12 grid gap-px overflow-hidden rounded-3xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-12 grid grid-cols-1 gap-px overflow-hidden rounded-3xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-4">
             {FEATURES.map((f) => {
               const Icon = f.icon;
               return (
@@ -146,9 +146,9 @@ export default function HomePage() {
 
         {/* Templates */}
         <Section>
-          <div className="grid gap-10 lg:grid-cols-[1fr_1.4fr] lg:items-center">
+          <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_1.4fr] lg:items-center">
             <SectionHeading title="Start from a template" lede={`${TEMPLATES.length} ready-made forms. Pick one, make it yours.`} />
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               {USE_CASES.map((u) => (
                 <Link
                   key={u.label}
