@@ -83,8 +83,12 @@ export default function PrivacyPage() {
 
           <h2>Retention</h2>
           <p>
-            We keep your information for as long as your account is active. You can delete forms, responses and brand kits at any time.
-            When you delete your account, we delete your data within 30 days, except where we must keep records such as invoices by law.
+            We keep your information for as long as your account is active. You can delete forms, responses and brand kits at any time,
+            and delete your whole account from Account settings in the app or on the website (see{" "}
+            <Link className="underline" href="/delete-account">
+              how to delete your account
+            </Link>
+            ). Account deletion is immediate, except for records such as invoices that we must keep by law.
           </p>
 
           <h2>Security</h2>

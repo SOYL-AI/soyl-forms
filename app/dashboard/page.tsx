@@ -111,13 +111,16 @@ export default async function DashboardPage() {
       </div>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-faint">
         <span>
-          {credits} AI credit{credits === 1 ? "" : "s"} available ·{" "}
-          <Link href="/billing/credits" className="font-semibold text-ink-soft underline underline-offset-2 hover:text-ink">
-            top up
-          </Link>
+          {credits} AI credit{credits === 1 ? "" : "s"} available
+          <span className="native-hide">
+            {" "}·{" "}
+            <Link href="/billing/credits" className="font-semibold text-ink-soft underline underline-offset-2 hover:text-ink">
+              top up
+            </Link>
+          </span>
         </span>
         {nearLimit && ctx.plan !== "pro" && (
-          <Link href="/billing" className="font-semibold text-warn underline underline-offset-2">
+          <Link href="/billing" className="native-hide font-semibold text-warn underline underline-offset-2">
             You&apos;re close to a limit — see plans
           </Link>
         )}

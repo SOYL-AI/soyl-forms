@@ -271,8 +271,8 @@ export function DesignPanel({
 
       {!customAllowed && (
         <Notice tone="info" className="text-xs">
-          Design freely — custom colours and a logo publish on Starter (₹199/mo). Presets publish on Free.{" "}
-          <Link href="/billing" className="font-semibold underline underline-offset-2">
+          Design freely. Custom colours and a logo publish on paid plans; presets publish on Free.{" "}
+          <Link href="/billing" className="native-hide font-semibold underline underline-offset-2">
             Upgrade
           </Link>
         </Notice>

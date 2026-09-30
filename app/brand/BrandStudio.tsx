@@ -230,7 +230,7 @@ export function BrandStudio({
             <Plus className="h-5 w-5" />
             {canCreate ? "Add another brand kit" : `${PLANS[plan].name} plan includes ${maxKits} kit${maxKits === 1 ? "" : "s"}`}
             {!canCreate && (
-              <Link href="/billing" className="text-xs font-semibold underline underline-offset-2">
+              <Link href="/billing" className="native-hide text-xs font-semibold underline underline-offset-2">
                 Upgrade for more
               </Link>
             )}

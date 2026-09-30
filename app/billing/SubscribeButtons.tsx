@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Segmented } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
 import { cn } from "@/lib/utils";
+import { isNativeApp } from "@/lib/native";
 
 declare global {
   interface Window {
@@ -107,7 +108,8 @@ export function SubscribeButtons({
 
   // Arriving from a pricing CTA: open checkout without another click.
   useEffect(() => {
-    if (!autoOpenPlan || !configured || opened.current) return;
+    // Never in the Android app: purchases there must go through Play Billing.
+    if (!autoOpenPlan || !configured || opened.current || isNativeApp()) return;
     opened.current = true;
     void subscribe(autoOpenPlan);
     // eslint-disable-next-line react-hooks/exhaustive-deps

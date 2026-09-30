@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Download, Inbox } from "lucide-react";
+import { Inbox } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getAppContext } from "@/lib/app-context";
@@ -28,6 +28,7 @@ import { EmptyState } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { formatDateTime, pct } from "@/lib/utils";
 import { StateActions } from "./StateActions";
+import { ExportCsvButton } from "@/components/app/ExportCsvButton";
 
 export const metadata: Metadata = { title: "Responses", robots: { index: false } };
 
@@ -333,9 +334,7 @@ export default async function ResponsesPage({
         actions={
           <>
             <StateActions formId={form.id} status={form.status} canReopen={form.status === "closed"} />
-            <ButtonLink href={`/api/forms/${form.id}/export`} variant="secondary">
-              <Download className="h-4 w-4" /> Export CSV
-            </ButtonLink>
+            <ExportCsvButton href={`/api/forms/${form.id}/export`} />
           </>
         }
       />

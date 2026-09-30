@@ -50,7 +50,7 @@ export function PublishButton({
         <span role="alert" className="max-w-xs text-xs font-medium text-danger">
           {error}{" "}
           {/upgrade|plan/i.test(error) && (
-            <Link href="/billing" className="underline">
+            <Link href="/billing" className="native-hide underline">
               See plans
             </Link>
           )}

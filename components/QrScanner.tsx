@@ -6,12 +6,11 @@ import { useCallback, useState } from "react";
  * Capacitor-native QR scanner using @capacitor-mlkit/barcode-scanning.
  *
  * Security:
- * - Only auto-navigates to forms.soylai.com/f/* URLs.
+ * - Only auto-navigates to /f/* URLs on the site the app is running on.
  * - Rejects javascript:, data:, intent: and other dangerous schemes.
  * - Unknown payloads are shown as plain text with copy/share.
  */
 
-const ALLOWED_HOST = "forms.soylai.com";
 const ALLOWED_PATH_PREFIX = "/f/";
 const BLOCKED_SCHEMES = ["javascript:", "data:", "intent:", "blob:", "vbscript:"];
 
@@ -35,7 +34,7 @@ function classifyScanResult(raw: string): ScanResult {
   try {
     const url = new URL(trimmed);
     if (
-      url.hostname === ALLOWED_HOST &&
+      url.host === window.location.host &&
       url.pathname.startsWith(ALLOWED_PATH_PREFIX) &&
       url.protocol === "https:"
     ) {

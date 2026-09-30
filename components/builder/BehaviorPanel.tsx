@@ -128,7 +128,7 @@ export function BehaviorPanel({
             ) : (
               <>
                 Notifications send on paid plans.{" "}
-                <Link href="/billing" className="font-semibold underline underline-offset-2">
+                <Link href="/billing" className="native-hide font-semibold underline underline-offset-2">
                   Upgrade
                 </Link>
               </>

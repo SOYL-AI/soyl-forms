@@ -101,7 +101,8 @@ export default function TermsPage() {
 
           <h2>9. Ending these terms</h2>
           <p>
-            You can stop using {name} and ask us to delete your account at any time by emailing {mail}. We may suspend or end your access if
+            You can stop using {name} and delete your account at any time from Account settings, or by emailing {mail}. We may suspend or end
+            your access if
             you seriously or repeatedly breach these terms.
           </p>
 
