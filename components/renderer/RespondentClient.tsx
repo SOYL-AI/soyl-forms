@@ -4,6 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import type { Answers, FormSchemaV1, FormSettings, FormTheme } from "@/types/forms";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function newId(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -63,23 +67,36 @@ export function RespondentClient({
     params.forEach((value, key) => {
       if (key !== "src" && key !== "embed") hidden[key] = value;
     });
-    let res: Response;
-    try {
-      res = await fetch(`/api/public/forms/${slug}/submit`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          formVersionId: versionId,
-          idempotencyKey,
-          answers,
-          hiddenFields: hidden,
-          sessionId,
-          source: params.get("src") ?? undefined,
-          durationMs: Math.max(0, Date.now() - startedAt),
-        }),
-      });
-    } catch {
-      return { ok: false };
+    const payload = JSON.stringify({
+      formVersionId: versionId,
+      idempotencyKey,
+      answers,
+      hiddenFields: hidden,
+      sessionId,
+      source: params.get("src") ?? undefined,
+      durationMs: Math.max(0, Date.now() - startedAt),
+    });
+
+    // Retry network failures, server errors and rate limits a few times. The
+    // idempotency key makes a retried submission land exactly once.
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) await sleep(attempt * 1500);
+      try {
+        res = await fetch(`/api/public/forms/${slug}/submit`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: payload,
+        });
+      } catch {
+        res = null;
+        continue;
+      }
+      if (res.ok || (res.status < 500 && res.status !== 429)) break;
+    }
+
+    if (!res) {
+      return { ok: false, error: "You seem to be offline. Check your connection and try again — your answers are kept." };
     }
     if (res.ok) {
       try {
@@ -91,7 +108,7 @@ export function RespondentClient({
       return { ok: true, score: data?.score };
     }
     const data = (await res.json().catch(() => null)) as { error?: string } | null;
-    return { ok: false, error: data?.error ?? "Couldn't save your response. Try again." };
+    return { ok: false, error: data?.error ?? "We couldn't save your response. Please try again — your answers are kept." };
   }
 
   if (alreadyDone) {
@@ -122,6 +139,7 @@ export function RespondentClient({
       uploads={{ slug }}
       onBeforeComplete={submit}
       persistKey={`soyl:f:${slug}:${versionId}`}
+      persistPrefix={`soyl:f:${slug}:`}
     />
   );
 }

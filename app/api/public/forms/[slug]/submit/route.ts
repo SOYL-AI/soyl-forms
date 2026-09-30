@@ -6,7 +6,7 @@ import { validateAnswers } from "@/lib/forms/answers";
 import { scoreAnswers } from "@/lib/forms/quiz";
 import { PLANS } from "@/lib/plans";
 import { getWorkspacePlan } from "@/lib/billing/plan";
-import { clientIp, formAcceptance, resolvePublicForm } from "@/lib/forms/public";
+import { clientIp, formAcceptance, resolveFormVersion, resolvePublicForm } from "@/lib/forms/public";
 
 const submitSchema = z.object({
   formVersionId: z.string().min(1).max(100),
@@ -14,8 +14,10 @@ const submitSchema = z.object({
   answers: z.record(z.unknown()),
   hiddenFields: z.record(z.unknown()).optional().default({}),
   sessionId: z.string().min(1).max(100).optional(),
-  source: z.string().max(20).optional(),
-  durationMs: z.number().int().min(0).max(24 * 3600 * 1000).optional(),
+  // Lenient on metadata: a long ?src= tag or a tab left open for days must
+  // never cost a response. Both are cleaned up below instead of rejected.
+  source: z.string().max(500).optional(),
+  durationMs: z.number().min(0).optional(),
 });
 
 export async function POST(
@@ -26,14 +28,14 @@ export async function POST(
   const limit = checkRateLimit(`submit:${ip}:${params.slug}`, 20, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
-      { error: "Too many attempts. Wait a moment and try again." },
+      { error: "Too many attempts. Please wait a moment and try again." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(limit.retryAfterMs / 1000)) } },
     );
   }
 
   const body = submitSchema.safeParse(await req.json().catch(() => null));
   if (!body.success) {
-    return NextResponse.json({ error: "Invalid submission." }, { status: 400 });
+    return NextResponse.json({ error: "Something went wrong sending your answers. Please try again." }, { status: 400 });
   }
   const input = body.data;
 
@@ -44,16 +46,25 @@ export async function POST(
   const form = resolved.form;
   const admin = getServiceSupabase();
 
-  // Form must be live and the payload must target the current version.
+  // Form must be live.
   const acceptance = formAcceptance(form);
   if (!acceptance.open) {
     return NextResponse.json({ error: acceptance.message }, { status: 410 });
   }
+
+  // Validate against the version the respondent actually answered. If the
+  // owner re-published while they were filling it in, their answers still
+  // count — they're stored against the older version.
+  let answered = { versionId: form.versionId, schema: form.schema };
   if (input.formVersionId !== form.versionId) {
-    return NextResponse.json(
-      { error: "This form was updated. Please reload it and answer again." },
-      { status: 409 },
-    );
+    const older = await resolveFormVersion(form.id, input.formVersionId);
+    if (!older) {
+      return NextResponse.json(
+        { error: "This form has changed since you opened it. Please refresh the page to see the latest version." },
+        { status: 409 },
+      );
+    }
+    answered = older;
   }
 
   // Per-form response cap (best-effort count; the monthly plan gate is atomic).
@@ -72,7 +83,7 @@ export async function POST(
   }
 
   // Answers validated against the exact published version.
-  const checked = validateAnswers(form.schema, input.answers);
+  const checked = validateAnswers(answered.schema, input.answers);
   if (!checked.ok) {
     return NextResponse.json({ error: checked.error }, { status: 400 });
   }
@@ -88,23 +99,26 @@ export async function POST(
     }
   }
 
+  // Time-to-complete is analytics only; anything over a day is capped.
+  const durationMs = input.durationMs === undefined ? null : Math.min(Math.round(input.durationMs), 24 * 3600 * 1000);
+
   // Effective workspace plan → atomic insert + monthly gate in one transaction.
   const plan = await getWorkspacePlan(form.workspaceId);
-  const source = input.source && /^[a-z0-9_-]{1,20}$/i.test(input.source) ? input.source.toLowerCase() : null;
+  const source = input.source?.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20) || null;
 
   const { data: result, error: rpcError } = await admin!.rpc("submit_form", {
     p_form_id: form.id,
     p_workspace_id: form.workspaceId,
-    p_version_id: form.versionId,
+    p_version_id: answered.versionId,
     p_idempotency_key: input.idempotencyKey,
     p_answers: checked.value,
     p_hidden: hidden,
     p_source: source,
-    p_duration_ms: input.durationMs ?? null,
+    p_duration_ms: durationMs,
     p_monthly_limit: PLANS[plan].entitlements.monthlySubmissions,
   });
   if (rpcError) {
-    return NextResponse.json({ error: "Couldn't save your response. Try again." }, { status: 500 });
+    return NextResponse.json({ error: "We couldn't save your response. Please try again — your answers are kept." }, { status: 500 });
   }
   const out = result as { ok: boolean; duplicate?: boolean; submission_id?: string; error?: string };
   if (!out.ok) {
@@ -114,7 +128,7 @@ export async function POST(
         { status: 403 },
       );
     }
-    return NextResponse.json({ error: "Couldn't save your response. Try again." }, { status: 500 });
+    return NextResponse.json({ error: "We couldn't save your response. Please try again — your answers are kept." }, { status: 500 });
   }
 
   // Attach uploaded files to this submission (ids were issued by the
@@ -136,7 +150,7 @@ export async function POST(
   if (input.sessionId) {
     await admin!
       .from("form_visits")
-      .update({ completed_at: new Date().toISOString(), duration_ms: input.durationMs ?? null })
+      .update({ completed_at: new Date().toISOString(), duration_ms: durationMs })
       .eq("form_id", form.id)
       .eq("session_id", input.sessionId)
       .is("completed_at", null);
@@ -145,7 +159,7 @@ export async function POST(
   // Quiz mode: grade against the stored answer key (never sent to the browser).
   let score: { points: number; max: number } | undefined;
   if (form.settings.quizMode && form.settings.showScore !== false) {
-    const graded = scoreAnswers(form.schema, checked.value);
+    const graded = scoreAnswers(answered.schema, checked.value);
     if (graded.max > 0) score = { points: graded.points, max: graded.max };
   }
 

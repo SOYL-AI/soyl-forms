@@ -87,6 +87,22 @@ export function getNextBlockId(
   return next ?? null;
 }
 
+/**
+ * The blocks a respondent actually passed through, replaying the form from the
+ * first block with their answers. Branching can skip required questions, and
+ * answers left on a branch they backed out of are not on this path.
+ */
+export function respondentPath(schema: Schema, answers: Answers): Set<string> {
+  const path = new Set<string>();
+  let id: string | null = schema.blocks[0]?.id ?? null;
+  // A jump can point backwards; stop on the first repeat so a loop can't hang.
+  while (id && !path.has(id)) {
+    path.add(id);
+    id = getNextBlockId(schema, id, answers);
+  }
+  return path;
+}
+
 /** Blocks that collect an answer (used for progress + counts). */
 export function isAnswerable(type: string): boolean {
   return type !== "welcome" && type !== "statement" && type !== "thank_you";
