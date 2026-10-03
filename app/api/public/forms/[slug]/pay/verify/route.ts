@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { checkRateLimit } from "@/lib/security/rateLimit";
 import { getWorkspaceRazorpay } from "@/lib/billing/connect-actions";
-import { verifyPaymentSignature } from "@/lib/billing/connect";
+import { verifyPaymentSignature } from "@/lib/billing/signature-server";
 import { clientIp, resolvePublicForm } from "@/lib/forms/public";
 
 const verifySchema = z.object({

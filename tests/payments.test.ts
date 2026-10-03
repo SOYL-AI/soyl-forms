@@ -7,8 +7,8 @@ import {
   isValidKeySecret,
   keyMode,
   rupeesToPaise,
-  verifyPaymentSignature,
 } from "@/lib/billing/connect";
+import { verifyPaymentSignature } from "@/lib/billing/signature-server";
 import { expectedPaiseForBlock } from "@/lib/billing/payments-server";
 import { displayAnswer, validateAnswers } from "@/lib/forms/answers";
 import { formSchemaV1, validateLogicGraph } from "@/lib/forms/schema";

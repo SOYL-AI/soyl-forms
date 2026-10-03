@@ -1,9 +1,7 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-
 /**
- * Creator-connected Razorpay helpers. Pure parts (mode detection, amount
- * math, signature checks) are unit-tested; workspace key loading and the
- * connect flow live in connect-actions.ts.
+ * Browser-safe creator-connected Razorpay helpers for keys and amounts.
+ * Signature verification lives in signature-server.ts; workspace key
+ * loading and the connect flow live in connect-actions.ts.
  */
 
 /** Detect test/live from the public key prefix. Null when unrecognized. */
@@ -62,27 +60,4 @@ export function computeExpectedPaise(
     return { ok: true, paise: block.amountPaise };
   }
   return { ok: false, error: "This payment has no amount configured." };
-}
-
-/**
- * Verify a checkout callback: Razorpay signs `order_id|payment_id` with the
- * workspace's key secret. Timing-safe, fail-closed.
- */
-export function verifyPaymentSignature(args: {
-  orderId: string;
-  paymentId: string;
-  signature: string;
-  keySecret: string;
-}): boolean {
-  const { orderId, paymentId, signature, keySecret } = args;
-  if (!orderId || !paymentId || !signature || !keySecret) return false;
-  if (orderId.length > 100 || paymentId.length > 100 || signature.length > 500) return false;
-  try {
-    const expected = createHmac("sha256", keySecret).update(`${orderId}|${paymentId}`).digest("hex");
-    const a = Buffer.from(expected);
-    const b = Buffer.from(signature);
-    return a.length === b.length && timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
 }
