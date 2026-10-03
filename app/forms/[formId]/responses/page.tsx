@@ -18,6 +18,7 @@ import { scoreAnswers } from "@/lib/forms/quiz";
 import { recallLabels } from "@/lib/forms/recall";
 import { displayAnswer } from "@/lib/forms/answers";
 import { isAnswerable } from "@/lib/forms/logic";
+import { computeFunnel } from "@/lib/forms/funnel";
 import type { AnswerValue, Block, FormSettings } from "@/types/forms";
 import { AppShell } from "@/components/app/AppShell";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
@@ -37,6 +38,7 @@ interface SubmissionRow {
   submitted_at: string;
   source: string | null;
   answers: Record<string, AnswerValue>;
+  tags: string[] | null;
 }
 
 function Stat({ label, value }: { label: string; value: string }) {
@@ -77,6 +79,11 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
   ]);
 
   const submissions = (subs ?? []) as Array<{ answers: Record<string, AnswerValue>; submitted_at: string; source: string | null }>;
+  const { data: funnelVisits } = await admin
+    .from("form_visits")
+    .select("last_block_id, completed_at, started_at")
+    .eq("form_id", formId)
+    .limit(2000);
   const completions = submissions.length;
   const viewCount = views ?? 0;
   if (viewCount === 0 && completions === 0) return null;
@@ -98,6 +105,25 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
     days.push({ label: d.slice(5), count: byDay.get(d) ?? 0 });
   }
   const maxDay = Math.max(1, ...days.map((d) => d.count));
+
+  // Drop-off funnel: incomplete visits are abandoned after 30 idle minutes,
+  // fresher ones count as answering now. Completions reach every step.
+  const answerableBlocks = (blocks ?? []).filter((b) => isAnswerable(b.type));
+  const incomplete = ((funnelVisits ?? []) as Array<{ last_block_id: string | null; completed_at: string | null; started_at: string }>).filter(
+    (v) => !v.completed_at,
+  );
+  const staleAt = Date.now() - 30 * 60_000;
+  const abandonedVisits = incomplete.filter((v) => Date.parse(v.started_at) <= staleAt);
+  const inProgress = incomplete.length - abandonedVisits.length;
+  const funnel =
+    answerableBlocks.length > 0 && (viewCount > 0 || completions > 0)
+      ? computeFunnel({
+          order: answerableBlocks.map((b) => b.id),
+          labels: Object.fromEntries(answerableBlocks.map((b) => [b.id, recallLabels(b.title, blocks ?? [])])),
+          lastBlocks: incomplete.map((v) => v.last_block_id),
+          completions,
+        })
+      : null;
 
   const answerMaps = submissions.map((s) => s.answers);
   const sections: React.ReactNode[] = [];
@@ -257,6 +283,17 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
           ))}
         </div>
       </Card>
+      {funnel && (
+        <Card className="mt-3">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">Drop-off · where starters stop</p>
+          <p className="mt-1 text-xs text-ink-faint">
+            {funnel.started.toLocaleString("en-IN")} started · {funnel.completed.toLocaleString("en-IN")} finished ·{" "}
+            {abandonedVisits.length.toLocaleString("en-IN")} abandoned
+            {inProgress > 0 && ` · ${inProgress} answering now`}
+          </p>
+          <Bars rows={funnel.steps.map((st) => ({ label: st.label, count: st.reached }))} max={Math.max(1, funnel.started)} />
+        </Card>
+      )}
       {sections.length > 0 && <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">{sections}</div>}
     </section>
   );
@@ -285,7 +322,7 @@ export default async function ResponsesPage({
   searchParams,
 }: {
   params: { formId: string };
-  searchParams?: { from?: string; to?: string; q?: string };
+  searchParams?: { from?: string; to?: string; q?: string; tag?: string };
 }) {
   if (!isSupabaseConfigured()) return <ConfigRequired area="responses" />;
   const res = await getAppContext();
@@ -310,7 +347,7 @@ export default async function ResponsesPage({
 
   let query = admin
     .from("submissions")
-    .select("id, submitted_at, source, answers")
+    .select("id, submitted_at, source, answers, tags")
     .eq("form_id", form.id)
     .is("deleted_at", null)
     .order("submitted_at", { ascending: false })
@@ -321,7 +358,10 @@ export default async function ResponsesPage({
   let rows = (data ?? []) as SubmissionRow[];
   const q = searchParams?.q?.trim().toLowerCase();
   if (q) rows = rows.filter((r) => JSON.stringify(r.answers).toLowerCase().includes(q));
-  const filtered = Boolean(searchParams?.from || searchParams?.to || q);
+  const activeTag = searchParams?.tag?.trim().toLowerCase();
+  if (activeTag) rows = rows.filter((r) => (r.tags ?? []).some((t) => t.toLowerCase() === activeTag));
+  const filtered = Boolean(searchParams?.from || searchParams?.to || q || activeTag);
+  const allTags = [...new Set((data ?? []).flatMap((r) => ((r as SubmissionRow).tags ?? [])))].sort();
 
   return (
     <AppShell ctx={res.ctx} active="forms">
@@ -354,6 +394,19 @@ export default async function ResponsesPage({
           <span className="mb-1 block">Search answers</span>
           <Input type="search" name="q" defaultValue={searchParams?.q ?? ""} placeholder="name, choice…" className="w-52 !py-2" />
         </label>
+        {allTags.length > 0 && (
+          <label className="text-xs font-semibold text-ink-soft">
+            <span className="mb-1 block">Tag</span>
+            <select name="tag" defaultValue={activeTag ?? ""} className="h-[38px] rounded-xl border border-line-strong bg-paper px-3 text-sm">
+              <option value="">All tags</option>
+              {allTags.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <button type="submit" className="h-[38px] rounded-full border border-line-strong px-4 text-xs font-semibold hover:border-ink/40">
           Filter
         </button>
@@ -391,6 +444,15 @@ export default async function ResponsesPage({
               <li key={r.id}>
                 <Link href={`/forms/${form.id}/responses/${r.id}`} className="block px-5 py-4 transition-colors hover:bg-paper-deep/40">
                   <p className="text-sm font-medium">{preview(blocks, r)}</p>
+                  {(r.tags ?? []).length > 0 && (
+                    <p className="mt-1 flex flex-wrap gap-1">
+                      {(r.tags ?? []).map((t) => (
+                        <span key={t} className="rounded-full bg-ink/5 px-2 py-0.5 text-[11px] font-semibold text-ink-soft">
+                          {t}
+                        </span>
+                      ))}
+                    </p>
+                  )}
                   <p className="mt-1 text-xs text-ink-faint">
                     {formatDateTime(r.submitted_at)}
                     {r.source ? ` · via ${r.source}` : ""}

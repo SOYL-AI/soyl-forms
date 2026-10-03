@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { submissionsToCsv } from "@/lib/forms/csv";
+import { submissionsToCsv, type CsvRow } from "@/lib/forms/csv";
 import { demoForm } from "@/lib/forms/demo";
 
 describe("submissionsToCsv", () => {
@@ -42,5 +42,39 @@ describe("submissionsToCsv", () => {
       },
     ]);
     expect(csv).toContain('"O""Neil, Jr.\nEsq"');
+  });
+
+  it("appends hidden-field columns only when present", () => {
+    const base: CsvRow = {
+      id: "sub_3",
+      submitted_at: "2026-09-18T10:00:00.000Z",
+      answers: { q_name: { type: "short_text", value: "Ada" } },
+    };
+    const plain = submissionsToCsv(demoForm.blocks, [base]);
+    expect(plain.split("\n")[0]).not.toContain("cohort");
+    const csv = submissionsToCsv(demoForm.blocks, [
+      { ...base, hidden: { cohort: "jul26", utm_source: "qr" } },
+      { ...base, id: "sub_4" },
+    ]);
+    const [header, r1, r2] = csv.trim().split("\n");
+    expect(header.endsWith("cohort,utm_source")).toBe(true);
+    expect(r1.endsWith("jul26,qr")).toBe(true);
+    expect(r2.endsWith(",")).toBe(true);
+  });
+
+  it("appends a tags column only when present", () => {
+    const row = (tags?: string[]): CsvRow => ({
+      id: "sub_1",
+      submitted_at: "2026-09-18T10:00:00.000Z",
+      answers: { q_name: { type: "short_text", value: "Ada" } },
+      ...(tags ? { tags } : {}),
+    });
+    const plain = submissionsToCsv(demoForm.blocks, [row()]);
+    expect(plain.split("\n")[0].endsWith("tags")).toBe(false);
+    const csv = submissionsToCsv(demoForm.blocks, [row(["hot-lead", "vip"]), row()]);
+    const [header, r1, r2] = csv.trim().split("\n");
+    expect(header.endsWith(",tags")).toBe(true);
+    expect(r1.endsWith(",hot-lead; vip")).toBe(true);
+    expect(r2.endsWith(",")).toBe(true);
   });
 });

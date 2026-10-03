@@ -234,7 +234,7 @@ export function parseGeneratedSchema(raw: unknown): {
   const blocks = data.blocks.slice(0, AI_MAX_BLOCKS);
   const ids = new Set(blocks.map((b) => b.id));
   // Keep only rules whose endpoints survived the cap; then validate the graph.
-  let logic = data.logic.filter((r) => ids.has(r.when.questionId) && ids.has(r.then.blockId) && r.when.questionId !== r.then.blockId).slice(0, 50);
+  let logic = data.logic.filter((r) => ids.has(r.when.questionId) && r.then.blockId !== undefined && ids.has(r.then.blockId) && r.when.questionId !== r.then.blockId).slice(0, 50);
   const problems = validateLogicGraph({ ...data, blocks, logic });
   const logicDropped = problems.length > 0 || logic.length !== data.logic.length;
   if (problems.length > 0) logic = [];

@@ -2,21 +2,32 @@
 
 import Link from "next/link";
 import { Lock } from "lucide-react";
-import type { FormSettings } from "@/types/forms";
+import type { Block, FormSettings, FormTranslation } from "@/types/forms";
 import { PLANS, type PlanCode } from "@/lib/plans";
-import { Field, Input, Switch, Textarea } from "@/components/ui/input";
+import { Field, Input, Select, Switch, Textarea } from "@/components/ui/input";
+import { TranslationsPanel } from "./TranslationsPanel";
 
 /** Form-wide behaviour: progress, auto-advance, limits, redirects, notifications. */
 export function BehaviorPanel({
   settings,
   onSettingsPatch,
   plan,
+  blocks,
+  locales,
+  translations,
+  onLocalesChange,
 }: {
   settings: FormSettings;
   onSettingsPatch: (p: Partial<FormSettings>) => void;
   plan: PlanCode;
+  /** All form blocks: used to list email questions for the autoresponder. */
+  blocks?: Block[];
+  locales: string[];
+  translations: Record<string, FormTranslation>;
+  onLocalesChange: (locales: string[], translations: Record<string, FormTranslation>) => void;
 }) {
   const notify = PLANS[plan].entitlements.emailNotifications;
+  const emailQuestions = (blocks ?? []).filter((b) => b.type === "email");
   return (
     <div className="flex flex-col gap-5">
       <section className="flex flex-col gap-3">
@@ -45,6 +56,27 @@ export function BehaviorPanel({
           label="Save URL parameters"
           description="Save tracking details such as utm_source from the form link."
         />
+        <Switch
+          checked={settings.prefillEnabled ?? true}
+          onChange={(v) => onSettingsPatch({ prefillEnabled: v })}
+          label="Prefill from URL"
+          description="Fill matching questions from link parameters, e.g. ?email=a@b.com."
+        />
+        <Field label="Hidden fields" hint="Comma-separated keys stored with each response, e.g. name, cohort. Use ?name=... in the link.">
+          <Input
+            value={(settings.hiddenFields ?? []).join(", ")}
+            placeholder="name, cohort"
+            onChange={(e) =>
+              onSettingsPatch({
+                hiddenFields: e.target.value
+                  .split(",")
+                  .map((k) => k.trim())
+                  .filter((k) => /^[A-Za-z0-9_.-]{1,64}$/.test(k))
+                  .slice(0, 20),
+              })
+            }
+          />
+        </Field>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Next button">
             <Input value={settings.buttonLabelNext ?? ""} placeholder="Next" maxLength={30} onChange={(e) => onSettingsPatch({ buttonLabelNext: e.target.value || undefined })} />
@@ -71,6 +103,16 @@ export function BehaviorPanel({
             description="Respondents see their score after submitting."
           />
         )}
+      </section>
+
+      <section className="flex flex-col gap-3 border-t border-line pt-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-faint">Languages</p>
+        <TranslationsPanel
+          blocks={blocks ?? []}
+          locales={locales}
+          translations={translations}
+          onChange={onLocalesChange}
+        />
       </section>
 
       <section className="flex flex-col gap-3 border-t border-line pt-4">
@@ -149,6 +191,62 @@ export function BehaviorPanel({
             }
           />
         </Field>
+        <Field
+          label={
+            <span className="inline-flex items-center gap-1.5">
+              Respondent confirmation email
+              {!notify && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[10px] font-semibold text-accent-ink dark:text-accent">
+                  <Lock className="h-3 w-3" /> Starter+
+                </span>
+              )}
+            </span>
+          }
+          hint="Sent to the respondent after each response, with a copy of their answers."
+        >
+          <Switch
+            checked={settings.responderEnabled ?? false}
+            onChange={(v) => onSettingsPatch({ responderEnabled: v || undefined })}
+            label="Send confirmation email"
+            description="Uses the first answered email question as the recipient."
+          />
+        </Field>
+        {settings.responderEnabled && (
+          <>
+            {emailQuestions.length > 0 && (
+              <Field label="Send to answers from">
+                <Select
+                  value={settings.responderQuestionId ?? ""}
+                  onChange={(e) => onSettingsPatch({ responderQuestionId: e.target.value || undefined })}
+                >
+                  <option value="">First answered email question</option>
+                  {emailQuestions.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.title}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            )}
+            <Field label="Subject" hint="{{form_title}} is replaced with the form name.">
+              <Input
+                value={settings.responderSubject ?? ""}
+                placeholder="Thanks for your response"
+                maxLength={200}
+                onChange={(e) => onSettingsPatch({ responderSubject: e.target.value || undefined })}
+              />
+            </Field>
+            <Field label="Message">
+              <Textarea
+                value={settings.responderMessage ?? ""}
+                placeholder="We received your response and will be in touch soon."
+                rows={3}
+                maxLength={2000}
+                onChange={(e) => onSettingsPatch({ responderMessage: e.target.value || undefined })}
+              />
+            </Field>
+          </>
+        )}
       </section>
     </div>
   );

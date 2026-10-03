@@ -47,7 +47,7 @@ export async function GET(
   const supabase = getServerSupabase();
   const { data } = await supabase!
     .from("submissions")
-    .select("id, submitted_at, answers")
+    .select("id, submitted_at, answers, hidden_fields, tags")
     .eq("form_id", form.id)
     .is("deleted_at", null)
     .order("submitted_at", { ascending: true })
@@ -56,7 +56,15 @@ export async function GET(
     id: string;
     submitted_at: string;
     answers: Record<string, AnswerValue>;
-  }>);
+    hidden_fields: Record<string, string> | null;
+    tags: string[] | null;
+  }>).map((r) => ({
+    id: r.id,
+    submitted_at: r.submitted_at,
+    answers: r.answers,
+    hidden: r.hidden_fields ?? undefined,
+    tags: r.tags ?? undefined,
+  }));
 
   const csv = submissionsToCsv(parsed.data.blocks, rows);
   const safe = form.title.replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 60) || "responses";

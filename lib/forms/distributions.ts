@@ -97,6 +97,7 @@ export function numericDistribution(
     block.type !== "rating" &&
     block.type !== "opinion_scale" &&
     block.type !== "number" &&
+    block.type !== "slider" &&
     block.type !== "nps"
   ) {
     return null;
@@ -106,7 +107,7 @@ export function numericDistribution(
     const v = a[block.id];
     if (
       v &&
-      (v.type === "rating" || v.type === "opinion_scale" || v.type === "number" || v.type === "nps") &&
+      (v.type === "rating" || v.type === "opinion_scale" || v.type === "number" || v.type === "slider" || v.type === "nps") &&
       typeof v.value === "number"
     ) {
       values.push(v.value);

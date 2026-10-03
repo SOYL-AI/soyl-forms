@@ -1,17 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, Download } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { getAppContext } from "@/lib/app-context";
 import { getFormForOwner } from "@/lib/forms/actions";
 import { formSchemaV1 } from "@/lib/forms/schema";
-import { displayAnswer } from "@/lib/forms/answers";
+import { ResponseEditor, TagEditor } from "./Editors";
 import { scoreAnswers } from "@/lib/forms/quiz";
-import { recallLabels } from "@/lib/forms/recall";
 import { isAnswerable } from "@/lib/forms/logic";
-import { BLOCK_ICONS } from "@/lib/forms/blockIcons";
 import type { AnswerValue, Block } from "@/types/forms";
 import { AppShell } from "@/components/app/AppShell";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
@@ -32,7 +30,7 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
 
   const { data: sub } = await admin
     .from("submissions")
-    .select("id, submitted_at, source, duration_ms, form_version_id, answers, hidden_fields")
+    .select("id, submitted_at, source, duration_ms, form_version_id, answers, hidden_fields, tags, edited_at")
     .eq("id", params.submissionId)
     .eq("form_id", form.id)
     .is("deleted_at", null)
@@ -45,8 +43,18 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
     form_version_id: string;
     answers: Record<string, AnswerValue>;
     hidden_fields: Record<string, string>;
+    tags: string[] | null;
+    edited_at: string | null;
   } | null;
   if (!submission) notFound();
+  const { data: membership } = await admin
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", form.workspace_id)
+    .eq("user_id", res.ctx.userId)
+    .maybeSingle();
+  const canEdit = ["owner", "admin", "editor"].includes((membership as { role: string } | null)?.role ?? "");
+  const tags = Array.isArray(submission.tags) ? submission.tags.filter((t): t is string => typeof t === "string") : [];
 
   // The exact version this respondent answered (history never rewrites).
   const { data: version } = await admin.from("form_versions").select("schema, settings, version_number").eq("id", submission.form_version_id).maybeSingle();
@@ -70,6 +78,7 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
           {submission.source ? ` · via ${submission.source}` : ""}
           {submission.duration_ms ? ` · took ${Math.round(submission.duration_ms / 1000)}s` : ""}
           {versionNumber ? ` · form v${versionNumber}` : ""}
+          {submission.edited_at ? " · edited by owner" : ""}
         </p>
         {graded && graded.max > 0 && (
           <p className="mt-3 font-display text-3xl tracking-tight">
@@ -80,48 +89,23 @@ export default async function ResponseDetailPage({ params }: { params: { formId:
       </div>
 
       <Card className="mt-5 !p-0">
-        <dl className="divide-y divide-line">
-          {blocks.length === 0 && (
-            <p className="px-5 py-4 text-sm text-ink-soft">This response&apos;s form version is no longer readable; raw answers are preserved in the export.</p>
-          )}
-          {blocks.map((b) => {
-            const ans = submission.answers[b.id];
-            const files = b.type === "file_upload" && ans?.type === "file_upload" ? ans.value : null;
-            const Icon = BLOCK_ICONS[b.type];
-            return (
-              <div key={b.id} className="grid grid-cols-1 gap-1 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] sm:gap-6">
-                <dt className="flex items-start gap-2 text-sm text-ink-soft">
-                  <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-ink-faint" />
-                  <span className="flex-1">{recallLabels(b.title, blocks)}</span>
-                  {gradeOf.has(b.id) && (
-                    <span
-                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${gradeOf.get(b.id)?.correct ? "bg-positive-soft text-positive" : "bg-danger-soft text-danger"}`}
-                    >
-                      {gradeOf.get(b.id)?.correct ? `+${gradeOf.get(b.id)?.points}` : "0"}
-                    </span>
-                  )}
-                </dt>
-                <dd className="whitespace-pre-wrap text-[15px] leading-relaxed">
-                  {files && files.length > 0 ? (
-                    <ul className="space-y-1">
-                      {files.map((id) => (
-                        <li key={id}>
-                          <a href={`/api/files/${id}`} className="inline-flex items-center gap-1.5 font-medium text-ink underline underline-offset-2">
-                            <Download className="h-3.5 w-3.5" /> Download file
-                          </a>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    displayAnswer(b, ans) || <span className="text-ink-faint">—</span>
-                  )}
-                </dd>
-              </div>
-            );
-          })}
+        <dl>
+          <ResponseEditor
+            blocks={blocks}
+            answers={submission.answers}
+            formId={form.id}
+            submissionId={submission.id}
+            canEdit={canEdit}
+            grades={Object.fromEntries(gradeOf)}
+          />
         </dl>
       </Card>
-
+      <Card className="mt-4">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">Tags</p>
+        <div className="mt-2">
+          <TagEditor formId={form.id} submissionId={submission.id} initialTags={tags} canEdit={canEdit} />
+        </div>
+      </Card>
       {hidden.length > 0 && (
         <Card className="mt-4">
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">Hidden fields (from the URL)</p>

@@ -9,6 +9,8 @@ import { Card, PageHeader } from "@/components/ui/card";
 import { Notice } from "@/components/ui/notice";
 import { DeleteAccount } from "./DeleteAccount";
 import { AccountForms } from "./AccountForms";
+import { TeamSection } from "@/components/account/TeamSection";
+import { PaymentsSection } from "@/components/account/PaymentsSection";
 
 export const metadata: Metadata = { title: "Account", robots: { index: false } };
 
@@ -53,6 +55,10 @@ export default async function AccountPage({ searchParams }: { searchParams?: { r
             </div>
           </div>
         </Card>
+      </div>
+      <div className="mt-4">
+        <TeamSection workspaceId={ctx.workspaceId} />
+        <PaymentsSection workspaceId={ctx.workspaceId} />
       </div>
     </AppShell>
   );

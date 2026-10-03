@@ -13,6 +13,7 @@ import type { FormSchemaV1, FormSettings, FormTheme } from "@/types/forms";
 import { getAppUrl } from "@/lib/config";
 import { encryptSecret, isSecretEncryptionConfigured, newWebhookSecret } from "@/lib/security/secrets";
 import { deliverToWebhook } from "@/lib/webhooks/deliver";
+import { applyEditedAnswer, normalizeTags } from "@/lib/forms/submissions";
 
 export type ActionResult<T = object> =
   | ({ ok: true } & T)
@@ -342,9 +343,12 @@ export async function publishForm(args: {
     const reason = themeRequiresPaidPlan(full.theme);
     if (reason) return { ok: false, error: `${reason} Upgrade to Starter to publish this design, or pick a preset.` };
   }
+  if (!PLANS[plan].entitlements.paymentCollection && parsed.success && parsed.data.blocks.some((b) => b.type === "payment")) {
+    return { ok: false, error: "Payment collection is a Starter feature. Remove the payment step or upgrade your plan to publish." };
+  }
   if (!PLANS[plan].entitlements.emailNotifications) {
     const st = formSettingsSchema.safeParse(full.settings);
-    if (st.success && st.data.notifyEmails && st.data.notifyEmails.length > 0) {
+    if (st.success && ((st.data.notifyEmails && st.data.notifyEmails.length > 0) || st.data.responderEnabled)) {
       return { ok: false, error: "Email notifications are a Starter feature. Clear the notification emails or upgrade your plan to publish." };
     }
   }
@@ -631,4 +635,132 @@ export async function createFormFromDraft(args: {
     .single();
   if (error || !data) return { ok: false, error: `Could not create form: ${error?.message}` };
   return { ok: true, id: (data as { id: string }).id };
+}
+
+/**
+ * Response editing + tagging. Editors and above only — viewers get
+ * read-only responses (mirrors the editors_write_forms RLS rank). Every
+ * mutation is audit-logged with the actor and the changed question.
+ */
+async function getEditableSubmission(
+  formId: string,
+  submissionId: string,
+  userId: string,
+): Promise<
+  | {
+      workspaceId: string;
+      answers: Record<string, unknown>;
+      schema: { blocks: FormSchemaV1["blocks"]; logic: FormSchemaV1["logic"] };
+    }
+  | { error: string }
+> {
+  const admin = getServiceSupabase();
+  if (!admin) return { error: "Service temporarily unavailable. Please try again." };
+  const owned = await getOwnedForm(formId, userId);
+  if ("error" in owned) return { error: owned.error };
+  const { data: member } = await admin
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", owned.form.workspace_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+  const role = (member as { role: string } | null)?.role;
+  if (!["owner", "admin", "editor"].includes(role ?? "")) {
+    return { error: "Viewers can\u2019t edit responses." };
+  }
+  const { data: sub } = await admin
+    .from("submissions")
+    .select("id, answers, form_version_id")
+    .eq("id", submissionId)
+    .eq("form_id", formId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  const submission = sub as { id: string; answers: Record<string, unknown>; form_version_id: string } | null;
+  if (!submission) return { error: "Response not found." };
+  const { data: version } = await admin
+    .from("form_versions")
+    .select("schema")
+    .eq("id", submission.form_version_id)
+    .maybeSingle();
+  const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
+  if (!parsed.success) return { error: "This response\u2019s form version is no longer readable." };
+  return { workspaceId: owned.form.workspace_id, answers: submission.answers ?? {}, schema: { blocks: parsed.data.blocks, logic: parsed.data.logic } };
+}
+
+async function auditSubmissionEdit(args: {
+  actorUserId: string;
+  workspaceId: string;
+  action: string;
+  submissionId: string;
+  metadata: Record<string, unknown>;
+}): Promise<void> {
+  const admin = getServiceSupabase();
+  if (!admin) return;
+  await admin.from("audit_logs").insert({
+    actor_user_id: args.actorUserId,
+    actor_type: "user",
+    workspace_id: args.workspaceId,
+    action: args.action,
+    target_type: "submission",
+    target_id: args.submissionId,
+    metadata: args.metadata,
+  });
+}
+
+/** Fix a respondent's answer (typo, wrong option). Re-validates everything. */
+export async function updateSubmissionAnswer(args: {
+  formId: string;
+  submissionId: string;
+  blockId: string;
+  value: unknown;
+}): Promise<ActionResult> {
+  const userId = await getSessionUserId();
+  if (!userId) return { ok: false, error: "Sign in first." };
+  const ctx = await getEditableSubmission(args.formId, args.submissionId, userId);
+  if ("error" in ctx) return { ok: false, error: ctx.error };
+  const applied = applyEditedAnswer(ctx.schema, ctx.answers, args.blockId, args.value);
+  if (!applied.ok) return { ok: false, error: applied.error };
+  const admin = getServiceSupabase();
+  const { error } = await admin!
+    .from("submissions")
+    .update({ answers: applied.answers, edited_at: new Date().toISOString() })
+    .eq("id", args.submissionId)
+    .eq("form_id", args.formId);
+  if (error) return { ok: false, error: "Couldn\u2019t save the edit." };
+  await auditSubmissionEdit({
+    actorUserId: userId,
+    workspaceId: ctx.workspaceId,
+    action: "submission.edited",
+    submissionId: args.submissionId,
+    metadata: { blockId: args.blockId },
+  });
+  return { ok: true };
+}
+
+/** Replace a response's tags (used for triage, approvals, follow-ups). */
+export async function setSubmissionTags(args: {
+  formId: string;
+  submissionId: string;
+  tags: unknown;
+}): Promise<ActionResult> {
+  const userId = await getSessionUserId();
+  if (!userId) return { ok: false, error: "Sign in first." };
+  const ctx = await getEditableSubmission(args.formId, args.submissionId, userId);
+  if ("error" in ctx) return { ok: false, error: ctx.error };
+  const tags = normalizeTags(args.tags);
+  const admin = getServiceSupabase();
+  const { error } = await admin!
+    .from("submissions")
+    .update({ tags })
+    .eq("id", args.submissionId)
+    .eq("form_id", args.formId);
+  if (error) return { ok: false, error: "Couldn\u2019t save the tags." };
+  await auditSubmissionEdit({
+    actorUserId: userId,
+    workspaceId: ctx.workspaceId,
+    action: "submission.tagged",
+    submissionId: args.submissionId,
+    metadata: { tags },
+  });
+  return { ok: true };
 }

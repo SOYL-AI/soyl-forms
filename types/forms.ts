@@ -34,6 +34,12 @@ export type BlockType =
   | "nps"
   | "legal"
   | "file_upload"
+  | "address"
+  | "slider"
+  | "section"
+  | "media"
+  | "signature"
+  | "payment"
   | "statement"
   | "thank_you";
 
@@ -92,6 +98,11 @@ export interface NumberBlock extends BaseBlock {
     min?: number;
     max?: number;
   };
+  /**
+   * Computed question: `{q_price} * {q_qty}` over numeric answers.
+   * Shown live, recomputed authoritatively on submit — never typed in.
+   */
+  formula?: string;
 }
 
 export interface ChoiceBlock extends BaseBlock {
@@ -175,6 +186,51 @@ export interface StatementBlock extends BaseBlock {
   buttonLabel?: string;
 }
 
+/** Postal address: street/city/postal (+ optional rest). */
+export interface AddressBlock extends BaseBlock {
+  type: "address";
+}
+
+/** Drag slider between min and max. */
+export interface SliderBlock extends BaseBlock {
+  type: "slider";
+  min?: number;
+  max?: number;
+  minLabel?: string;
+  maxLabel?: string;
+}
+
+/** Page break: a titled section screen inside the flow. */
+export interface SectionBlock extends BaseBlock {
+  type: "section";
+  buttonLabel?: string;
+}
+
+/** Image / video embed shown as a full screen. */
+export interface MediaBlock extends BaseBlock {
+  type: "media";
+  /** Required before publishing; may be empty while drafting. */
+  mediaUrl?: string;
+  mediaType?: "image" | "video";
+  caption?: string;
+}
+
+/** Hand-drawn signature captured as a PNG data URL. */
+export interface SignatureBlock extends BaseBlock {
+  type: "signature";
+}
+
+/**
+ * Collect money with the workspace's own Razorpay keys. Exactly one of
+ * `amountPaise` (fixed price) or `amountFrom` (a numeric question id).
+ */
+export interface PaymentBlock extends BaseBlock {
+  type: "payment";
+  amountPaise?: number;
+  amountFrom?: string;
+  description?: string;
+}
+
 export interface ThankYouBlock extends BaseBlock {
   type: "thank_you";
   required?: never;
@@ -198,6 +254,12 @@ export type Block =
   | NpsBlock
   | LegalBlock
   | FileUploadBlock
+  | AddressBlock
+  | SliderBlock
+  | SectionBlock
+  | MediaBlock
+  | SignatureBlock
+  | PaymentBlock
   | StatementBlock
   | ThankYouBlock;
 
@@ -210,18 +272,46 @@ export type LogicOperator =
   | "greater_than"
   | "less_than";
 
+export interface LogicCondition {
+  questionId: string;
+  operator: LogicOperator;
+  /** Option id / scalar answer to compare against. */
+  value?: string | string[];
+}
+
 export interface LogicRule {
   id: string;
-  when: {
-    questionId: string;
-    operator: LogicOperator;
-    /** Option id / scalar answer to compare against. */
-    value?: string | string[];
-  };
+  /** Trigger condition (legacy single-condition shape, always evaluated). */
+  when: LogicCondition;
+  /** How `when` + `conditions` combine. Defaults to "all" (legacy). */
+  match?: "all" | "any";
+  /** Extra conditions on other questions. */
+  conditions?: LogicCondition[];
   then: {
-    action: "goto";
-    blockId: string;
+    action: "goto" | "end" | "hide";
+    /** Jump/hide target. Omitted for "end" (finish the form). */
+    blockId?: string;
   };
+}
+
+/** Translated strings for one locale, keyed by block / option id. */
+export interface BlockTranslation {
+  title?: string;
+  description?: string;
+  placeholder?: string;
+  buttonLabel?: string;
+  minLabel?: string;
+  maxLabel?: string;
+  acceptLabel?: string;
+  caption?: string;
+  options?: Record<string, string>;
+  rows?: Record<string, string>;
+  columns?: Record<string, string>;
+}
+
+export interface FormTranslation {
+  title?: string;
+  blocks?: Record<string, BlockTranslation>;
 }
 
 export interface FormSchemaV1 {
@@ -229,6 +319,10 @@ export interface FormSchemaV1 {
   title: string;
   blocks: Block[];
   logic: LogicRule[];
+  /** Extra locales (BCP 47-ish: en, hi, pt-BR). The base language is always the default. */
+  locales?: string[];
+  /** Per-locale strings; ids and logic never change across locales. */
+  translations?: Record<string, FormTranslation>;
 }
 
 export type ButtonStyle = "rounded" | "pill" | "square";
@@ -269,6 +363,22 @@ export interface FormSettings {
   redirectUrl?: string | null;
   /** Owner addresses to notify on each completed response (paid plans). */
   notifyEmails?: string[];
+  /**
+   * Declared hidden fields (Typeform-style `?name=...` keys). Values arriving
+   * as URL parameters are stored with the response but never shown to the
+   * respondent. The catch-all `collectQueryParams` behaviour is unchanged.
+   */
+  hiddenFields?: string[];
+  /** Fill matching questions from URL parameters (`?email=a@b.com`). On by default. */
+  prefillEnabled?: boolean;
+  /** Respondent confirmation email (autoresponder). Off by default. */
+  responderEnabled?: boolean;
+  /** Custom autoresponder subject. `{{form_title}}` is replaced. */
+  responderSubject?: string;
+  /** Custom autoresponder message (plain text, `{{form_title}}` supported). */
+  responderMessage?: string;
+  /** Block id of the email question holding the recipient (default: first answered email question). */
+  responderQuestionId?: string;
   /** Quiz mode: questions with an answer key are graded. */
   quizMode?: boolean;
   /** Quiz mode: show the respondent their score at the end (default on). */
@@ -290,4 +400,21 @@ export type AnswerValue =
   | { type: "matrix"; value: Record<string, string | string[]> }
   | { type: "ranking"; value: string[] }
   | { type: "legal"; value: "accepted" }
-  | { type: "file_upload"; value: string[] };
+  | { type: "file_upload"; value: string[] }
+  | {
+      type: "address";
+      value: {
+        street?: string;
+        line2?: string;
+        city?: string;
+        state?: string;
+        postal?: string;
+        country?: string;
+      };
+    }
+  | { type: "slider"; value: number }
+  | { type: "signature"; value: string }
+  | {
+      type: "payment";
+      value: { payment_id: string; order_id: string; amount_paise: number };
+    };

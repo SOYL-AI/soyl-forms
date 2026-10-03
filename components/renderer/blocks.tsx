@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown, ChevronUp, Heart, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChoiceOption } from "@/types/forms";
@@ -677,5 +677,306 @@ export function RankingList({
         </li>
       ))}
     </ol>
+  );
+}
+
+const ADDRESS_FIELDS = [
+  { key: "street", label: "Street", autoComplete: "street-address", span: true },
+  { key: "line2", label: "Apt / suite (optional)", autoComplete: "address-line2", span: true },
+  { key: "city", label: "City", autoComplete: "address-level2", span: false },
+  { key: "state", label: "State", autoComplete: "address-level1", span: false },
+  { key: "postal", label: "Postal code", autoComplete: "postal-code", span: false },
+  { key: "country", label: "Country", autoComplete: "country-name", span: false },
+] as const;
+
+/** Six-field postal address. */
+export function AddressInputs({
+  value,
+  onChange,
+}: {
+  value: Record<string, string>;
+  onChange: (v: Record<string, string>) => void;
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      {ADDRESS_FIELDS.map((f) => (
+        <label key={f.key} className={f.span ? "sm:col-span-2" : ""}>
+          <span className="f-faint mb-1 block text-xs">{f.label}</span>
+          <input
+            data-autofocus={f.key === "street" ? true : undefined}
+            autoFocus={f.key === "street"}
+            value={value[f.key] ?? ""}
+            autoComplete={f.autoComplete}
+            onChange={(e) => onChange({ ...value, [f.key]: e.target.value })}
+            className="f-input"
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+/** Drag slider with a live numeric readout. */
+export function SliderInput({
+  min,
+  max,
+  value,
+  minLabel,
+  maxLabel,
+  onChange,
+}: {
+  min: number;
+  max: number;
+  value: number | null;
+  minLabel?: string;
+  maxLabel?: string;
+  onChange: (v: number) => void;
+}) {
+  return (
+    <div>
+      <p className="font-display text-4xl tabular-nums tracking-tight" aria-live="polite">
+        {value ?? min}
+      </p>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={value ?? min}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="mt-4 w-full"
+        style={{ accentColor: "var(--f-accent)" }}
+        aria-label="Value"
+      />
+      {(minLabel || maxLabel) && (
+        <div className="f-faint mt-1 flex justify-between text-xs">
+          <span>{minLabel ?? min}</span>
+          <span>{maxLabel ?? max}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Hand-drawn signature captured as a PNG data URL. */
+export function SignaturePad({
+  value,
+  onChange,
+}: {
+  value: string | null;
+  onChange: (v: string | null) => void;
+}) {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+  const drawing = useRef(false);
+  const hasInk = useRef(false);
+  const [signed, setSigned] = useState(Boolean(value));
+
+  useEffect(() => {
+    setSigned(Boolean(value));
+  }, [value]);
+
+  function pos(e: React.PointerEvent): { x: number; y: number } | null {
+    const canvas = ref.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: ((e.clientX - rect.left) / rect.width) * canvas.width,
+      y: ((e.clientY - rect.top) / rect.height) * canvas.height,
+    };
+  }
+
+  function clear() {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext("2d");
+    if (canvas && ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasInk.current = false;
+    setSigned(false);
+    onChange(null);
+  }
+
+  if (signed && value) {
+    return (
+      <div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={value} alt="Your signature" className="max-h-44 rounded-xl border border-line-strong bg-paper" />
+        <div className="mt-2 flex gap-2">
+          <button type="button" onClick={clear} className="f-btn-secondary px-4 py-2 text-sm">
+            Sign again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <canvas
+        ref={ref}
+        width={600}
+        height={220}
+        className="h-44 w-full touch-none rounded-xl border border-line-strong bg-paper"
+        onPointerDown={(e) => {
+          drawing.current = true;
+          (e.target as HTMLElement).setPointerCapture?.(e.pointerId);
+          const p = pos(e);
+          const ctx = ref.current?.getContext("2d");
+          if (p && ctx) {
+            ctx.lineWidth = 4;
+            ctx.lineCap = "round";
+            ctx.strokeStyle = "currentColor";
+            ctx.beginPath();
+            ctx.moveTo(p.x, p.y);
+          }
+        }}
+        onPointerMove={(e) => {
+          if (!drawing.current) return;
+          const p = pos(e);
+          const ctx = ref.current?.getContext("2d");
+          if (p && ctx) {
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+            hasInk.current = true;
+          }
+        }}
+        onPointerUp={() => {
+          drawing.current = false;
+          if (hasInk.current && ref.current) {
+            const url = ref.current.toDataURL("image/png");
+            setSigned(true);
+            onChange(url);
+          }
+        }}
+        aria-label="Sign here"
+      />
+      <p className="f-faint mt-1 text-xs">Sign with finger, mouse, or stylus.</p>
+    </div>
+  );
+}
+
+/** Loads Razorpay Checkout.js once. False when unreachable (offline CDN). */
+let checkoutPromise: Promise<boolean> | null = null;
+export function ensureCheckoutJs(): Promise<boolean> {
+  if (typeof window === "undefined") return Promise.resolve(false);
+  if ((window as unknown as { Razorpay?: unknown }).Razorpay) return Promise.resolve(true);
+  if (!checkoutPromise) {
+    checkoutPromise = new Promise((resolve) => {
+      const script = document.createElement("script");
+      script.src = "https://checkout.razorpay.com/v1/checkout.js";
+      script.async = true;
+      script.onload = () => resolve(true);
+      script.onerror = () => {
+        checkoutPromise = null;
+        resolve(false);
+      };
+      document.head.appendChild(script);
+    });
+  }
+  return checkoutPromise;
+}
+
+export interface CheckoutResult {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+}
+
+/**
+ * Opens Razorpay Checkout for a created order. Resolves with the callback
+ * payload; rejects on dismissal or payment failure.
+ */
+export function openCheckout(args: {
+  key: string;
+  orderId: string;
+  amountPaise: number;
+  name: string;
+  description?: string;
+  email?: string;
+}): Promise<CheckoutResult> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+      const fail = (message: string) => {
+        if (!settled) {
+          settled = true;
+          reject(new Error(message));
+        }
+      };
+      try {
+        const RazorpayCtor = (window as unknown as { Razorpay: new (opts: Record<string, unknown>) => { open(): void; on(e: string, cb: (err: unknown) => void): void } }).Razorpay;
+        const rzp = new RazorpayCtor({
+          key: args.key,
+          order_id: args.orderId,
+          amount: args.amountPaise,
+          currency: "INR",
+          name: args.name,
+          description: args.description,
+          prefill: args.email ? { email: args.email } : undefined,
+          modal: { ondismiss: () => fail("Payment was closed before completing.") },
+          handler: (resp: unknown) => {
+            if (!settled) {
+              settled = true;
+              resolve(resp as CheckoutResult);
+            }
+          },
+        });
+        rzp.on("payment.failed", (e: unknown) => {
+          const desc = (e as { error?: { description?: string } } | null)?.error?.description;
+          fail(typeof desc === "string" && desc ? desc : "The payment failed. Please try again.");
+        });
+        rzp.open();
+    } catch {
+      fail("Couldn't open the payment window. Please try again.");
+    }
+  });
+}
+
+/** Payment step: amount, what it's for, and a Pay button. */
+export function PaymentStep({
+  amountLabel,
+  description,
+  paid,
+  busy,
+  error,
+  canPay,
+  unavailableReason,
+  onPay,
+}: {
+  amountLabel: string | null;
+  description?: string;
+  paid: boolean;
+  busy: boolean;
+  error: string | null;
+  canPay: boolean;
+  unavailableReason?: string;
+  onPay: () => void;
+}) {
+  return (
+    <div>
+      {description && <p className="f-faint mb-3 text-sm leading-relaxed">{description}</p>}
+      <p className="font-display text-4xl tabular-nums tracking-tight" aria-live="polite">
+        {amountLabel ?? "—"}
+      </p>
+      {paid ? (
+        <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-positive-soft px-3 py-1 text-sm font-semibold text-positive">
+          Paid — thank you
+        </p>
+      ) : (
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={onPay}
+            disabled={busy || !canPay}
+            className="f-btn-primary px-8 py-3 text-sm disabled:opacity-50"
+          >
+            {busy ? "Processing…" : amountLabel ? `Pay ${amountLabel}` : "Pay"}
+          </button>
+          {unavailableReason && <p className="f-faint mt-2 text-sm">{unavailableReason}</p>}
+        </div>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-danger">
+          {error}
+        </p>
+      )}
+    </div>
   );
 }

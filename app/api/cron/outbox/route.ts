@@ -8,7 +8,7 @@ import { recallText } from "@/lib/forms/recall";
 import { isAnswerable } from "@/lib/forms/logic";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { PLANS } from "@/lib/plans";
-import { isEmailConfigured, responseEmail, sendEmail } from "@/lib/email/resend";
+import { confirmationEmail, isEmailConfigured, resolveResponderRecipient, responseEmail, sendEmail } from "@/lib/email/resend";
 import { getAppUrl, getProductName } from "@/lib/config";
 import type { AnswerValue } from "@/types/forms";
 
@@ -68,6 +68,57 @@ async function notifyOwners(
 }
 
 /**
+ * Respondent confirmation email (autoresponder). Opt-in per form: the
+ * recipient is the preferred email question when answered, else the first
+ * answered email question. Shares the plan gate and monthly email pool with
+ * owner notifications. Never retried — a missed confirmation must not block
+ * or re-fire webhooks.
+ */
+async function notifyRespondent(
+  admin: Admin,
+  submission: { id: string; form_id: string; submitted_at: string; answers: unknown; form_version_id: string },
+  workspaceId: string,
+): Promise<"sent" | "skipped" | "failed"> {
+  if (!isEmailConfigured()) return "skipped";
+  const { data: form } = await admin.from("forms").select("title, settings").eq("id", submission.form_id).maybeSingle();
+  const settings = formSettingsSchema.safeParse((form as { settings: unknown } | null)?.settings ?? {});
+  if (!settings.success || settings.data.responderEnabled !== true) return "skipped";
+
+  const plan = await getWorkspacePlan(workspaceId);
+  const ent = PLANS[plan].entitlements;
+  if (!ent.emailNotifications) return "skipped";
+
+  const month = `${new Date().toISOString().slice(0, 7)}-01`;
+  const { data: usage } = await admin.from("usage_monthly").select("notification_emails").eq("workspace_id", workspaceId).eq("month", month).maybeSingle();
+  const sent = (usage as { notification_emails: number } | null)?.notification_emails ?? 0;
+  if (sent >= ent.monthlyNotificationEmails) return "skipped";
+
+  const { data: version } = await admin.from("form_versions").select("schema").eq("id", submission.form_version_id).maybeSingle();
+  const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
+  if (!parsed.success) return "skipped";
+  const answers = (submission.answers ?? {}) as Record<string, AnswerValue>;
+  const to = resolveResponderRecipient(parsed.data.blocks, answers, settings.data.responderQuestionId);
+  if (!to) return "skipped";
+
+  const rows = parsed.data.blocks
+    .filter((b) => isAnswerable(b.type))
+    .map((b) => ({ question: recallText(b.title, parsed.data.blocks, answers), answer: displayAnswer(b, answers[b.id]) }));
+  const mail = confirmationEmail({
+    formTitle: (form as { title: string } | null)?.title ?? "Your form",
+    subject: settings.data.responderSubject,
+    message: settings.data.responderMessage,
+    rows,
+    productName: getProductName(),
+  });
+  const res = await sendEmail({ to: [to], ...mail, replyTo: settings.data.notifyEmails?.[0] });
+  if (!res.ok) return "failed";
+  await admin
+    .from("usage_monthly")
+    .upsert({ workspace_id: workspaceId, month, notification_emails: sent + 1, updated_at: new Date().toISOString() }, { onConflict: "workspace_id,month" });
+  return "sent";
+}
+
+/**
  * Outbox worker — drain `form.submission.completed` events: deliver to
  * webhooks with bounded exponential backoff (2^n minutes, max 5 attempts)
  * and send owner notifications. Trigger via Cloudflare Cron Triggers or any
@@ -119,6 +170,8 @@ export async function POST(req: Request) {
     if (submission && !notified) {
       const outcome = await notifyOwners(admin, submission, evt.workspace_id);
       if (outcome === "sent") emails += 1;
+      const responder = await notifyRespondent(admin, submission, evt.workspace_id);
+      if (responder === "sent") emails += 1;
       notified = true;
     }
 

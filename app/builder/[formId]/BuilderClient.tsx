@@ -17,6 +17,7 @@ import type {
   FormSchemaV1,
   FormSettings,
   FormTheme,
+  FormTranslation,
   LogicRule,
 } from "@/types/forms";
 import { formSchemaV1, validateLogicGraph } from "@/lib/forms/schema";
@@ -72,6 +73,8 @@ export default function BuilderClient({
   const [title, setTitle] = useState(initialTitle);
   const [blocks, setBlocks] = useState<Block[]>(initialSchema.blocks);
   const [logic, setLogic] = useState<LogicRule[]>(initialSchema.logic);
+  const [locales, setLocales] = useState<string[]>(initialSchema.locales ?? []);
+  const [translations, setTranslations] = useState<Record<string, FormTranslation>>(initialSchema.translations ?? {});
   const [theme, setTheme] = useState<FormTheme>(initialTheme);
   const [settings, setSettings] = useState<FormSettings>(initialSettings);
   const [selectedId, setSelectedId] = useState<string | null>(initialSchema.blocks[0]?.id ?? null);
@@ -87,8 +90,8 @@ export default function BuilderClient({
   const [device, setDevice] = useState<Device>("desktop");
 
   // Latest editable state for the debounced saver (avoids stale closures).
-  const stateRef = useRef({ title, blocks, logic, theme, settings, revision });
-  stateRef.current = { title, blocks, logic, theme, settings, revision };
+  const stateRef = useRef({ title, blocks, logic, locales, translations, theme, settings, revision });
+  stateRef.current = { title, blocks, logic, locales, translations, theme, settings, revision };
   const saveStateRef = useRef(saveState);
   saveStateRef.current = saveState;
   const firstRender = useRef(true);
@@ -96,7 +99,7 @@ export default function BuilderClient({
   /** Persist a snapshot now. Returns true on success. Shared by autosave + publish flush. */
   const persist = useCallback(
     async (s: typeof stateRef.current): Promise<boolean> => {
-      const candidate = { schemaVersion: 1 as const, title: s.title, blocks: s.blocks, logic: s.logic };
+      const candidate = { schemaVersion: 1 as const, title: s.title, blocks: s.blocks, logic: s.logic, locales: s.locales, translations: s.translations };
       const parsed = formSchemaV1.safeParse(candidate);
       if (!parsed.success) {
         const issue = parsed.error.issues[0];
@@ -153,7 +156,7 @@ export default function BuilderClient({
       void persist(snapshot);
     }, 800);
     return () => clearTimeout(t);
-  }, [title, blocks, logic, theme, settings, formId, persist]);
+  }, [title, blocks, logic, locales, translations, theme, settings, formId, persist]);
 
   useEffect(() => {
     function onBeforeUnload(e: BeforeUnloadEvent) {
@@ -304,7 +307,7 @@ export default function BuilderClient({
         />
       )}
       {rightTab === "settings" && (
-        <BehaviorPanel settings={settings} onSettingsPatch={(p) => setSettings((s) => ({ ...s, ...p }))} plan={plan} />
+        <BehaviorPanel settings={settings} onSettingsPatch={(p) => setSettings((s) => ({ ...s, ...p }))} plan={plan} blocks={blocks} locales={locales} translations={translations} onLocalesChange={(l, t) => { setLocales(l); setTranslations(t); }} />
       )}
     </>
   );

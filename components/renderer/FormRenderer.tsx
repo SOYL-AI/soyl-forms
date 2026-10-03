@@ -11,28 +11,36 @@ import {
   type FormSettings,
   type FormTheme,
 } from "@/types/forms";
-import { estimateProgress, getNextBlockId, isAnswerable } from "@/lib/forms/logic";
+import { estimateProgress, getNextBlockId, hiddenBlockIds, isAnswerable } from "@/lib/forms/logic";
 import { isValidAnswer } from "@/lib/forms/answers";
+import { evaluateFormula } from "@/lib/forms/formula";
+import { formatINR } from "@/lib/billing/connect";
 import { resolveTheme, themeCssVars, themeFontsHref } from "@/lib/forms/themes";
 import { recallText } from "@/lib/forms/recall";
 import { scoreAnswers } from "@/lib/forms/quiz";
 import {
+  AddressInputs,
   BlockShell,
+  ensureCheckoutJs,
   ChoiceButton,
   FileUploadInput,
   LegalCheck,
   MatrixGrid,
+  openCheckout,
   OtherInput,
+  PaymentStep,
   PictureChoice,
   RankingList,
   RatingRow,
   ScaleButton,
+  SignaturePad,
+  SliderInput,
   TextField,
   ThemeFontLink,
 } from "./blocks";
 import { cn } from "@/lib/utils";
 
-type DraftValue = string | string[] | number | Record<string, string | string[]> | null;
+type DraftValue = string | string[] | number | Record<string, string | string[] | number> | null;
 
 type Score = { points: number; max: number };
 
@@ -66,8 +74,31 @@ function toAnswer(block: Block, draft: DraftValue, other: string): AnswerValue |
     case "number":
     case "rating":
     case "opinion_scale":
+    case "slider":
     case "nps":
       return typeof draft === "number" ? ({ type: block.type, value: draft } as AnswerValue) : null;
+    case "address":
+      if (!draft || typeof draft !== "object" || Array.isArray(draft)) return null;
+      return {
+        type: "address",
+        value: Object.fromEntries(
+          ["street", "line2", "city", "state", "postal", "country"]
+            .map((k) => [k, typeof (draft as Record<string, unknown>)[k] === "string" ? ((draft as Record<string, string>)[k] as string).slice(0, 200) : ""])
+            .filter(([, v]) => v),
+        ),
+      } as AnswerValue;
+    case "payment": {
+      if (!draft || typeof draft !== "object" || Array.isArray(draft)) return null;
+      const d = draft as Record<string, unknown>;
+      if (typeof d.payment_id !== "string" || typeof d.order_id !== "string" || typeof d.amount_paise !== "number") {
+        return null;
+      }
+      return { type: "payment", value: { payment_id: d.payment_id, order_id: d.order_id, amount_paise: d.amount_paise } };
+    }
+    case "signature":
+      return typeof draft === "string" && draft.startsWith("data:")
+        ? ({ type: "signature", value: draft } as AnswerValue)
+        : null;
     case "ranking":
       return Array.isArray(draft) ? { type: "ranking", value: draft } : null;
     case "yes_no":
@@ -84,8 +115,9 @@ function toAnswer(block: Block, draft: DraftValue, other: string): AnswerValue |
         ? { type: "multiple_choice", value: draft, otherText: other.trim() }
         : { type: "multiple_choice", value: draft };
     case "matrix":
+      // MatrixGrid only ever writes string/string[] values (see its onChange).
       return draft && typeof draft === "object" && !Array.isArray(draft)
-        ? { type: "matrix", value: draft }
+        ? { type: "matrix", value: draft as Record<string, string | string[]> }
         : null;
     case "legal":
       return draft === "accepted" ? { type: "legal", value: "accepted" } : null;
@@ -97,7 +129,7 @@ function toAnswer(block: Block, draft: DraftValue, other: string): AnswerValue |
 }
 
 function validateBlock(block: Block, draft: DraftValue, other: string): string | null {
-  if (block.type === "welcome" || block.type === "statement" || block.type === "thank_you") {
+  if (block.type === "welcome" || block.type === "statement" || block.type === "section" || block.type === "media" || block.type === "thank_you") {
     return null;
   }
   const empty = isEmpty(draft);
@@ -112,8 +144,15 @@ function validateBlock(block: Block, draft: DraftValue, other: string): string |
         return "Pick Yes or No to continue.";
       case "rating":
       case "opinion_scale":
+      case "slider":
       case "nps":
         return "Pick a value to continue.";
+      case "address":
+        return "Enter the address to continue.";
+      case "signature":
+        return "Please sign to continue.";
+      case "payment":
+        return "Complete the payment to continue.";
       case "matrix":
         return "Answer each row to continue.";
       case "legal":
@@ -173,6 +212,28 @@ function validateBlock(block: Block, draft: DraftValue, other: string): string |
       }
     }
   }
+  if (block.type === "slider" && typeof draft === "number") {
+    const min = block.min ?? 0;
+    const max = block.max ?? 100;
+    if (!Number.isInteger(draft) || draft < min || draft > max) {
+      return `Pick a whole number from ${min} to ${max}.`;
+    }
+  }
+  if (
+    block.type === "address" &&
+    block.required &&
+    draft &&
+    typeof draft === "object" &&
+    !Array.isArray(draft)
+  ) {
+    const parts = draft as Record<string, string>;
+    if (!parts.street?.trim() || !parts.city?.trim() || !parts.postal?.trim()) {
+      return "Street, city and postal code are needed.";
+    }
+  }
+  if (block.type === "signature" && typeof draft === "string" && !draft.startsWith("data:")) {
+    return "Please sign to continue.";
+  }
   if (block.type === "number" && typeof draft === "number") {
     if (Number.isNaN(draft)) return "Enter a valid number.";
     if (block.validation?.min !== undefined && draft < block.validation.min) {
@@ -209,6 +270,8 @@ export function FormRenderer({
   uploads,
   persistKey,
   persistPrefix,
+  initialAnswers,
+  tracking,
   preview,
   focusBlockId,
 }: {
@@ -235,6 +298,10 @@ export function FormRenderer({
    * saved under an older version are carried over for questions that still exist.
    */
   persistPrefix?: string;
+  /** Prefilled answers (URL parameters). Seeded only when no saved session exists. */
+  initialAnswers?: Answers;
+  /** Public-route analytics + save/resume. Absent in previews/demos. */
+  tracking?: { slug: string; sessionId: string; versionId?: string };
   /** Builder/marketing preview: no persistence, no redirects. */
   preview?: boolean;
   /** Builder: jump the preview to the block being edited. */
@@ -257,18 +324,55 @@ export function FormRenderer({
   const [submitting, setSubmitting] = useState(false);
   const [score, setScore] = useState<Score | null>(null);
   const [restored, setRestored] = useState(!persistKey);
+  const [resumeHint, setResumeHint] = useState<string | null>(null);
+  const [payBusy, setPayBusy] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
   const submittedOnce = useRef(false);
   const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shuffleSeed = useRef(Math.floor(Math.random() * 100000) + 1);
   /** Display names for uploaded files (ids live in drafts, survive remounts). */
   const fileNames = useRef<Record<string, Record<string, string>>>({});
+  /** URL-prefill seeds once: never clobber a restored session or typed input. */
+  const prefillSeeded = useRef(false);
 
   const current: Block | undefined = byId.get(currentId);
   const autoAdvance = settings?.autoAdvance ?? true;
 
   // Restore a half-finished session: this version first, else an older version of the same form.
+  // When nothing was saved, seed URL-prefilled answers (once per mount).
   useEffect(() => {
-    if (!persistKey) return;
+    const seedPrefill = (seed: Answers) => {
+      const d: Record<string, DraftValue> = {};
+      const o: Record<string, string> = {};
+      const a: Answers = {};
+      for (const [id, ans] of Object.entries(seed)) {
+        const block = byId.get(id);
+        if (!block || !isValidAnswer(block, ans)) continue;
+        a[id] = ans;
+        const v = (ans as { value: unknown }).value;
+        if (typeof v === "string" || typeof v === "number" || Array.isArray(v)) {
+          d[id] = v as DraftValue;
+        } else if (v && typeof v === "object") {
+          d[id] = v as Record<string, string | string[]>;
+        }
+        if ("otherText" in ans && typeof ans.otherText === "string") o[id] = ans.otherText;
+      }
+      if (Object.keys(a).length > 0) {
+        setDrafts(d);
+        setOthers(o);
+        setAnswers(a);
+      }
+    };
+    let restoredAny = false;
+    if (!persistKey) {
+      if (initialAnswers && !prefillSeeded.current) {
+        prefillSeeded.current = true;
+        seedPrefill(initialAnswers);
+      }
+      setRestored(true);
+      return;
+    }
     try {
       const raw = window.sessionStorage.getItem(persistKey);
       if (raw) {
@@ -279,6 +383,7 @@ export function FormRenderer({
           setDrafts(saved.drafts ?? {});
           setOthers(saved.others ?? {});
           setAnswers(saved.answers ?? {});
+          restoredAny = true;
         }
       } else if (persistPrefix) {
         const olderKey = Object.keys(window.sessionStorage).find((k) => k.startsWith(persistPrefix) && k !== persistKey);
@@ -303,14 +408,19 @@ export function FormRenderer({
             setCurrentId(older.currentId);
             setHistory(older.history);
           }
+          restoredAny = usable.size > 0;
         }
         if (olderKey) window.sessionStorage.removeItem(olderKey);
       }
     } catch {
       /* storage unavailable — fine */
     }
+    if (!restoredAny && !prefillSeeded.current && initialAnswers && Object.keys(initialAnswers).length > 0) {
+      prefillSeeded.current = true;
+      seedPrefill(initialAnswers);
+    }
     setRestored(true);
-  }, [persistKey, persistPrefix, order, byId]);
+  }, [persistKey, persistPrefix, order, byId, initialAnswers]);
 
   useEffect(() => {
     if (!persistKey || !restored || completed) return;
@@ -321,6 +431,51 @@ export function FormRenderer({
       /* ignore */
     }
   }, [persistKey, restored, completed, currentId, history, drafts, others, answers]);
+
+  // Drop-off ping: furthest question reached (public route only, best-effort).
+  useEffect(() => {
+    if (!tracking || !restored || completed || !currentId) return;
+    fetch(`/api/public/forms/${tracking.slug}/progress`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ sessionId: tracking.sessionId, blockId: currentId }),
+    }).catch(() => {});
+  }, [tracking, restored, completed, currentId]);
+
+  // Save progress for resume links: debounced, skipped when submitted.
+  useEffect(() => {
+    if (!tracking || !restored || completed || Object.keys(answers).length === 0) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    const t = { slug: tracking.slug, sessionId: tracking.sessionId };
+    saveTimer.current = setTimeout(() => {
+      let token: string | undefined;
+      try {
+        token = window.sessionStorage.getItem(`soyl:resume:${t.slug}`) ?? undefined;
+      } catch {
+        /* ignore */
+      }
+      fetch(`/api/public/forms/${t.slug}/resume`, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId: t.sessionId, answers, ...(token ? { token } : {}) }),
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => {
+          const next = (d as { token?: string } | null)?.token;
+          if (next) {
+            try {
+              window.sessionStorage.setItem(`soyl:resume:${t.slug}`, next);
+            } catch {
+              /* ignore */
+            }
+          }
+        })
+        .catch(() => {});
+    }, 2500);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+  }, [tracking, restored, completed, answers]);
 
   // Live-preview safety: if the schema changes under us (builder edits),
   // fall back to the first block instead of stranding on a deleted step.
@@ -333,8 +488,14 @@ export function FormRenderer({
     }
   }, [order, currentId]);
 
+  // Payment status belongs to its step: reset when moving on.
+  useEffect(() => {
+    setPayBusy(false);
+    setPayError(null);
+  }, [currentId]);
   useEffect(() => () => {
     if (advanceTimer.current) clearTimeout(advanceTimer.current);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
   }, []);
 
   // Builder preview follows the selected block.
@@ -354,10 +515,30 @@ export function FormRenderer({
   }, []);
   const noKeyHints = minimal || touch;
 
+  const hidden = useMemo(() => hiddenBlockIds(schema, answers), [schema, answers]);
   const progress = useMemo(
-    () => estimateProgress(schema, currentId, history),
-    [schema, currentId, history],
+    () => estimateProgress(schema, currentId, history, hidden),
+    [schema, currentId, history, hidden],
   );
+  // Live total for computed questions (authoritative value is recomputed on submit).
+  const calcValue = useMemo(() => {
+    if (!current || current.type !== "number" || !current.formula) return null;
+    const inputs: Record<string, number> = {};
+    for (const [id, a] of Object.entries(answers)) {
+      if (
+        (a.type === "number" ||
+          a.type === "rating" ||
+          a.type === "opinion_scale" ||
+          a.type === "nps" ||
+          a.type === "slider") &&
+        Number.isFinite(a.value)
+      ) {
+        inputs[id] = a.value;
+      }
+    }
+    const res = evaluateFormula(current.formula, inputs);
+    return res.ok ? res.value : null;
+  }, [current, answers]);
 
   const goTo = useCallback(
     (nextId: string | null, snapshot: Answers) => {
@@ -431,13 +612,29 @@ export function FormRenderer({
         clearTimeout(advanceTimer.current);
         advanceTimer.current = null;
       }
-      if (current.type === "welcome" || current.type === "statement" || current.type === "thank_you") {
+      if (current.type === "welcome" || current.type === "statement" || current.type === "section" || current.type === "media" || current.type === "thank_you") {
         if (current.type === "thank_you" && current.buttonUrl && !preview) {
           window.location.assign(current.buttonUrl);
           return;
         }
         const next = getNextBlockId(schema, current.id, answers);
         void finish(next, answers);
+        return;
+      }
+      // Computed questions use the live total, never a typed value.
+      if (current.type === "number" && current.formula) {
+        if (calcValue === null) {
+          if (current.required) {
+            setError("This total can't be computed yet — answer the questions it uses.");
+            return;
+          }
+          const skipped = getNextBlockId(schema, current.id, answers);
+          void finish(skipped, answers);
+          return;
+        }
+        const snapshot = { ...answers, [current.id]: { type: "number", value: calcValue } as AnswerValue };
+        const computed = getNextBlockId(schema, current.id, snapshot);
+        void finish(computed, snapshot);
         return;
       }
       let draft: DraftValue = draftOverride !== undefined ? draftOverride : drafts[current.id] ?? null;
@@ -458,7 +655,7 @@ export function FormRenderer({
       const next = getNextBlockId(schema, current.id, snapshot);
       void finish(next, snapshot);
     },
-    [current, completed, submitting, schema, answers, drafts, others, finish, preview],
+    [current, completed, submitting, schema, answers, drafts, others, finish, preview, calcValue],
   );
 
   const handleBack = useCallback(() => {
@@ -663,8 +860,114 @@ export function FormRenderer({
           )}
         </div>
       )}
+      {!completed && tracking && current.type !== "thank_you" && (
+        <div className="mt-3 text-center">
+          <button
+            type="button"
+            onClick={async () => {
+              setResumeHint(null);
+              let token: string | null = null;
+              try {
+                token = window.sessionStorage.getItem(`soyl:resume:${tracking.slug}`);
+              } catch {
+                /* ignore */
+              }
+              if (!token && Object.keys(answers).length > 0) {
+                try {
+                  const r = await fetch(`/api/public/forms/${tracking.slug}/resume`, {
+                    method: "PUT",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify({ sessionId: tracking.sessionId, answers }),
+                  });
+                  token = ((await r.json().catch(() => null)) as { token?: string } | null)?.token ?? null;
+                  if (token) window.sessionStorage.setItem(`soyl:resume:${tracking.slug}`, token);
+                } catch {
+                  /* ignore */
+                }
+              }
+              if (!token) {
+                setResumeHint("Answer a question first — then this link resumes where you left off.");
+                return;
+              }
+              const link = `${window.location.origin}${window.location.pathname}?resume=${token}`;
+              try {
+                await navigator.clipboard.writeText(link);
+                setResumeHint("Resume link copied — open it on any device to continue.");
+              } catch {
+                setResumeHint(link);
+              }
+            }}
+            className="f-faint text-xs underline underline-offset-4 hover:opacity-80"
+          >
+            Save & continue later
+          </button>
+          {resumeHint && <p className="f-faint mt-1 break-all text-xs">{resumeHint}</p>}
+        </div>
+      )}
     </div>
   );
+
+  /** Amount shown on a payment step, in paise. Null when not yet knowable. */
+  function paymentPaise(block: Block): number | null {
+    if (block.type !== "payment") return null;
+    if (typeof block.amountPaise === "number") return block.amountPaise;
+    if (block.amountFrom) {
+      const a = answers[block.amountFrom];
+      if (a && typeof a.value === "number" && Number.isFinite(a.value)) {
+        return Math.round(a.value * 100);
+      }
+    }
+    return null;
+  }
+
+  /** Run checkout for the current payment step, then advance on success. */
+  async function payNow() {
+    if (!current || current.type !== "payment" || payBusy) return;
+    if (!tracking?.versionId) {
+      setPayError("Payments run on the live form link, not in previews.");
+      return;
+    }
+    setPayBusy(true);
+    setPayError(null);
+    try {
+      const emailAns = Object.values(answers).find((a) => a.type === "email");
+      const email = emailAns && emailAns.type === "email" ? emailAns.value : undefined;
+      const r = await fetch(`/api/public/forms/${tracking.slug}/pay`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ blockId: current.id, formVersionId: tracking.versionId, answers, email }),
+      });
+      const d = (await r.json().catch(() => null)) as { key?: string; orderId?: string; amountPaise?: number; error?: string } | null;
+      if (!r.ok || !d?.key || !d?.orderId || typeof d?.amountPaise !== "number") {
+        throw new Error(d?.error ?? "Couldn't start the payment. Please try again.");
+      }
+      if (!(await ensureCheckoutJs())) {
+        throw new Error("Couldn't load the payment window. Check your connection and try again.");
+      }
+      const result = await openCheckout({
+        key: d.key,
+        orderId: d.orderId,
+        amountPaise: d.amountPaise,
+        name: schema.title,
+        description: current.type === "payment" ? current.description : undefined,
+        email,
+      });
+      const v = await fetch(`/api/public/forms/${tracking.slug}/pay/verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ orderId: result.razorpay_order_id, paymentId: result.razorpay_payment_id, signature: result.razorpay_signature }),
+      });
+      const vd = (await v.json().catch(() => null)) as { ok?: boolean; amountPaise?: number; error?: string } | null;
+      if (!v.ok || !vd?.ok || typeof vd?.amountPaise !== "number") {
+        throw new Error(vd?.error ?? "The payment didn't verify. You have not been charged twice — please try again.");
+      }
+      advance({ payment_id: result.razorpay_payment_id, order_id: result.razorpay_order_id, amount_paise: vd.amountPaise });
+    } catch (e) {
+      setPayError(e instanceof Error ? e.message : "The payment failed. Please try again.");
+    } finally {
+      setPayBusy(false);
+    }
+  }
 
   function renderStep() {
     if (!current) return null;
@@ -691,7 +994,63 @@ export function FormRenderer({
           </BlockShell>
         );
       case "statement":
+      case "section":
         return <BlockShell title={common.title} description={common.description} imageUrl={current.imageUrl} imageAlt={current.imageAlt} />;
+      case "media": {
+        if (!current.mediaUrl) {
+          return (
+            <BlockShell title={common.title} description={common.description}>
+              <p className="f-faint text-sm">Add a media URL in the block settings.</p>
+            </BlockShell>
+          );
+        }
+        const isVideo =
+          current.mediaType === "video" || (current.mediaType === undefined && /\.(mp4|webm|mov)(\?|#|$)/i.test(current.mediaUrl));
+        return (
+          <BlockShell title={common.title} description={common.description}>
+            {isVideo ? (
+              <video src={current.mediaUrl} controls preload="metadata" className="w-full rounded-xl" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={current.mediaUrl} alt={current.imageAlt ?? ""} className="w-full rounded-xl" loading="lazy" />
+            )}
+            {current.caption && <p className="f-faint mt-2 text-sm">{current.caption}</p>}
+          </BlockShell>
+        );
+      }
+      case "address": {
+        const v = draft && typeof draft === "object" && !Array.isArray(draft) ? (draft as Record<string, string>) : {};
+        return (
+          <BlockShell {...common}>
+            <AddressInputs value={v} onChange={(nv) => pick(nv, { noAdvance: true })} />
+          </BlockShell>
+        );
+      }
+      case "slider": {
+        const min = current.min ?? 0;
+        const max = current.max ?? 100;
+        return (
+          <BlockShell {...common}>
+            <SliderInput
+              min={min}
+              max={max}
+              value={typeof draft === "number" ? draft : null}
+              minLabel={current.minLabel}
+              maxLabel={current.maxLabel}
+              onChange={(nv) => pick(nv, { noAdvance: true })}
+            />
+          </BlockShell>
+        );
+      }
+      case "signature":
+        return (
+          <BlockShell {...common}>
+            <SignaturePad
+              value={typeof draft === "string" ? draft : null}
+              onChange={(nv) => pick(nv, { noAdvance: true })}
+            />
+          </BlockShell>
+        );
       case "short_text":
       case "email":
       case "phone":
@@ -724,6 +1083,18 @@ export function FormRenderer({
           </BlockShell>
         );
       case "number": {
+        if (current.formula) {
+          return (
+            <BlockShell {...common} hint="Calculated automatically from earlier answers.">
+              <p className="font-display text-4xl tabular-nums tracking-tight" aria-live="polite">
+                {calcValue ?? "—"}
+              </p>
+              {calcValue === null && (
+                <p className="f-faint mt-2 text-sm">Answer the questions it uses to see the total.</p>
+              )}
+            </BlockShell>
+          );
+        }
         const raw = typeof draft === "number" ? String(draft) : "";
         return (
           <BlockShell {...common}>
@@ -743,6 +1114,31 @@ export function FormRenderer({
                 }
               }}
               className="f-input"
+            />
+          </BlockShell>
+        );
+      }
+      case "payment": {
+        const paise = paymentPaise(current);
+        const paidDraft = draft && typeof draft === "object" && !Array.isArray(draft) ? (draft as Record<string, unknown>) : null;
+        const paid = Boolean(paidDraft && typeof paidDraft.payment_id === "string");
+        return (
+          <BlockShell {...common}>
+            <PaymentStep
+              amountLabel={paise === null ? null : formatINR(paise)}
+              description={current.description}
+              paid={paid}
+              busy={payBusy}
+              error={payError}
+              canPay={paise !== null && Boolean(tracking?.versionId)}
+              unavailableReason={
+                paise === null
+                  ? "Answer the earlier questions to see the amount."
+                  : !tracking?.versionId
+                    ? "Payments run on the live form link, not in previews."
+                    : undefined
+              }
+              onPay={() => void payNow()}
             />
           </BlockShell>
         );
@@ -914,7 +1310,7 @@ export function FormRenderer({
             <MatrixGrid
               rows={current.rows}
               columns={current.columns}
-              value={grid}
+              value={grid as Record<string, string | string[]>}
               multiple={current.multiple}
               onChange={(v) => pick(v, { noAdvance: true })}
             />

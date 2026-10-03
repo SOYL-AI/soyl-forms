@@ -42,5 +42,18 @@ export async function POST(req: Request) {
     await admin.from("uploaded_files").delete().eq("id", f.id);
     cleaned += 1;
   }
-  return NextResponse.json({ ok: true, cleaned });
+  // Resume links expire after 30 days of silence (answers belong to the
+  // respondent; nothing submitted is ever swept here).
+  const stalePartials = new Date(Date.now() - 30 * 24 * 3600_000).toISOString();
+  const { data: partials } = await admin
+    .from("partial_responses")
+    .select("id")
+    .lt("updated_at", stalePartials)
+    .limit(100);
+  let partialsCleaned = 0;
+  for (const pr of (partials ?? []) as Array<{ id: string }>) {
+    await admin.from("partial_responses").delete().eq("id", pr.id);
+    partialsCleaned += 1;
+  }
+  return NextResponse.json({ ok: true, cleaned, partialsCleaned });
 }

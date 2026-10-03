@@ -42,6 +42,88 @@ function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string);
 }
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Replace `{{form_title}}` in a creator template (case-insensitive). */
+export function renderResponderTemplate(template: string, formTitle: string): string {
+  return template.replace(/{{\s*form_title\s*}}/gi, formTitle);
+}
+
+/**
+ * Find the autoresponder recipient: the preferred email question when it
+ * holds a valid address, otherwise the first answered email question.
+ */
+export function resolveResponderRecipient(
+  blocks: Array<{ id: string; type: string }>,
+  answers: Record<string, { type: string; value: unknown }>,
+  questionId?: string,
+): string | null {
+  const validOn = (id: string): string | null => {
+    const a = answers[id];
+    if (a && a.type === "email" && typeof a.value === "string") {
+      const v = a.value.trim();
+      if (EMAIL_RE.test(v)) return v;
+    }
+    return null;
+  };
+  if (questionId) {
+    const preferred = blocks.find((b) => b.id === questionId && b.type === "email");
+    if (preferred) return validOn(preferred.id);
+    return null;
+  }
+  for (const b of blocks) {
+    if (b.type !== "email") continue;
+    const v = validOn(b.id);
+    if (v) return v;
+  }
+  return null;
+}
+
+/** Respondent confirmation email: custom message on top, their answers below. */
+export function confirmationEmail(args: {
+  formTitle: string;
+  subject?: string;
+  message?: string;
+  rows: Array<{ question: string; answer: string }>;
+  productName: string;
+}): { subject: string; html: string; text: string } {
+  const custom = args.message?.trim();
+  const body = custom
+    ? renderResponderTemplate(custom, args.formTitle)
+    : `We received your response to ${args.formTitle}. A copy of your answers is below.`;
+  const subject = args.subject?.trim()
+    ? renderResponderTemplate(args.subject.trim(), args.formTitle).slice(0, 200)
+    : `Thanks for your response \u00b7 ${args.formTitle}`;
+  const paragraphs = body
+    .split(/\n{2,}|\n/)
+    .map((par) => par.trim())
+    .filter(Boolean);
+  const text = [
+    subject,
+    "",
+    ...paragraphs,
+    "",
+    ...args.rows.map((r) => `${r.question}\n  ${r.answer || "\u2014"}`),
+    "",
+    `Sent by ${args.productName}.`,
+  ].join("\n");
+  const html = `<!doctype html><html><body style="margin:0;padding:24px;background:#f6f5f1;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#101012">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border:1px solid rgba(16,16,18,.1);border-radius:16px;padding:28px">
+    <p style="margin:0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:#8e8b84">Response received</p>
+    <h1 style="margin:6px 0 4px;font-size:22px;letter-spacing:-.01em">${escapeHtml(args.formTitle)}</h1>
+    ${paragraphs.map((par) => `<p style="margin:12px 0 0;font-size:14px;line-height:1.6;color:#33322f">${escapeHtml(par)}</p>`).join("")}
+    <table style="width:100%;border-collapse:collapse;font-size:14px;margin-top:20px">
+      ${args.rows
+        .map(
+          (r) => `<tr><td style="padding:10px 0;border-top:1px solid rgba(16,16,18,.08);vertical-align:top;color:#55534e;width:42%">${escapeHtml(r.question)}</td><td style="padding:10px 0 10px 12px;border-top:1px solid rgba(16,16,18,.08);vertical-align:top;white-space:pre-wrap">${escapeHtml(r.answer || "\u2014")}</td></tr>`,
+        )
+        .join("")}
+    </table>
+    <p style="margin:20px 0 0;font-size:12px;color:#8e8b84">Sent by ${escapeHtml(args.productName)}.</p>
+  </div></body></html>`;
+  return { subject, html, text };
+}
+
 /** Plain, readable notification for a new response. */
 export function responseEmail(args: {
   formTitle: string;

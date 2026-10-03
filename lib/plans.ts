@@ -27,6 +27,8 @@ export interface Entitlements {
   emailNotifications: boolean;
   /** Notification emails per month (0 = feature off). */
   monthlyNotificationEmails: number;
+  /** Accept payments in forms with the workspace's own Razorpay keys. */
+  paymentCollection: boolean;
 }
 
 export interface PlanDefinition {
@@ -65,6 +67,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
       maxBrandKits: 1,
       emailNotifications: false,
       monthlyNotificationEmails: 0,
+      paymentCollection: false,
     },
   },
   starter: {
@@ -88,6 +91,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
       maxBrandKits: 3,
       emailNotifications: true,
       monthlyNotificationEmails: 1000,
+      paymentCollection: true,
     },
   },
   pro: {
@@ -111,6 +115,7 @@ export const PLANS: Record<PlanCode, PlanDefinition> = {
       maxBrandKits: 10,
       emailNotifications: true,
       monthlyNotificationEmails: 5000,
+      paymentCollection: true,
     },
   },
 };

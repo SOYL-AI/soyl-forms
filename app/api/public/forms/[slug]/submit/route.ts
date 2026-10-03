@@ -7,6 +7,7 @@ import { scoreAnswers } from "@/lib/forms/quiz";
 import { PLANS } from "@/lib/plans";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { clientIp, formAcceptance, resolveFormVersion, resolvePublicForm } from "@/lib/forms/public";
+import { claimPayment, expectedPaiseForBlock, linkPaymentToSubmission } from "@/lib/billing/payments-server";
 
 const submitSchema = z.object({
   formVersionId: z.string().min(1).max(100),
@@ -88,6 +89,26 @@ export async function POST(
     return NextResponse.json({ error: checked.error }, { status: 400 });
   }
 
+  // Paid steps: recompute each expected charge and atomically claim its
+  // paid row. The claim (single guarded UPDATE) makes double-spend races
+  // lose exactly once; the marker becomes the submission id below.
+  const paymentMarker = `pending:${input.idempotencyKey}`;
+  const paymentAnswers = Object.entries(checked.value).filter((entry): entry is [string, Extract<(typeof checked.value)[string], { type: "payment" }>] => entry[1].type === "payment");
+  for (const [blockId, a] of paymentAnswers) {
+    const block = answered.schema.blocks.find((b) => b.id === blockId);
+    if (!block || block.type !== "payment") {
+      return NextResponse.json({ error: "Unknown payment step." }, { status: 400 });
+    }
+    const expected = expectedPaiseForBlock(answered.schema.blocks, block, checked.value);
+    if (expected === null || a.value.amount_paise !== expected) {
+      return NextResponse.json({ error: "The paid amount does not match this form. Please pay again." }, { status: 402 });
+    }
+    const claimed = await claimPayment({ formId: form.id, paymentId: a.value.payment_id, expectedPaise: expected, marker: paymentMarker });
+    if (!claimed.ok) {
+      return NextResponse.json({ error: claimed.error }, { status: 409 });
+    }
+  }
+
   // Hidden fields: small, plain, and only when the form collects them.
   let hidden: Record<string, string> = {};
   if (form.settings.collectQueryParams !== false) {
@@ -129,6 +150,12 @@ export async function POST(
       );
     }
     return NextResponse.json({ error: "We couldn't save your response. Please try again — your answers are kept." }, { status: 500 });
+  }
+
+  // Point claimed payments at the real submission (best-effort: rows stay
+  // claimed under the idempotency marker even if this update is lost).
+  if (paymentAnswers.length > 0 && out.submission_id) {
+    await linkPaymentToSubmission(paymentMarker, out.submission_id);
   }
 
   // Attach uploaded files to this submission (ids were issued by the

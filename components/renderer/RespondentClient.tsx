@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Answers, FormSchemaV1, FormSettings, FormTheme } from "@/types/forms";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
+import { parsePrefillParams } from "@/lib/forms/prefill";
+import { availableLocales, localizeSchema } from "@/lib/forms/i18n";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,6 +37,62 @@ export function RespondentClient({
   const startedAt = useMemo(() => Date.now(), []);
   const doneKey = `soyl:done:${slug}`;
   const [alreadyDone, setAlreadyDone] = useState(false);
+  // URL prefill (?email=a@b.com) + hidden fields (?name=...): parsed once,
+  // validated against the schema, seeded into the form when no saved session exists.
+  const prefill = useMemo(() => {
+    if (typeof window === "undefined") return { answers: {}, hidden: {} };
+    const params: Record<string, string> = {};
+    new URLSearchParams(window.location.search).forEach((value, key) => {
+      params[key] = value;
+    });
+    return parsePrefillParams(schema, settings ?? {}, params);
+  }, [schema, settings]);
+
+  // Resume link (?resume=token): fetch saved answers once. Saved progress
+  // wins over live URL-prefill values — saved progress wins.
+  const [resumeAnswers, setResumeAnswers] = useState<Answers>({});
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const token = new URLSearchParams(window.location.search).get("resume");
+    if (!token) return;
+    fetch(`/api/public/forms/${slug}/resume?token=${encodeURIComponent(token)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const a = (d as { answers?: Answers } | null)?.answers;
+        if (a && typeof a === "object") setResumeAnswers(a);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
+  // Multi-language: respondent picks once, remembered per form.
+  const locales = useMemo(() => availableLocales(schema), [schema]);
+  const [locale, setLocale] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window === "undefined" || locales.length === 0) return;
+    try {
+      const saved = window.localStorage.getItem(`soyl:locale:${slug}`);
+      if (saved && locales.includes(saved)) setLocale(saved);
+    } catch {
+      /* ignore */
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slug]);
+  const localized = useMemo(() => localizeSchema(schema, locale), [schema, locale]);
+  function chooseLocale(next: string | null) {
+    setLocale(next);
+    try {
+      if (next) window.localStorage.setItem(`soyl:locale:${slug}`, next);
+      else window.localStorage.removeItem(`soyl:locale:${slug}`);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const initialAnswers = useMemo(
+    () => ({ ...prefill.answers, ...resumeAnswers }),
+    [prefill, resumeAnswers],
+  );
+
 
   // Soft duplicate guard (per device) when the creator turned repeats off.
   useEffect(() => {
@@ -63,10 +121,13 @@ export function RespondentClient({
     answers: Answers,
   ): Promise<{ ok: boolean; error?: string; score?: { points: number; max: number } }> {
     const params = new URLSearchParams(window.location.search);
-    const hidden: Record<string, string> = {};
+    // Re-parse at submit time so late-added params are included; invalid or
+    // over-long values are dropped by the parser, never stored.
+    const live: Record<string, string> = {};
     params.forEach((value, key) => {
-      if (key !== "src" && key !== "embed") hidden[key] = value;
+      live[key] = value;
     });
+    const hidden = { ...prefill.hidden, ...parsePrefillParams(schema, settings ?? {}, live).hidden };
     const payload = JSON.stringify({
       formVersionId: versionId,
       idempotencyKey,
@@ -99,6 +160,12 @@ export function RespondentClient({
       return { ok: false, error: "You seem to be offline. Check your connection and try again — your answers are kept." };
     }
     if (res.ok) {
+      // Saved progress is spent: the resume link must not replay a submitted form.
+      fetch(`/api/public/forms/${slug}/resume`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      }).catch(() => {});
       try {
         window.localStorage.setItem(doneKey, new Date().toISOString());
       } catch {
@@ -131,15 +198,40 @@ export function RespondentClient({
   }
 
   return (
+    <div>
+      {locales.length > 0 && (
+        <div className="mb-4 flex flex-wrap justify-end gap-1.5" role="group" aria-label="Language">
+          <LocaleButton active={locale === null} onClick={() => chooseLocale(null)} label="Default" />
+          {locales.map((l) => (
+            <LocaleButton key={l} active={locale === l} onClick={() => chooseLocale(l)} label={l} />
+          ))}
+        </div>
+      )}
     <FormRenderer
-      schema={schema}
+      schema={localized}
       minimal={minimal}
       theme={theme}
       settings={settings}
       uploads={{ slug }}
       onBeforeComplete={submit}
       persistKey={`soyl:f:${slug}:${versionId}`}
+      initialAnswers={initialAnswers}
+      tracking={{ slug, sessionId, versionId }}
       persistPrefix={`soyl:f:${slug}:`}
     />
+    </div>
+  );
+}
+
+function LocaleButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={active ? "f-btn-primary px-3 py-1 text-xs" : "f-btn-secondary px-3 py-1 text-xs"}
+    >
+      {label}
+    </button>
   );
 }

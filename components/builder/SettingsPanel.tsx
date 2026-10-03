@@ -24,6 +24,56 @@ const FILE_TYPES: Array<{ mime: string; label: string }> = [
   { mime: "application/zip", label: "ZIP" },
 ];
 
+/** Calculation editor for number questions: turns the question into a live total. */
+function FormulaEditor({
+  block,
+  blocks,
+  onPatch,
+}: {
+  block: Block;
+  blocks: Block[];
+  onPatch: (p: Partial<Block>) => void;
+}) {
+  if (block.type !== "number") return null;
+  const numeric = blocks
+    .filter((b) =>
+      b.id !== block.id &&
+      (b.type === "number" || b.type === "slider" || b.type === "rating" || b.type === "opinion_scale" || b.type === "nps"),
+    )
+    .slice(0, 30);
+  return (
+    <Field
+      label="Calculation"
+      hint={block.formula ? "Computed live and recomputed on submit — respondents can't type here." : "Optional: e.g. {price} * {qty}. Makes this a computed total."}
+    >
+      <Input
+        value={block.formula ?? ""}
+        placeholder="{price} * {qty}"
+        maxLength={500}
+        onChange={(e) => onPatch({ formula: e.target.value.trim() || undefined } as Partial<Block>)}
+      />
+      {numeric.length > 0 && (
+        <select
+          aria-label="Insert a question reference"
+          value=""
+          onChange={(e) => {
+            if (!e.target.value) return;
+            onPatch({ formula: `${block.formula ?? ""}{${e.target.value}}`.slice(0, 500) } as Partial<Block>);
+          }}
+          className="mt-1.5 w-full rounded-xl border border-line-strong bg-paper px-3 py-1.5 text-xs"
+        >
+          <option value="">Insert a question…</option>
+          {numeric.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.title.length > 48 ? `${b.title.slice(0, 47)}…` : b.title}
+            </option>
+          ))}
+        </select>
+      )}
+    </Field>
+  );
+}
+
 /** Editable list of labelled options (choices, grid rows/columns). */
 function OptionList({
   label,
@@ -271,7 +321,7 @@ export function SettingsPanel({
         {BLOCK_TYPE_LABELS[block.type]}
       </div>
 
-      <Field label={block.type === "welcome" || block.type === "thank_you" || block.type === "statement" ? "Heading" : "Question"}>
+      <Field label={block.type === "welcome" || block.type === "thank_you" || block.type === "statement" || block.type === "section" || block.type === "media" ? "Heading" : "Question"}>
         <Textarea
           value={block.title}
           onChange={(e) => onPatch({ title: e.target.value })}
@@ -372,6 +422,7 @@ export function SettingsPanel({
       )}
 
       {block.type === "number" && (
+        <>
         <div className="grid grid-cols-2 gap-2">
           <Field label="Min">
             <Input
@@ -394,6 +445,8 @@ export function SettingsPanel({
             />
           </Field>
         </div>
+        <FormulaEditor block={block} blocks={blocks} onPatch={onPatch} />
+        </>
       )}
 
       {isChoice && (
@@ -508,6 +561,40 @@ export function SettingsPanel({
         </div>
       )}
 
+      {block.type === "slider" && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Min">
+            <Input type="number" value={block.min ?? 0} onChange={(e) => onPatch({ min: Math.max(0, Number(e.target.value) || 0) })} />
+          </Field>
+          <Field label="Max">
+            <Input type="number" value={block.max ?? 100} onChange={(e) => onPatch({ max: Math.max(1, Number(e.target.value) || 100) })} />
+          </Field>
+          <Field label="Low label">
+            <Input value={block.minLabel ?? ""} onChange={(e) => onPatch({ minLabel: e.target.value || undefined })} maxLength={100} />
+          </Field>
+          <Field label="High label">
+            <Input value={block.maxLabel ?? ""} onChange={(e) => onPatch({ maxLabel: e.target.value || undefined })} maxLength={100} />
+          </Field>
+        </div>
+      )}
+
+      {block.type === "media" && (
+        <div className="grid gap-2">
+          <Field label="Media URL" hint="https link to an image or video.">
+            <Input value={block.mediaUrl} onChange={(e) => onPatch({ mediaUrl: e.target.value })} placeholder="https://…" />
+          </Field>
+          <Field label="Type">
+            <Select value={block.mediaType ?? "image"} onChange={(e) => onPatch({ mediaType: e.target.value as "image" | "video" })}>
+              <option value="image">Image</option>
+              <option value="video">Video</option>
+            </Select>
+          </Field>
+          <Field label="Caption" hint="Optional.">
+            <Input value={block.caption ?? ""} onChange={(e) => onPatch({ caption: e.target.value || undefined })} maxLength={500} />
+          </Field>
+        </div>
+      )}
+
       {block.type === "legal" && (
         <>
           <Field label="Checkbox text">
@@ -553,7 +640,56 @@ export function SettingsPanel({
         </>
       )}
 
-      {(block.type === "welcome" || block.type === "statement") && (
+      {block.type === "payment" && (
+        <div className="grid gap-2">
+          <Field label="Fixed price (₹)" hint="Leave blank to charge an amount question instead.">
+            <Input
+              type="number"
+              min={1}
+              value={block.amountPaise !== undefined ? block.amountPaise / 100 : ""}
+              placeholder="99"
+              onChange={(e) =>
+                onPatch({
+                  amountPaise: e.target.value === "" ? undefined : Math.round(Number(e.target.value) * 100),
+                  amountFrom: undefined,
+                })
+              }
+            />
+          </Field>
+          <Field label="Or charge an amount question" hint="Charges that answer (× 100 paise). Must come earlier in the form.">
+            <Select
+              value={block.amountFrom ?? ""}
+              onChange={(e) => onPatch({ amountFrom: e.target.value || undefined, amountPaise: undefined })}
+            >
+              <option value="">Use the fixed price</option>
+              {blocks
+                .filter(
+                  (b) =>
+                    b.id !== block.id &&
+                    (b.type === "number" || b.type === "slider" || b.type === "rating" || b.type === "opinion_scale" || b.type === "nps"),
+                )
+                .map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.title.length > 48 ? `${b.title.slice(0, 47)}…` : b.title}
+                  </option>
+                ))}
+            </Select>
+          </Field>
+          <Field label="What it's for" hint="Shown next to the amount at checkout.">
+            <Input
+              value={block.description ?? ""}
+              onChange={(e) => onPatch({ description: e.target.value || undefined })}
+              maxLength={500}
+              placeholder="Event ticket"
+            />
+          </Field>
+          <p className="text-xs leading-relaxed text-ink-faint">
+            Money goes straight to the Razorpay account connected under Account → Payments. Requires a paid plan to publish.
+          </p>
+        </div>
+      )}
+
+      {(block.type === "welcome" || block.type === "statement" || block.type === "section") && (
         <Field label="Button label">
           <Input value={block.buttonLabel ?? ""} onChange={(e) => onPatch({ buttonLabel: e.target.value || undefined })} maxLength={50} placeholder={block.type === "welcome" ? "Start" : "Continue"} />
         </Field>

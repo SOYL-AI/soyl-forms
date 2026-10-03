@@ -80,6 +80,17 @@ export function createBlock(type: BlockType): Block {
       };
     case "file_upload":
       return { id, type, title: "Upload a file", required: false, maxSizeMb: 10 };
+    case "address":
+      return { id, type, title: "What's your address?", required: false };
+    case "slider":
+      return { id, type, title: "Pick a value", required: false, min: 0, max: 100 };
+    case "section":
+      return { id, type, title: "Part 2", description: "A few more questions.", buttonLabel: "Continue" };
+    case "media":
+      return { id, type, title: "Watch this", mediaUrl: "", mediaType: "image" };
+    case "signature":
+      return { id, type, title: "Sign below", required: false };    case "payment":
+      return { id, type, title: "Payment", description: "Pay to complete your response.", amountPaise: 9900 };
     case "statement":
       return { id, type, title: "One more thing…", buttonLabel: "Continue" };
     case "thank_you":
@@ -160,6 +171,12 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   nps: "Net Promoter Score",
   legal: "Consent",
   file_upload: "File upload",
+  address: "Address",
+  slider: "Slider",
+  section: "Section break",
+  media: "Image / video",
+  signature: "Signature",
+  payment: "Payment",
   statement: "Statement",
   thank_you: "Thank you",
 };
@@ -190,6 +207,12 @@ export const BLOCK_TYPE_META: Record<BlockType, { group: BlockGroup; hint: strin
   date: { group: "input", hint: "Calendar date" },
   time: { group: "input", hint: "Time of day" },
   file_upload: { group: "input", hint: "Files up to 100 MB" },
+  address: { group: "input", hint: "Street, city, postal code" },
+  slider: { group: "scale", hint: "Drag between min and max" },
+  section: { group: "screens", hint: "Page break with a heading" },
+  media: { group: "screens", hint: "Image or video screen" },
+  signature: { group: "input", hint: "Hand-drawn signature" },
+  payment: { group: "input", hint: "Collect ₹ with Razorpay" },
 };
 
 export const BLOCK_GROUP_LABELS: Record<BlockGroup, string> = {

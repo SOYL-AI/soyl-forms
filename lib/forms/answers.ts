@@ -1,4 +1,5 @@
 import { OTHER_OPTION_ID, type AnswerValue, type Block, type FormSchemaV1 } from "@/types/forms";
+import { evaluateFormula } from "./formula";
 import { respondentPath } from "./logic";
 
 export type NormalizedAnswers = Record<string, AnswerValue>;
@@ -8,6 +9,30 @@ export type NormalizedAnswers = Record<string, AnswerValue>;
  * Mirrors client checks but never trusts them. Returns the first problem
  * found — the submission endpoint treats any failure as a 400.
  */
+/** Numeric answers available to formulas (plain numbers, scales, sliders, earlier totals). */
+function numericInputs(answers: NormalizedAnswers): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [id, a] of Object.entries(answers)) {
+    if (
+      (a.type === "number" ||
+        a.type === "rating" ||
+        a.type === "opinion_scale" ||
+        a.type === "nps" ||
+        a.type === "slider") &&
+      Number.isFinite(a.value)
+    ) {
+      out[id] = a.value;
+    }
+  }
+  return out;
+}
+
+/** Evaluate a formula against validated answers (in schema order, so chained totals work). Null when inputs are missing. */
+function computeFormula(formula: string, shaped: NormalizedAnswers): number | null {
+  const res = evaluateFormula(formula, numericInputs(shaped));
+  return res.ok ? res.value : null;
+}
+
 export function validateAnswers(
   schema: Pick<FormSchemaV1, "blocks"> & { logic?: FormSchemaV1["logic"] },
   answers: unknown,
@@ -19,14 +44,26 @@ export function validateAnswers(
 
   // Shape-check every answer for a known question. Keys for questions that
   // don't exist (removed, or from an older draft) are ignored, not fatal.
+  // Computed (formula) questions never trust the client: their values are
+  // recomputed below from the validated inputs.
   const shaped: NormalizedAnswers = {};
   const invalid = new Map<string, string>();
+  const formulaBlocks: Block[] = [];
   for (const block of schema.blocks) {
+    if (block.type === "number" && block.formula) {
+      formulaBlocks.push(block);
+      continue;
+    }
     const raw = input[block.id];
     if (raw === undefined || raw === null) continue;
     const checked = checkBlock(block, raw);
     if (checked.ok) shaped[block.id] = checked.value;
     else invalid.set(block.id, checked.error);
+  }
+  for (const block of formulaBlocks) {
+    if (block.type !== "number" || !block.formula) continue;
+    const computed = computeFormula(block.formula, shaped);
+    if (computed !== null) shaped[block.id] = { type: "number", value: computed };
   }
 
   // Only the questions the respondent passed through count: branching may
@@ -52,6 +89,8 @@ function isRequired(block: Block): boolean {
   return (
     block.type !== "welcome" &&
     block.type !== "statement" &&
+    block.type !== "section" &&
+    block.type !== "media" &&
     block.type !== "thank_you" &&
     block.required === true
   );
@@ -86,6 +125,8 @@ function checkBlock(block: Block, raw: unknown): Checked {
   switch (block.type) {
     case "welcome":
     case "statement":
+    case "section":
+    case "media":
     case "thank_you":
       return fail(block, "this screen takes no answer.");
 
@@ -161,6 +202,73 @@ function checkBlock(block: Block, raw: unknown): Checked {
         }
       }
       return { ok: true, value: { type: block.type, value: v } as AnswerValue };
+    }
+
+    case "slider": {
+      if (typeof v !== "number" || !Number.isFinite(v)) {
+        return fail(block, "answer must be a number.");
+      }
+      if (block.type !== "slider") return fail(block, "unsupported question type.");
+      const min = block.min ?? 0;
+      const max = block.max ?? 100;
+      if (!Number.isInteger(v) || v < min || v > max) {
+        return fail(block, `pick a whole number from ${min} to ${max}.`);
+      }
+      return { ok: true, value: { type: "slider", value: v } };
+    }
+
+    case "address": {
+      if (!v || typeof v !== "object" || Array.isArray(v)) {
+        return fail(block, "answer must be an address.");
+      }
+      const parts = v as Record<string, unknown>;
+      const get = (k: string): string => {
+        const raw = parts[k];
+        return typeof raw === "string" ? raw.trim().slice(0, 200) : "";
+      };
+      const value = {
+        street: get("street"),
+        line2: get("line2"),
+        city: get("city"),
+        state: get("state"),
+        postal: get("postal"),
+        country: get("country"),
+      };
+      const filled = [value.street, value.city, value.postal].filter(Boolean);
+      if (block.required && filled.length < 3) {
+        return fail(block, "street, city and postal code are required.");
+      }
+      if (!block.required && Object.values(value).every((x) => !x)) {
+        return fail(block, "answer must be an address.");
+      }
+      return { ok: true, value: { type: "address", value } };
+    }
+
+    case "payment": {
+      if (!w.value || typeof w.value !== "object" || Array.isArray(w.value)) {
+        return fail(block, "complete the payment to continue.");
+      }
+      const pv = w.value as Record<string, unknown>;
+      const paymentId = typeof pv.payment_id === "string" ? pv.payment_id : "";
+      const orderId = typeof pv.order_id === "string" ? pv.order_id : "";
+      const paise = typeof pv.amount_paise === "number" ? pv.amount_paise : NaN;
+      if (!paymentId || paymentId.length > 100 || !orderId.startsWith("order_") || orderId.length > 100) {
+        return fail(block, "that payment didn't verify — please pay again.");
+      }
+      if (!Number.isInteger(paise) || paise < 100 || paise > 100_000_000) {
+        return fail(block, "that payment didn't verify — please pay again.");
+      }
+      // Paid status + exact amount are confirmed against the payments table
+      // in the submit endpoint; the shape alone never grants anything.
+      return { ok: true, value: { type: "payment", value: { payment_id: paymentId, order_id: orderId, amount_paise: paise } } };
+    }
+
+    case "signature": {
+      if (typeof v !== "string") return fail(block, "answer must be a signature.");
+      if (!v.startsWith("data:image/png;base64,") || v.length > 300_000) {
+        return fail(block, "that signature didn\u2019t save correctly — please sign again.");
+      }
+      return { ok: true, value: { type: "signature", value: v } };
     }
 
     case "yes_no": {
@@ -309,8 +417,22 @@ export function displayAnswer(block: Block, answer: AnswerValue | undefined): st
     case "number":
     case "rating":
     case "opinion_scale":
+    case "slider":
     case "nps":
       return String(answer.value);
+    case "address": {
+      if (block.type !== "address") return JSON.stringify(answer.value);
+      return [answer.value.street, answer.value.line2, answer.value.city, answer.value.state, answer.value.postal, answer.value.country]
+        .filter(Boolean)
+        .join(", ");
+    }
+    case "signature":
+      return answer.value ? "Signed" : "";
+    case "payment": {
+      if (block.type !== "payment") return JSON.stringify(answer.value);
+      const rupees = answer.value.amount_paise / 100;
+      return `₹${rupees.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} paid`;
+    }
     case "ranking": {
       const label = (id: string) =>
         block.type === "ranking" ? (block.options.find((o) => o.id === id)?.label ?? id) : id;
