@@ -1,4 +1,4 @@
-# SOYL Forms
+# SOYL Forms.
 
 Conversational one-question-at-a-time forms with **brand-aware AI drafting**:
 upload a logo, a guidelines PDF or paste a website once, and every form the
