@@ -56,6 +56,7 @@ export async function verifyMcpKey(secret: string): Promise<VerifiedKey | null> 
     .from("workspace_api_keys")
     .update({ last_used_at: new Date().toISOString() })
     .eq("id", row.id)
+    .eq("workspace_id", row.workspace_id)
     .then(
       () => undefined,
       () => undefined,

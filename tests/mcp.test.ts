@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import {
   hashMcpKey,
@@ -6,6 +6,7 @@ import {
   MCP_KEY_PREFIX,
   newMcpKey,
   parseBearer,
+  verifyMcpKey,
 } from "@/lib/mcp/keys";
 import {
   handleMcpBody,
@@ -15,6 +16,23 @@ import {
   type RegisteredTool,
 } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
+import { getServiceSupabase } from "@/lib/supabase/admin";
+import { resolvePublicForm } from "@/lib/forms/public";
+import { generateFormDraft, isAiConfigured } from "@/lib/ai/generate";
+import { ensureMonthlyCredits, getAiBalance, refundCredits, spendCredits } from "@/lib/ai/credits";
+import { getWorkspacePlan } from "@/lib/billing/plan";
+import { getPlatformFlags } from "@/lib/platform";
+
+vi.mock("@/lib/supabase/admin", () => ({ getServiceSupabase: vi.fn() }));
+vi.mock("@/lib/forms/public", () => ({ resolvePublicForm: vi.fn() }));
+vi.mock("@/lib/ai/generate", () => ({ generateFormDraft: vi.fn(), isAiConfigured: vi.fn() }));
+vi.mock("@/lib/ai/credits", () => ({
+  ensureMonthlyCredits: vi.fn(), getAiBalance: vi.fn(), refundCredits: vi.fn(), spendCredits: vi.fn(),
+}));
+vi.mock("@/lib/billing/plan", () => ({ getWorkspacePlan: vi.fn() }));
+vi.mock("@/lib/platform", () => ({ getPlatformFlags: vi.fn() }));
+
+afterEach(() => vi.resetAllMocks());
 
 describe("mcp api keys", () => {
   it("mints unique secrets with the soyl prefix", () => {
@@ -196,6 +214,24 @@ describe("mcp protocol", () => {
       expect((r.json as { error: { code: number } }).error.code).toBe(-32600);
     }
   });
+
+  it("rejects invalid ids and primitive params", async () => {
+    for (const id of [true, {}, []]) {
+      const r = await handleMcpBody({ jsonrpc: "2.0", id, method: "tools/list" }, ctx());
+      expect(r.json).toMatchObject({ id: null, error: { code: -32600 } });
+    }
+    const r = await handleMcpBody({ jsonrpc: "2.0", id: 1, method: "tools/call", params: 42 }, ctx());
+    expect(r.json).toMatchObject({ error: { code: -32602 } });
+  });
+
+  it("rejects oversized batches before any tool executes", async () => {
+    const run = vi.fn(echoTool.run);
+    const r = await handleMcpBody(Array.from({ length: 33 }, (_, id) => ({
+      jsonrpc: "2.0", id, method: "tools/call", params: { name: "echo", arguments: { word: "hi" } },
+    })), ctx([{ ...echoTool, run }]));
+    expect(r.json).toMatchObject({ error: { code: -32600 } });
+    expect(run).not.toHaveBeenCalled();
+  });
 });
 
 describe("mcp live tool registry", () => {
@@ -237,5 +273,95 @@ describe("mcp live tool registry", () => {
     expect(s.safeParse({}).success).toBe(true);
     expect(s.safeParse({ limit: 0 }).success).toBe(false);
     expect(s.safeParse({ limit: 51 }).success).toBe(false);
+  });
+
+  it("rejects undeclared fields for every live tool", () => {
+    const inputs = [{}, { slug: "abc" }, { description: "a long enough form description" }];
+    MCP_TOOLS.forEach((tool, i) => {
+      expect(tool.schema.safeParse({ ...inputs[i], workspaceId: "another-workspace" }).success).toBe(false);
+    });
+  });
+});
+
+function mockQuery(data: unknown) {
+  const query = {
+    select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(),
+    update: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(),
+    limit: vi.fn().mockResolvedValue({ data, error: null }),
+    maybeSingle: vi.fn().mockResolvedValue({ data, error: null }),
+    then: vi.fn().mockResolvedValue(undefined),
+  };
+  const from = vi.fn().mockReturnValue(query);
+  vi.mocked(getServiceSupabase).mockReturnValue({ from } as unknown as NonNullable<ReturnType<typeof getServiceSupabase>>);
+  return { query, from };
+}
+
+async function callLive(name: string, args: unknown) {
+  return handleMcpBody({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }, ctx(MCP_TOOLS));
+}
+
+describe("mcp authentication and data boundaries", () => {
+  it("looks up the secret hash and scopes the last-used update", async () => {
+    const { query, from } = mockQuery({ id: "key-1", workspace_id: "ws-1", key_prefix: "prefix", revoked_at: null });
+    expect(await verifyMcpKey("soyl_sk_secret")).toEqual({ keyId: "key-1", workspaceId: "ws-1", prefix: "prefix" });
+    expect(from).toHaveBeenCalledWith("workspace_api_keys");
+    expect(query.eq).toHaveBeenCalledWith("key_hash", hashMcpKey("soyl_sk_secret"));
+    expect(query.eq).toHaveBeenCalledWith("workspace_id", "ws-1");
+  });
+
+  it("rejects revoked and unknown keys without updating them", async () => {
+    for (const data of [null, { id: "key-1", workspace_id: "ws-1", revoked_at: "2026-01-01" }]) {
+      const { query } = mockQuery(data);
+      expect(await verifyMcpKey("soyl_sk_secret")).toBeNull();
+      expect(query.update).not.toHaveBeenCalled();
+    }
+    vi.mocked(getServiceSupabase).mockReturnValue(null);
+    expect(await verifyMcpKey("soyl_sk_secret")).toBeNull();
+  });
+
+  it("scopes form lists and excludes owner fields", async () => {
+    const { query } = mockQuery([{ id: "form-1", title: "Form", slug: "abc", status: "draft", updated_at: "today", created_by: "owner-1" }]);
+    const r = await callLive("list_forms", {});
+    expect(query.eq).toHaveBeenCalledWith("workspace_id", "ws-1");
+    expect(JSON.stringify(r.json)).not.toContain("owner-1");
+  });
+
+  it("scopes private schema reads and removes owner notification addresses", async () => {
+    const { query } = mockQuery({ id: "form-1", title: "Form", slug: "abc", status: "draft",
+      draft_schema: { schemaVersion: 1, title: "Form", blocks: [{ id: "name", type: "short_text", title: "Name" }], logic: [] },
+      theme: {}, settings: { showProgress: true, notifyEmails: ["owner@example.com"], privateToken: "private-value" },
+    });
+    const r = await callLive("get_form_schema", { formId: "00000000-0000-0000-0000-000000000000" });
+    expect(query.eq).toHaveBeenCalledWith("workspace_id", "ws-1");
+    const payload = JSON.parse((r.json as { result: { content: Array<{ text: string }> } }).result.content[0]!.text);
+    expect(payload.settings).toEqual({ showProgress: true });
+  });
+
+  it("redacts public settings and refuses unpublished slugs", async () => {
+    const form = { id: "form-1", title: "Form", slug: "abc", status: "published", schema: {}, theme: {},
+      settings: { showProgress: true, notifyEmails: ["owner@example.com"] },
+    };
+    vi.mocked(resolvePublicForm).mockResolvedValue({ form } as Awaited<ReturnType<typeof resolvePublicForm>>);
+    const r = await callLive("get_form_schema", { slug: "abc" });
+    expect(r.json).toHaveProperty("result");
+    expect(JSON.stringify(r.json)).not.toContain("owner@example.com");
+    for (const status of ["draft", "archived", "closed"]) {
+      vi.mocked(resolvePublicForm).mockResolvedValue({ form: { ...form, status } } as Awaited<ReturnType<typeof resolvePublicForm>>);
+      expect((await callLive("get_form_schema", { slug: "abc" })).json).toMatchObject({ error: { data: { code: "not_found" } } });
+    }
+  });
+
+  it("refunds generation failures without exposing raw error content", async () => {
+    vi.mocked(getPlatformFlags).mockResolvedValue({ aiEnabled: true } as Awaited<ReturnType<typeof getPlatformFlags>>);
+    vi.mocked(isAiConfigured).mockReturnValue(true);
+    vi.mocked(getWorkspacePlan).mockResolvedValue("free");
+    vi.mocked(getAiBalance).mockResolvedValue(10);
+    vi.mocked(spendCredits).mockResolvedValue(true);
+    vi.mocked(generateFormDraft).mockRejectedValue(new Error("owner@example.com private provider payload"));
+    const r = await callLive("draft_form", { description: "Draft a registration form" });
+    expect(ensureMonthlyCredits).toHaveBeenCalledWith("ws-1", "free");
+    expect(refundCredits).toHaveBeenCalledWith("ws-1", 1, expect.any(String));
+    expect(r.json).toMatchObject({ error: { code: -32603, data: { code: "ai_unavailable" } } });
+    expect(JSON.stringify(r.json)).not.toContain("owner@example.com");
   });
 });

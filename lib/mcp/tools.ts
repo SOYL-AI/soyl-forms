@@ -6,13 +6,20 @@ import { AI_COST_PER_DRAFT } from "@/lib/plans";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { rowToBrandKit, type BrandKit } from "@/lib/brand/types";
 import { getPlatformFlags } from "@/lib/platform";
-import { formSchemaV1 } from "@/lib/forms/schema";
+import { formSchemaV1, formSettingsSchema } from "@/lib/forms/schema";
 import { resolvePublicForm } from "@/lib/forms/public";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { McpToolError, type RegisteredTool, type ToolResult } from "./protocol";
 
 function text(payload: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(payload) }] };
+}
+
+// Allow only known settings and exclude owner notification addresses.
+const agentSettingsSchema = formSettingsSchema.omit({ notifyEmails: true });
+function agentSettings(settings: unknown) {
+  const parsed = agentSettingsSchema.safeParse(settings ?? {});
+  return parsed.success ? parsed.data : {};
 }
 
 /**
@@ -40,7 +47,7 @@ async function getWorkspaceBrandKit(workspaceId: string, kitId: string): Promise
 
 const listFormsInput = z.object({
   limit: z.number().int().min(1).max(50).default(20),
-});
+}).strict();
 
 const listFormsTool: RegisteredTool = {
   def: {
@@ -93,6 +100,7 @@ const getFormSchemaInput = z
     formId: z.string().uuid().optional(),
     slug: z.string().min(1).max(120).optional(),
   })
+  .strict()
   .refine((v) => Number(Boolean(v.formId)) + Number(Boolean(v.slug)) === 1, {
     message: "Provide exactly one of `formId` or `slug`.",
   });
@@ -117,7 +125,7 @@ const getFormSchemaTool: RegisteredTool = {
     const args = input as z.infer<typeof getFormSchemaInput>;
     if (args.slug) {
       const resolved = await resolvePublicForm(args.slug);
-      if ("error" in resolved) {
+      if ("error" in resolved || resolved.form.status !== "published") {
         throw new McpToolError("That form isn't available.", -32602, "not_found");
       }
       const f = resolved.form;
@@ -128,7 +136,7 @@ const getFormSchemaTool: RegisteredTool = {
         status: f.status,
         schema: f.schema,
         theme: f.theme,
-        settings: f.settings,
+        settings: agentSettings(f.settings),
       });
     }
     const admin = getServiceSupabase();
@@ -160,7 +168,7 @@ const getFormSchemaTool: RegisteredTool = {
       status: row.status,
       schema: parsed.data,
       theme: row.theme,
-      settings: row.settings,
+      settings: agentSettings(row.settings),
     });
   },
 };
@@ -173,7 +181,7 @@ const draftFormInput = z.object({
   length: z.enum(["short", "medium", "long"]).optional(),
   tone: z.string().max(80).optional(),
   language: z.string().max(40).optional(),
-});
+}).strict();
 
 const draftFormTool: RegisteredTool = {
   def: {
@@ -184,7 +192,7 @@ const draftFormTool: RegisteredTool = {
       type: "object",
       properties: {
         description: { type: "string", minLength: 10, maxLength: AI_PROMPT_MAX_CHARS, description: "What the form is for." },
-        brandKitId: { type: "string", format: "uuid", description: "Optional brand kit for on-brand styling." },
+        brandKitId: { type: ["string", "null"], format: "uuid", description: "Optional brand kit for on-brand styling." },
         length: { type: "string", enum: ["short", "medium", "long"], description: "Draft size (default medium)." },
         tone: { type: "string", maxLength: 80, description: "Tone override, e.g. formal, playful." },
         language: { type: "string", maxLength: 40, description: "Respondent-facing language, e.g. Hindi." },
@@ -233,10 +241,10 @@ const draftFormTool: RegisteredTool = {
         rationale: draft.rationale,
         balance: await getAiBalance(ctx.workspaceId),
       });
-    } catch (e) {
+    } catch {
       await refundCredits(ctx.workspaceId, AI_COST_PER_DRAFT, `mcp-draft-fail-${Date.now()}`);
       throw new McpToolError(
-        e instanceof Error ? e.message.slice(0, 300) : "Generation failed.",
+        "Generation failed. Please try again.",
         -32603,
         "ai_unavailable",
       );

@@ -83,11 +83,18 @@ async function dispatchOne(msg: unknown, ctx: DispatchContext): Promise<RpcRespo
     return err(null, -32600, "Invalid Request.");
   }
   const { jsonrpc, id, method, params } = msg as Record<string, unknown>;
+  if (id !== undefined && id !== null && typeof id !== "string" && typeof id !== "number") {
+    return err(null, -32600, "Invalid Request: invalid id.");
+  }
   if (jsonrpc !== "2.0" || typeof method !== "string") {
     return err(typeof id === "string" || typeof id === "number" ? id : null, -32600, "Invalid Request.");
   }
   const rpcId = id === undefined ? null : (id as string | number | null);
   const isNotification = id === undefined;
+
+  if (params !== undefined && (params === null || typeof params !== "object")) {
+    return isNotification ? null : err(rpcId, -32602, "Invalid params.");
+  }
 
   if (method === "notifications/initialized") return null;
 
@@ -155,8 +162,11 @@ export async function handleMcpBody(
     if (body.length === 0) {
       return { httpStatus: 200, json: err(null, -32600, "Invalid Request: empty batch.") };
     }
+    if (body.length > 32) {
+      return { httpStatus: 200, json: err(null, -32600, "Invalid Request: batch limit is 32 messages.") };
+    }
     const out: RpcResponse[] = [];
-    for (const msg of body.slice(0, 32)) {
+    for (const msg of body) {
       const r = await dispatchOne(msg, ctx);
       if (r) out.push(r);
     }
