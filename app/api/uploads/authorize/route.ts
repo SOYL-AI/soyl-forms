@@ -2,15 +2,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getSessionUserId } from "@/lib/supabase/server";
-import { checkRateLimit } from "@/lib/security/rateLimit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { isR2Configured, newR2Key, presignedPutUrl } from "@/lib/r2";
-import { canUploadFile } from "@/lib/plans";
+import { PLANS } from "@/lib/plans";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { getUserWorkspaceId } from "@/lib/workspaces";
 import { getPlatformFlags } from "@/lib/platform";
+import { hasWorkspaceRole } from "@/lib/security/workspace";
 
 /** Image types a creator may publish on their forms (served publicly). */
-const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"];
+const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 /** Brand source documents (never served publicly; read by the extractor). */
 const DOC_MIMES = ["application/pdf", "text/plain", "text/markdown"];
 
@@ -34,7 +35,7 @@ const schema = z.object({
 export async function POST(req: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
-  const limit = checkRateLimit(`owner-upload:${userId}`, 60, 60_000);
+  const limit = await enforceRateLimit(`owner-upload:${userId}`, 60, 60_000);
   if (!limit.ok) return NextResponse.json({ error: "Too many uploads. Wait a moment." }, { status: 429 });
 
   if (!isR2Configured()) {
@@ -56,7 +57,7 @@ export async function POST(req: Request) {
   const allowed = isDoc ? [...DOC_MIMES, ...IMAGE_MIMES] : IMAGE_MIMES;
   if (!allowed.includes(input.mimeType)) {
     return NextResponse.json(
-      { error: isDoc ? "Upload a PDF, text file, or image." : "Upload a PNG, JPG, WebP, GIF, or SVG." },
+      { error: isDoc ? "Upload a PDF, text file, or image." : "Upload a PNG, JPG, WebP, or GIF." },
       { status: 400 },
     );
   }
@@ -70,6 +71,7 @@ export async function POST(req: Request) {
 
   const workspaceId = await getUserWorkspaceId(userId);
   if (!workspaceId) return NextResponse.json({ error: "No workspace yet." }, { status: 400 });
+  if (!(await hasWorkspaceRole(workspaceId, "editor"))) return NextResponse.json({ error: "Editing permission is required." }, { status: 403 });
   const admin = getServiceSupabase();
 
   if (input.formId) {
@@ -94,22 +96,13 @@ export async function POST(req: Request) {
   }
 
   const plan = await getWorkspacePlan(workspaceId);
-  const { data: files } = await admin!
-    .from("uploaded_files")
-    .select("size_bytes")
-    .eq("workspace_id", workspaceId)
-    .neq("status", "deleted");
-  const used = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
-  const quota = canUploadFile({ plan, storageUsedBytes: used, fileBytes: input.sizeBytes });
-  if (!quota.ok) return NextResponse.json({ error: quota.reason }, { status: 403 });
-
   const fileId = crypto.randomUUID();
   const key = newR2Key(workspaceId, input.formId ?? `brand-${input.brandKitId ?? "kit"}`, fileId);
-  const uploadUrl = await presignedPutUrl(key, input.mimeType);
+  const uploadUrl = await presignedPutUrl(key, input.mimeType, input.sizeBytes);
   if (!uploadUrl) return NextResponse.json({ error: "Upload service unavailable." }, { status: 503 });
 
   const safeName = input.fileName.replace(/[^\w.\-() ]+/g, "_").slice(0, 200);
-  const { error } = await admin!.from("uploaded_files").insert({
+  const { data: reserved, error } = await admin!.rpc("reserve_upload", { p_storage_limit: PLANS[plan].entitlements.storageBytes, p_file: {
     id: fileId,
     workspace_id: workspaceId,
     form_id: input.formId ?? null,
@@ -121,8 +114,8 @@ export async function POST(req: Request) {
     size_bytes: input.sizeBytes,
     status: "pending",
     kind: input.kind,
-  });
-  if (error) return NextResponse.json({ error: "Could not start upload." }, { status: 500 });
+  } });
+  if (error || !reserved) return NextResponse.json({ error: "Could not start upload." }, { status: 500 });
 
   return NextResponse.json({
     fileId,

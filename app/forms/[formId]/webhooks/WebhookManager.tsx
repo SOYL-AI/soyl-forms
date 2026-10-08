@@ -12,7 +12,7 @@ import { EmptyState } from "@/components/ui/empty";
 import { formatDate } from "@/lib/utils";
 import { isGoogleSheetsUrl } from "./GoogleSheetsConnect";
 
-export function WebhookManager({ formId, initial }: { formId: string; initial: WebhookSummary[] }) {
+export function WebhookManager({ formId, initial, readOnly = false }: { formId: string; initial: WebhookSummary[]; readOnly?: boolean }) {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [onceSecret, setOnceSecret] = useState<{ id: string; secret: string } | null>(null);
@@ -33,7 +33,7 @@ export function WebhookManager({ formId, initial }: { formId: string; initial: W
 
   return (
     <div>
-      <form
+      {!readOnly && <form
         className="flex flex-wrap items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
@@ -55,7 +55,7 @@ export function WebhookManager({ formId, initial }: { formId: string; initial: W
         <Button type="submit" disabled={pending || !url.trim()}>
           Add webhook
         </Button>
-      </form>
+      </form>}
 
       {onceSecret && (
         <Notice tone="warn" title="Copy this secret now — it won’t be shown again." className="mt-4">
@@ -90,7 +90,7 @@ export function WebhookManager({ formId, initial }: { formId: string; initial: W
                 </p>
                 <p className="mt-0.5 text-xs text-ink-faint">Added {formatDate(w.created_at)}</p>
               </div>
-              <div className="flex items-center gap-1">
+              {!readOnly && <div className="flex items-center gap-1">
                 <Button variant="ghost" size="sm" disabled={pending} onClick={() => run(() => testWebhook({ webhookId: w.id }), "Test sent successfully.")}>
                   Send test
                 </Button>
@@ -108,7 +108,7 @@ export function WebhookManager({ formId, initial }: { formId: string; initial: W
                 >
                   Delete
                 </Button>
-              </div>
+              </div>}
             </li>
           ))}
         </ul>

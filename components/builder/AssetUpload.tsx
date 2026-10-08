@@ -43,7 +43,11 @@ export async function uploadOwnerAsset(
     body: file,
   });
   if (!put.ok) return { ok: false, error: "Upload failed — try again." };
-  await fetch(`/api/uploads/${data.fileId}/complete`, { method: "POST" }).catch(() => {});
+  const completed = await fetch(`/api/uploads/${data.fileId}/complete`, { method: "POST" });
+  if (!completed.ok) {
+    const detail = await completed.json().catch(() => null);
+    return { ok: false, error: detail?.error ?? "Could not verify the upload. Please upload it again." };
+  }
   return { ok: true, fileId: data.fileId, publicUrl: data.publicUrl ?? null };
 }
 
@@ -180,7 +184,7 @@ export function AssetUpload({
       <input
         ref={input}
         type="file"
-        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+        accept="image/png,image/jpeg,image/webp,image/gif"
         className="sr-only"
         onChange={(e) => {
           void onFile(e.target.files?.[0]);

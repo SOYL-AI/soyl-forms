@@ -6,18 +6,20 @@ import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { formSchemaV1 } from "@/lib/forms/schema";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { listBrandKitSummaries } from "@/lib/brand/actions";
+import { hasWorkspaceRole } from "@/lib/security/workspace";
 import type { FormSettings, FormTheme } from "@/types/forms";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
 import BuilderClient from "./BuilderClient";
 
 export const metadata: Metadata = { title: "Builder", robots: { index: false } };
 
-export default async function BuilderPage({ params }: { params: { formId: string } }) {
+export default async function BuilderPage(props: { params: Promise<{ formId: string }> }) {
+  const params = await props.params;
   if (!isSupabaseConfigured()) return <ConfigRequired area="the builder" />;
   const userId = await getSessionUserId();
   if (!userId) redirect(`/login?next=/builder/${params.formId}`);
 
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   const { data } = await supabase!
     .from("forms")
     .select("id, workspace_id, title, slug, status, draft_schema, draft_revision, theme, settings, published_version_id")
@@ -38,6 +40,7 @@ export default async function BuilderPage({ params }: { params: { formId: string
     published_version_id: string | null;
   };
 
+  if (!(await hasWorkspaceRole(row.workspace_id, "editor"))) redirect(`/forms/${row.id}/responses`);
   const parsed = formSchemaV1.safeParse(row.draft_schema);
   if (!parsed.success) {
     return (

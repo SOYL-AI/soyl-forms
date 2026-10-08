@@ -2,7 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { BrandMark } from "@/components/brand";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { formAcceptance, resolvePublicForm } from "@/lib/forms/public";
+import { formAcceptance, resolvePublicForm, resolveFormVersion } from "@/lib/forms/public";
+import { loadResume } from "@/lib/forms/resume";
 import { RespondentClient } from "@/components/renderer/RespondentClient";
 import { publicSchema } from "@/lib/forms/quiz";
 import { getProductName } from "@/lib/config";
@@ -11,7 +12,8 @@ import { getWorkspacePlan } from "@/lib/billing/plan";
 import { PLANS } from "@/lib/plans";
 import type { FormSettings, FormTheme } from "@/types/forms";
 
-export async function generateMetadata({ params }: { params: { slug: string } }): Promise<Metadata> {
+export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const resolved = await resolvePublicForm(params.slug);
   if ("error" in resolved) return { title: "Form unavailable", robots: { index: false } };
   const welcome = resolved.form.schema.blocks.find((b) => b.type === "welcome");
@@ -75,26 +77,34 @@ function Unavailable({ embed, message, title = "Form unavailable" }: { embed: bo
   );
 }
 
-export default async function PublicFormPage({
-  params,
-  searchParams,
-}: {
-  params: { slug: string };
-  searchParams?: { embed?: string };
-}) {
+export default async function PublicFormPage(
+  props: {
+    params: Promise<{ slug: string }>;
+    searchParams?: Promise<{ embed?: string; resume?: string; v?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const embed = searchParams?.embed === "1";
   const resolved = await resolvePublicForm(params.slug);
   if ("error" in resolved) return <Unavailable embed={embed} message={resolved.error} />;
-  const form = resolved.form;
+  let form = resolved.form;
 
   const acceptance = formAcceptance(form);
   if (!acceptance.open) return <Unavailable embed={embed} title="This form is closed" message={acceptance.message} />;
 
+  const resumeToken = searchParams?.resume;
+  const resume = resumeToken ? await loadResume(form.id, resumeToken) : null;
+  if (resumeToken && !resume) return <Unavailable embed={embed} message="This resume link is invalid, expired, or already submitted." />;
+  const older = resume?.version ?? (searchParams?.v ? await resolveFormVersion(form.id, searchParams.v) : null);
+  if (searchParams?.v && !older) return <Unavailable embed={embed} message="This form version is no longer available." />;
+  if (older) form = { ...form, schema: older.schema, versionId: older.versionId, settings: older.settings, theme: older.theme, title: older.schema.title };
+
   const admin = getServiceSupabase()!;
-  if (form.settings.submissionLimit) {
+  if (resolved.form.settings.submissionLimit) {
     const { count } = await admin.from("submissions").select("id", { count: "exact", head: true }).eq("form_id", form.id).is("deleted_at", null);
-    if ((count ?? 0) >= form.settings.submissionLimit) {
-      return <Unavailable embed={embed} title="This form is full" message={form.settings.closedMessage ?? "This form is no longer accepting responses."} />;
+    if ((count ?? 0) >= resolved.form.settings.submissionLimit) {
+      return <Unavailable embed={embed} title="This form is full" message={resolved.form.settings.closedMessage ?? "This form is no longer accepting responses."} />;
     }
   }
 
@@ -119,6 +129,7 @@ export default async function PublicFormPage({
       }
     >
       <RespondentClient
+        resume={resume?.state}
         slug={form.slug}
         schema={publicSchema(form.schema)}
         versionId={form.versionId}

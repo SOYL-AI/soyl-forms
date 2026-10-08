@@ -12,6 +12,8 @@ export async function sendEmail(args: {
   html: string;
   text: string;
   replyTo?: string;
+  idempotencyKey?: string;
+  from?: string;
 }): Promise<{ ok: boolean; error?: string }> {
   if (!isEmailConfigured()) return { ok: false, error: "Email isn't configured." };
   try {
@@ -20,9 +22,10 @@ export async function sendEmail(args: {
       headers: {
         authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         "content-type": "application/json",
+        ...(args.idempotencyKey ? { "Idempotency-Key": args.idempotencyKey } : {}),
       },
       body: JSON.stringify({
-        from: process.env.EMAIL_FROM,
+        from: args.from ?? process.env.EMAIL_FROM,
         to: args.to.slice(0, 5),
         subject: args.subject.slice(0, 200),
         html: args.html,

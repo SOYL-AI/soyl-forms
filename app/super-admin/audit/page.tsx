@@ -4,7 +4,8 @@ import { Table, Td, Th, Mono } from "@/components/ui/table";
 import { formatDateTime } from "@/lib/utils";
 import { SearchForm } from "../Controls";
 
-export default async function AdminAuditPage({ searchParams }: { searchParams?: { q?: string } }) {
+export default async function AdminAuditPage(props: { searchParams?: Promise<{ q?: string }> }) {
+  const searchParams = await props.searchParams;
   const admin = getServiceSupabase();
   if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   const q = searchParams?.q?.trim() ?? "";

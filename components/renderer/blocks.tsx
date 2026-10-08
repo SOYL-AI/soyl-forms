@@ -445,6 +445,7 @@ export function LegalCheck({
 
 export function FileUploadInput({
   slug,
+  formVersionId,
   questionId,
   value,
   names,
@@ -453,6 +454,7 @@ export function FileUploadInput({
   onChange,
 }: {
   slug: string | null;
+  formVersionId?: string;
   questionId: string;
   value: string[];
   names: Record<string, string>;
@@ -484,6 +486,7 @@ export function FileUploadInput({
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             questionId,
+            formVersionId,
             fileName: f.name,
             mimeType: f.type || "application/octet-stream",
             sizeBytes: f.size,
@@ -493,9 +496,10 @@ export function FileUploadInput({
           fileId?: string;
           uploadUrl?: string;
           contentType?: string;
+          uploadToken?: string;
           error?: string;
         } | null;
-        if (!authRes.ok || !auth?.fileId || !auth?.uploadUrl) {
+        if (!authRes.ok || !auth?.fileId || !auth?.uploadUrl || !auth?.uploadToken) {
           throw new Error(auth?.error ?? `We couldn’t upload “${f.name}”. Please try again.`);
         }
         const put = await fetch(auth.uploadUrl, {
@@ -504,6 +508,11 @@ export function FileUploadInput({
           body: f,
         });
         if (!put.ok) throw new Error(`We couldn’t upload “${f.name}”. Please try again.`);
+        const complete = await fetch(`/api/public/forms/${slug}/uploads/complete`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ fileId: auth.fileId, uploadToken: auth.uploadToken }),
+        });
+        if (!complete.ok) throw new Error("Couldn't verify the upload. Please upload it again.");
         next.push(auth.fileId);
         nextNames[auth.fileId] = f.name;
       } catch (e) {

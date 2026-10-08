@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { checkRateLimit } from "@/lib/security/rateLimit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { getWorkspaceRazorpay } from "@/lib/billing/connect-actions";
 import { verifyPaymentSignature } from "@/lib/billing/signature-server";
 import { clientIp, resolvePublicForm } from "@/lib/forms/public";
@@ -17,8 +17,9 @@ const verifySchema = z.object({
  * the payment from Razorpay and require captured + exact amount + order
  * match. The API fetch (not the browser) is the source of truth.
  */
-export async function POST(req: Request, { params }: { params: { slug: string } }) {
-  const limit = checkRateLimit(`payverify:${clientIp(req.headers)}:${params.slug}`, 20, 60_000);
+export async function POST(req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const limit = await enforceRateLimit(`payverify:${clientIp(req.headers)}:${params.slug}`, 20, 60_000);
   if (!limit.ok) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
 
   const body = verifySchema.safeParse(await req.json().catch(() => null));
@@ -38,13 +39,14 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   const admin = getServiceSupabase();
   const { data: row } = await admin!
     .from("form_payments")
-    .select("id, status, amount_paise")
+    .select("id, status, amount_paise, payment_id")
     .eq("form_id", resolved.form.id)
     .eq("order_id", body.data.orderId)
     .maybeSingle();
-  const payment = row as { id: string; status: string; amount_paise: number } | null;
+  const payment = row as { id: string; status: string; amount_paise: number; payment_id: string | null } | null;
   if (!row) return NextResponse.json({ error: "Unknown order." }, { status: 404 });
   if (payment!.status === "paid") {
+    if (payment!.payment_id !== body.data.paymentId) return NextResponse.json({ error: "Order already paid with another payment." }, { status: 409 });
     return NextResponse.json({ ok: true, amountPaise: payment!.amount_paise, duplicate: true });
   }
 
@@ -68,10 +70,11 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
     return NextResponse.json({ error: "Razorpay hasn't captured this payment." }, { status: 402 });
   }
 
-  await admin!
+  const { error: saveError } = await admin!
     .from("form_payments")
     .update({ status: "paid", payment_id: body.data.paymentId, paid_at: new Date().toISOString() })
     .eq("id", payment!.id)
     .eq("status", "created");
+  if (saveError) return NextResponse.json({ error: "Could not save payment verification. Please retry." }, { status: 503 });
   return NextResponse.json({ ok: true, amountPaise: payment!.amount_paise });
 }

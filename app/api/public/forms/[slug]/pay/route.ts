@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { checkRateLimit } from "@/lib/security/rateLimit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { PLANS } from "@/lib/plans";
 import { getWorkspaceRazorpay } from "@/lib/billing/connect-actions";
@@ -21,8 +21,9 @@ const paySchema = z.object({
  * connected keys. The amount is recomputed server-side (fixed price or the
  * linked question's validated answer) — the client never names a price.
  */
-export async function POST(req: Request, { params }: { params: { slug: string } }) {
-  const limit = checkRateLimit(`pay:${clientIp(req.headers)}:${params.slug}`, 10, 60_000);
+export async function POST(req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const limit = await enforceRateLimit(`pay:${clientIp(req.headers)}:${params.slug}`, 10, 60_000);
   if (!limit.ok) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
 
   const body = paySchema.safeParse(await req.json().catch(() => null));

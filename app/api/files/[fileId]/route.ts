@@ -5,10 +5,8 @@ import { presignedGetUrl } from "@/lib/r2";
 
 /** Owner-authorized download: verifies workspace membership, then redirects
  * to a 5-minute signed URL. Objects are never public. */
-export async function GET(
-  _req: Request,
-  { params }: { params: { fileId: string } },
-) {
+export async function GET(_req: Request, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   const userId = await getSessionUserId();
   if (!userId) {
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
@@ -25,7 +23,7 @@ export async function GET(
     r2_key: string;
     status: string;
   } | null;
-  if (!row || row.status === "deleted") {
+  if (!row || row.status !== "attached") {
     return NextResponse.json({ error: "File not found." }, { status: 404 });
   }
   const { data: member } = await admin!

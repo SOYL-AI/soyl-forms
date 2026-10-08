@@ -12,7 +12,8 @@ import { AiStudio } from "./AiStudio";
 
 export const metadata: Metadata = { title: "Create with AI", robots: { index: false } };
 
-export default async function CreatePage({ searchParams }: { searchParams?: { kit?: string } }) {
+export default async function CreatePage(props: { searchParams?: Promise<{ kit?: string }> }) {
+  const searchParams = await props.searchParams;
   if (!isSupabaseConfigured()) return <ConfigRequired area="AI Studio" />;
   const res = await getAppContext();
   if (!res.ok) redirect(res.reason === "signed-out" ? "/login?next=/create" : "/dashboard");

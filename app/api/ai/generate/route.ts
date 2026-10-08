@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { AI_PROMPT_MAX_CHARS } from "@/lib/ai/limits";
 import { getSessionUserId } from "@/lib/supabase/server";
-import { checkRateLimit } from "@/lib/security/rateLimit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { generateFormDraft, isAiConfigured } from "@/lib/ai/generate";
 import { ensureMonthlyCredits, getAiBalance, refundCredits, spendCredits } from "@/lib/ai/credits";
 import { AI_COST_PER_DRAFT } from "@/lib/plans";
@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const limit = checkRateLimit(`ai:${userId}:${ip}`, 12, 60_000);
+  const limit = await enforceRateLimit(`ai:${userId}:${ip}`, 12, 60_000);
   if (!limit.ok) return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
 
   const flags = await getPlatformFlags();

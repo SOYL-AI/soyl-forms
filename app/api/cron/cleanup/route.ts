@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { deleteR2Object } from "@/lib/r2";
 
-/**
- * Orphan cleanup: unattached `pending` RESPONDENT uploads older than 24h are
- * deleted from R2 and their rows removed. Creator assets (logos, question
- * images, brand sources) are never swept. Same CRON_SECRET scheduler as outbox.
- */
+/** Expire unattached uploads before deleting their objects; failed deletions retry. */
 export async function POST(req: Request) {
   if (!process.env.CRON_SECRET) {
     return NextResponse.json(
@@ -25,22 +21,27 @@ export async function POST(req: Request) {
   const cutoff = new Date(Date.now() - 24 * 3600_000).toISOString();
   const { data: orphans } = await admin
     .from("uploaded_files")
-    .select("id, r2_key")
-    .eq("status", "pending")
-    .eq("kind", "submission")
+    .select("id, r2_key, status")
+    .in("status", ["pending", "deleted"])
     .is("submission_id", null)
     .lt("created_at", cutoff)
     .limit(100);
 
   let cleaned = 0;
-  for (const f of (orphans ?? []) as Array<{ id: string; r2_key: string }>) {
-    try {
-      await deleteR2Object(f.r2_key);
-    } catch {
-      // Row cleanup proceeds regardless; R2 lifecycle rules are the backstop.
+  for (const f of (orphans ?? []) as Array<{ id: string; r2_key: string; status: string }>) {
+    let target = f;
+    if (f.status === "pending") {
+      const { data, error } = await admin.rpc("expire_pending_upload", { p_id: f.id, p_cutoff: cutoff });
+      if (error || !data) continue;
+      target = data as typeof f;
     }
-    await admin.from("uploaded_files").delete().eq("id", f.id);
-    cleaned += 1;
+    try {
+      await deleteR2Object(target.r2_key);
+      const { error } = await admin.from("uploaded_files").delete().eq("id", target.id).eq("status", "deleted");
+      if (!error) cleaned += 1;
+    } catch {
+      // Keep the deleted row so the next sweep can retry object removal.
+    }
   }
   // Resume links expire after 30 days of silence (answers belong to the
   // respondent; nothing submitted is ever swept here).
@@ -52,8 +53,10 @@ export async function POST(req: Request) {
     .limit(100);
   let partialsCleaned = 0;
   for (const pr of (partials ?? []) as Array<{ id: string }>) {
-    await admin.from("partial_responses").delete().eq("id", pr.id);
+    await admin.from("partial_responses").delete().eq("id", pr.id).lt("updated_at", stalePartials);
     partialsCleaned += 1;
   }
+  await admin.from("public_rate_limits").delete().lt("reset_at", cutoff);
+  await admin.from("email_reservations").update({ request: {} }).lt("created_at", cutoff).eq("status", "reserved");
   return NextResponse.json({ ok: true, cleaned, partialsCleaned });
 }

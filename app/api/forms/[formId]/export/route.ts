@@ -11,10 +11,8 @@ import type { AnswerValue } from "@/types/forms";
  * version's question order; answers stay keyed by stable ids so history
  * maps correctly. Matches the on-screen response data.
  */
-export async function GET(
-  _req: Request,
-  { params }: { params: { formId: string } },
-) {
+export async function GET(_req: Request, props: { params: Promise<{ formId: string }> }) {
+  const params = await props.params;
   const owned = await getFormForOwner(params.formId);
   if ("error" in owned) {
     return NextResponse.json({ error: owned.error }, { status: 401 });
@@ -44,7 +42,7 @@ export async function GET(
     return NextResponse.json({ error: "Form version unreadable." }, { status: 500 });
   }
 
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   const { data } = await supabase!
     .from("submissions")
     .select("id, submitted_at, answers, hidden_fields, tags")

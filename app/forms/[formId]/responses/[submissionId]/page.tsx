@@ -19,7 +19,8 @@ import { formatDateTime } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Response", robots: { index: false } };
 
-export default async function ResponseDetailPage({ params }: { params: { formId: string; submissionId: string } }) {
+export default async function ResponseDetailPage(props: { params: Promise<{ formId: string; submissionId: string }> }) {
+  const params = await props.params;
   if (!isSupabaseConfigured()) return <ConfigRequired area="responses" />;
   const res = await getAppContext();
   if (!res.ok) redirect("/login");

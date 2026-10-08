@@ -22,19 +22,21 @@ export function generateStaticParams() {
   return TEMPLATES.map((t) => ({ id: t.id }));
 }
 
-export function generateMetadata({ params }: { params: { id: string } }): Metadata {
+export async function generateMetadata(props: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const params = await props.params;
   const t = getTemplate(params.id);
   if (!t) return { title: "Template" };
   return { title: `${t.name} template`, description: t.description };
 }
 
-export default async function TemplatePage({
-  params,
-  searchParams,
-}: {
-  params: { id: string };
-  searchParams?: { use?: string };
-}) {
+export default async function TemplatePage(
+  props: {
+    params: Promise<{ id: string }>;
+    searchParams?: Promise<{ use?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   const template = getTemplate(params.id);
   if (!template) notFound();
 

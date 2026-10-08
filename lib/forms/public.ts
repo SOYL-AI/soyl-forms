@@ -1,6 +1,7 @@
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { formSchemaV1 } from "./schema";
 import type { FormSchemaV1, FormSettings } from "@/types/forms";
+import { isIP } from "node:net";
 
 export interface PublicForm {
   id: string;
@@ -63,13 +64,13 @@ export async function resolvePublicForm(
     form: {
       id: form.id,
       workspaceId: form.workspace_id,
-      title: form.title,
+      title: parsed.data.title,
       slug: form.slug,
       status: form.status,
-      settings: { ...(v.settings ?? {}), ...(form.settings ?? {}) },
+      settings: v.settings ?? {},
       theme: (v.theme ?? {}) as Record<string, unknown>,
       versionId: v.id,
-      schema: { ...parsed.data, title: form.title },
+      schema: parsed.data,
       versionNumber: v.version_number,
     },
   };
@@ -83,19 +84,19 @@ export async function resolvePublicForm(
 export async function resolveFormVersion(
   formId: string,
   versionId: string,
-): Promise<{ versionId: string; schema: FormSchemaV1 } | null> {
+): Promise<{ versionId: string; schema: FormSchemaV1; settings: FormSettings; theme: Record<string, unknown> } | null> {
   const admin = getServiceSupabase();
   if (!admin) return null;
   const { data } = await admin
     .from("form_versions")
-    .select("id, schema")
+    .select("id, schema, settings, theme")
     .eq("id", versionId)
     .eq("form_id", formId)
     .maybeSingle();
-  const v = data as { id: string; schema: unknown } | null;
+  const v = data as { id: string; schema: unknown; settings: FormSettings; theme: Record<string, unknown> } | null;
   if (!v) return null;
   const parsed = formSchemaV1.safeParse(v.schema);
-  return parsed.success ? { versionId: v.id, schema: parsed.data } : null;
+  return parsed.success ? { versionId: v.id, schema: parsed.data, settings: v.settings ?? {}, theme: v.theme ?? {} } : null;
 }
 
 /** Is this published form currently accepting responses? */
@@ -121,7 +122,11 @@ export function formAcceptance(form: {
 }
 
 export function clientIp(headers: Headers): string {
-  const forwarded = headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
-  return headers.get("x-real-ip")?.trim() || "unknown";
+  // Only opt in behind a proxy that overwrites this header and prevents origin bypass.
+  const proxy = process.env.TRUSTED_PROXY;
+  const raw = proxy === "cloudflare" ? headers.get("cf-connecting-ip") :
+    proxy === "vercel" ? headers.get("x-forwarded-for")?.split(",").at(-1) :
+    proxy === "custom" ? headers.get("x-real-ip") : null;
+  const address = raw?.trim() ?? "";
+  return isIP(address) ? address : "unknown";
 }

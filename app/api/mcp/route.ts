@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { handleMcpBody } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
 import { parseBearer, verifyMcpKey } from "@/lib/mcp/keys";
-import { checkRateLimit } from "@/lib/security/rateLimit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   }
 
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
-  const limit = checkRateLimit(`mcp:${verified.prefix}:${ip}`, 60, 60_000);
+  const limit = await enforceRateLimit(`mcp:${verified.prefix}:${ip}`, 60, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
       { error: "Slow down a little.", code: "rate_limited" },

@@ -13,7 +13,8 @@ export const metadata: Metadata = {
   description: `${TEMPLATES.length} ready-made conversational form templates for events, feedback, hiring, sales, education and research. Apply your brand kit and publish in a click.`,
 };
 
-export default async function TemplatesPage({ searchParams }: { searchParams?: { category?: string } }) {
+export default async function TemplatesPage(props: { searchParams?: Promise<{ category?: string }> }) {
+  const searchParams = await props.searchParams;
   const ctx = isSupabaseConfigured() ? await getAppContext() : null;
   const signedIn = Boolean(ctx?.ok);
 

@@ -198,7 +198,7 @@ export async function revokeInvite(args: { workspaceId: string; inviteId: string
  * invitee leaves (or is removed from) their current workspace first.
  */
 export async function acceptInvite(args: { inviteId: string }): Promise<TeamActionResult<{ workspaceId: string }>> {
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   const {
     data: { user },

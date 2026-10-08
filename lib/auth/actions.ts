@@ -5,7 +5,7 @@ import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 
 export async function signOut(): Promise<void> {
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (supabase) await supabase.auth.signOut();
   redirect("/");
 }

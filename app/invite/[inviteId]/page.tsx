@@ -12,7 +12,8 @@ import { AcceptInviteButton } from "./AcceptButton";
 
 export const metadata: Metadata = { title: "Workspace invite", robots: { index: false } };
 
-export default async function InvitePage({ params }: { params: { inviteId: string } }) {
+export default async function InvitePage(props: { params: Promise<{ inviteId: string }> }) {
+  const params = await props.params;
   if (!isSupabaseConfigured()) return <ConfigRequired area="this invite" />;
   const res = await getAppContext();
   if (!res.ok) redirect(`/login?next=/invite/${params.inviteId}`);

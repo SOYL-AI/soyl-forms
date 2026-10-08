@@ -1,3 +1,4 @@
+import { parsePublicUrl, publicFetch } from "@/lib/security/public-fetch";
 import { extractHexColors, derivePalette, normalizeHex } from "@/lib/forms/color";
 import { FONTS, matchFontName, type FontDef } from "@/lib/forms/fonts";
 
@@ -122,54 +123,19 @@ export function signalsFromText(text: string, label: string, signals: BrandSigna
   signals.textSamples.push({ source: label, text: body.slice(0, 6000) });
 }
 
-const PRIVATE_HOST = /^(localhost|127\.|10\.|192\.168\.|169\.254\.|0\.|\[?::1\]?$|.*\.local$|.*\.internal$)/i;
-
 function isFetchableUrl(raw: string): URL | null {
-  try {
-    const u = new URL(raw.includes("://") ? raw : `https://${raw}`);
-    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
-    if (PRIVATE_HOST.test(u.hostname)) return null;
-    // 172.16.0.0/12
-    const m = /^172\.(\d+)\./.exec(u.hostname);
-    if (m && Number(m[1]) >= 16 && Number(m[1]) <= 31) return null;
-    return u;
-  } catch {
-    return null;
-  }
+  try { return parsePublicUrl(raw.includes("://") ? raw : `https://${raw}`); }
+  catch { return null; }
 }
 
 async function fetchText(url: string, maxBytes: number, accept: string): Promise<string | null> {
   try {
-    const res = await fetch(url, {
-      headers: { accept, "user-agent": "SoylFormsBrandBot/1.0 (+https://forms.soylai.com)" },
-      redirect: "follow",
-      signal: AbortSignal.timeout(8000),
+    const res = await publicFetch(url, {
+      headers: { accept, "user-agent": "SoylFormsBrandBot/1.0" },
+      maxBytes, timeoutMs: 8000, redirects: 3,
     });
-    if (!res.ok) return null;
-    const reader = res.body?.getReader();
-    if (!reader) return await res.text();
-    const chunks: Uint8Array[] = [];
-    let total = 0;
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done || !value) break;
-      total += value.byteLength;
-      chunks.push(value);
-      if (total >= maxBytes) {
-        await reader.cancel().catch(() => {});
-        break;
-      }
-    }
-    const merged = new Uint8Array(total);
-    let off = 0;
-    for (const c of chunks) {
-      merged.set(c, off);
-      off += c.byteLength;
-    }
-    return new TextDecoder("utf-8", { fatal: false }).decode(merged);
-  } catch {
-    return null;
-  }
+    return res.ok ? await res.text() : null;
+  } catch { return null; }
 }
 
 function attr(tag: string, name: string): string | undefined {

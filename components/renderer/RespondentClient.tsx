@@ -4,17 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { Answers, FormSchemaV1, FormSettings, FormTheme } from "@/types/forms";
 import { FormRenderer } from "@/components/renderer/FormRenderer";
 import { parsePrefillParams } from "@/lib/forms/prefill";
+import { respondentSession, type RespondentSession } from "@/lib/forms/respondent-session";
+import type { ResumeState } from "@/lib/forms/resume";
 import { availableLocales, localizeSchema } from "@/lib/forms/i18n";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function newId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `id-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
 }
 
 export function RespondentClient({
@@ -24,7 +19,9 @@ export function RespondentClient({
   minimal,
   theme,
   settings,
+  resume,
 }: {
+  resume?: ResumeState;
   slug: string;
   schema: FormSchemaV1;
   versionId: string;
@@ -32,38 +29,40 @@ export function RespondentClient({
   theme?: FormTheme;
   settings?: FormSettings;
 }) {
-  const sessionId = useMemo(() => newId(), []);
-  const idempotencyKey = useMemo(() => newId(), []);
-  const startedAt = useMemo(() => Date.now(), []);
+  const [identity, setIdentity] = useState<RespondentSession | null>(null);
+  useEffect(() => {
+    let storage: Storage | null = null;
+    try { storage = window.sessionStorage; } catch { /* Storage can be disabled. */ }
+    const next = respondentSession(storage, slug, versionId, resume);
+    const url = new URL(window.location.href);
+    if (next.versionId !== versionId) {
+      url.searchParams.set("v", next.versionId);
+      window.location.replace(url.toString());
+      return;
+    }
+    url.searchParams.set("v", versionId);
+    window.history.replaceState(null, "", url);
+    if (resume?.token) {
+      try { storage?.setItem(`soyl:resume:${slug}`, resume.token); } catch { /* ignore */ }
+    }
+    setIdentity(next);
+  }, [slug, versionId, resume]);
+  const sessionId = identity?.sessionId;
+  const idempotencyKey = identity?.idempotencyKey;
+  const startedAt = identity?.startedAt ?? Date.now();
   const doneKey = `soyl:done:${slug}`;
   const [alreadyDone, setAlreadyDone] = useState(false);
   // URL prefill (?email=a@b.com) + hidden fields (?name=...): parsed once,
   // validated against the schema, seeded into the form when no saved session exists.
   const prefill = useMemo(() => {
-    if (typeof window === "undefined") return { answers: {}, hidden: {} };
+    if (!identity || typeof window === "undefined") return { answers: {}, hidden: {} };
     const params: Record<string, string> = {};
     new URLSearchParams(window.location.search).forEach((value, key) => {
       params[key] = value;
     });
     return parsePrefillParams(schema, settings ?? {}, params);
-  }, [schema, settings]);
+  }, [schema, settings, identity]);
 
-  // Resume link (?resume=token): fetch saved answers once. Saved progress
-  // wins over live URL-prefill values — saved progress wins.
-  const [resumeAnswers, setResumeAnswers] = useState<Answers>({});
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const token = new URLSearchParams(window.location.search).get("resume");
-    if (!token) return;
-    fetch(`/api/public/forms/${slug}/resume?token=${encodeURIComponent(token)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        const a = (d as { answers?: Answers } | null)?.answers;
-        if (a && typeof a === "object") setResumeAnswers(a);
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
   // Multi-language: respondent picks once, remembered per form.
   const locales = useMemo(() => availableLocales(schema), [schema]);
   const [locale, setLocale] = useState<string | null>(null);
@@ -89,8 +88,8 @@ export function RespondentClient({
   }
 
   const initialAnswers = useMemo(
-    () => ({ ...prefill.answers, ...resumeAnswers }),
-    [prefill, resumeAnswers],
+    () => ({ ...prefill.answers, ...(resume?.answers ?? {}) }),
+    [prefill, resume],
   );
 
 
@@ -107,15 +106,16 @@ export function RespondentClient({
 
   // Record the visit once (analytics; failure never blocks answering).
   useEffect(() => {
+    if (!sessionId) return;
     const params = new URLSearchParams(window.location.search);
     const source = params.get("src") ?? undefined;
     fetch(`/api/public/forms/${slug}/start`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId, source }),
+      body: JSON.stringify({ sessionId, source, formVersionId: versionId }),
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+  }, [slug, sessionId]);
 
   async function submit(
     answers: Answers,
@@ -128,12 +128,15 @@ export function RespondentClient({
       live[key] = value;
     });
     const hidden = { ...prefill.hidden, ...parsePrefillParams(schema, settings ?? {}, live).hidden };
+    let resumeToken = resume?.token;
+    try { resumeToken ??= window.sessionStorage.getItem(`soyl:resume:${slug}`) ?? undefined; } catch { /* ignore */ }
     const payload = JSON.stringify({
       formVersionId: versionId,
       idempotencyKey,
       answers,
       hiddenFields: hidden,
       sessionId,
+      resumeToken,
       source: params.get("src") ?? undefined,
       durationMs: Math.max(0, Date.now() - startedAt),
     });
@@ -160,12 +163,10 @@ export function RespondentClient({
       return { ok: false, error: "You seem to be offline. Check your connection and try again — your answers are kept." };
     }
     if (res.ok) {
-      // Saved progress is spent: the resume link must not replay a submitted form.
-      fetch(`/api/public/forms/${slug}/resume`, {
-        method: "DELETE",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      }).catch(() => {});
+      try {
+        window.sessionStorage.removeItem(`soyl:identity:${slug}`);
+        window.sessionStorage.removeItem(`soyl:resume:${slug}`);
+      } catch { /* ignore */ }
       try {
         window.localStorage.setItem(doneKey, new Date().toISOString());
       } catch {
@@ -178,6 +179,8 @@ export function RespondentClient({
     return { ok: false, error: data?.error ?? "We couldn't save your response. Please try again — your answers are kept." };
   }
 
+  if (!identity || !sessionId || !idempotencyKey) return <p role="status" className="text-center">Loading your form?</p>;
+
   if (alreadyDone) {
     return (
       <div className="text-center">
@@ -185,14 +188,7 @@ export function RespondentClient({
         <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed opacity-70">
           This form accepts one response per device.
         </p>
-        <button
-          type="button"
-          onClick={() => setAlreadyDone(false)}
-          className="mt-6 rounded-full border px-5 py-2.5 text-sm font-semibold transition-opacity hover:opacity-80"
-          style={{ borderColor: "color-mix(in srgb, currentColor 30%, transparent)" }}
-        >
-          Respond again
-        </button>
+
       </div>
     );
   }
@@ -216,7 +212,8 @@ export function RespondentClient({
       onBeforeComplete={submit}
       persistKey={`soyl:f:${slug}:${versionId}`}
       initialAnswers={initialAnswers}
-      tracking={{ slug, sessionId, versionId }}
+      initialResume={resume}
+      tracking={{ slug, sessionId, versionId, idempotencyKey }}
       persistPrefix={`soyl:f:${slug}:`}
     />
     </div>

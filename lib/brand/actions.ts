@@ -5,6 +5,7 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getUserWorkspaceId } from "@/lib/workspaces";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { canCreateBrandKit } from "@/lib/plans";
+import { hasWorkspaceRole } from "@/lib/security/workspace";
 import {
   brandKitInputSchema,
   rowToBrandKit,
@@ -19,6 +20,7 @@ type Result<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
 /** Service-role read for server pages that already authorized the workspace. */
 export async function listBrandKitSummaries(workspaceId: string): Promise<BrandKitSummary[]> {
+  if (!(await hasWorkspaceRole(workspaceId))) return [];
   const admin = getServiceSupabase();
   if (!admin) return [];
   try {
@@ -35,6 +37,7 @@ export async function listBrandKitSummaries(workspaceId: string): Promise<BrandK
 }
 
 export async function listBrandKits(workspaceId: string): Promise<BrandKit[]> {
+  if (!(await hasWorkspaceRole(workspaceId))) return [];
   const admin = getServiceSupabase();
   if (!admin) return [];
   try {
@@ -51,6 +54,7 @@ export async function listBrandKits(workspaceId: string): Promise<BrandKit[]> {
 }
 
 export async function getBrandKit(workspaceId: string, kitId: string): Promise<BrandKit | null> {
+  if (!(await hasWorkspaceRole(workspaceId))) return null;
   const admin = getServiceSupabase();
   if (!admin) return null;
   const { data } = await admin
@@ -67,6 +71,7 @@ async function caller(): Promise<{ userId: string; workspaceId: string } | { err
   if (!userId) return { error: "Sign in first." };
   const workspaceId = await getUserWorkspaceId(userId);
   if (!workspaceId) return { error: "No workspace yet." };
+  if (!(await hasWorkspaceRole(workspaceId, "editor"))) return { error: "Editing permission is required." };
   return { userId, workspaceId };
 }
 

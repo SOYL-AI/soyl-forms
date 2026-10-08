@@ -7,7 +7,8 @@ import { Badge, StatusBadge } from "@/components/ui/badge";
 import { Table, Td, Th, Mono } from "@/components/ui/table";
 import { formatDate, formatDateTime } from "@/lib/utils";
 
-export default async function AdminUserDetail({ params }: { params: { id: string } }) {
+export default async function AdminUserDetail(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = getServiceSupabase();
   if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   if (!/^[0-9a-f-]{36}$/i.test(params.id)) notFound();

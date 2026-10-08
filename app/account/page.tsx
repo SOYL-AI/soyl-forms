@@ -14,7 +14,8 @@ import { PaymentsSection } from "@/components/account/PaymentsSection";
 
 export const metadata: Metadata = { title: "Account", robots: { index: false } };
 
-export default async function AccountPage({ searchParams }: { searchParams?: { reset?: string } }) {
+export default async function AccountPage(props: { searchParams?: Promise<{ reset?: string }> }) {
+  const searchParams = await props.searchParams;
   if (!isSupabaseConfigured()) return <ConfigRequired area="your account" />;
   const res = await getAppContext();
   if (!res.ok) redirect("/login?next=/account");

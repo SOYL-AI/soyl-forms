@@ -19,11 +19,12 @@ import { CancelButton } from "./CancelButton";
 
 export const metadata: Metadata = { title: "Billing & usage", robots: { index: false } };
 
-export default async function BillingPage({
-  searchParams,
-}: {
-  searchParams?: { plan?: string; interval?: string; checkout?: string };
-}) {
+export default async function BillingPage(
+  props: {
+    searchParams?: Promise<{ plan?: string; interval?: string; checkout?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
   if (!isSupabaseConfigured()) return <ConfigRequired area="billing" />;
   const res = await getAppContext();
   if (!res.ok) redirect("/login?next=/billing");

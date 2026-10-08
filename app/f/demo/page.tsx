@@ -13,7 +13,8 @@ export const metadata: Metadata = {
 
 const theme = THEME_PRESETS.find((p) => p.id === "forest")?.theme;
 
-export default function DemoFormPage({ searchParams }: { searchParams?: { embed?: string } }) {
+export default async function DemoFormPage(props: { searchParams?: Promise<{ embed?: string }> }) {
+  const searchParams = await props.searchParams;
   const embed = searchParams?.embed === "1";
   return (
     <div className="flex min-h-[100svh] flex-col" style={{ background: theme?.background, color: theme?.text }}>

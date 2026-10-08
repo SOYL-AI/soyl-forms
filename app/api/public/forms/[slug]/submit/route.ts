@@ -1,32 +1,32 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { checkRateLimit } from "@/lib/security/rateLimit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { validateAnswers } from "@/lib/forms/answers";
 import { scoreAnswers } from "@/lib/forms/quiz";
 import { PLANS } from "@/lib/plans";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { clientIp, formAcceptance, resolveFormVersion, resolvePublicForm } from "@/lib/forms/public";
-import { claimPayment, expectedPaiseForBlock, linkPaymentToSubmission } from "@/lib/billing/payments-server";
+import { expectedPaiseForBlock } from "@/lib/billing/payments-server";
+import { verifySubmissionFiles } from "@/lib/uploads/verify";
 
 const submitSchema = z.object({
   formVersionId: z.string().min(1).max(100),
-  idempotencyKey: z.string().min(1).max(100),
+  idempotencyKey: z.string().min(16).max(100),
   answers: z.record(z.unknown()),
   hiddenFields: z.record(z.unknown()).optional().default({}),
-  sessionId: z.string().min(1).max(100).optional(),
+  sessionId: z.string().min(16).max(100).optional(),
+  resumeToken: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   // Lenient on metadata: a long ?src= tag or a tab left open for days must
   // never cost a response. Both are cleaned up below instead of rejected.
   source: z.string().max(500).optional(),
   durationMs: z.number().min(0).optional(),
 });
 
-export async function POST(
-  req: Request,
-  { params }: { params: { slug: string } },
-) {
+export async function POST(req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
   const ip = clientIp(req.headers);
-  const limit = checkRateLimit(`submit:${ip}:${params.slug}`, 20, 60_000);
+  const limit = await enforceRateLimit(`submit:${ip}:${params.slug}`, 20, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
       { error: "Too many attempts. Please wait a moment and try again." },
@@ -46,6 +46,18 @@ export async function POST(
   }
   const form = resolved.form;
   const admin = getServiceSupabase();
+  // Acknowledgement may have been lost, including after the form closed.
+  const { data: existing, error: existingError } = await admin!
+    .from("submissions").select("id, form_version_id, answers").eq("form_id", form.id)
+    .eq("idempotency_key", input.idempotencyKey).maybeSingle();
+  if (existingError) return NextResponse.json({ error: "Please try again. Your answers are kept." }, { status: 503 });
+  if (existing) {
+    const original = await resolveFormVersion(form.id, existing.form_version_id);
+    const score = original?.settings.quizMode && original.settings.showScore !== false
+      ? scoreAnswers(original.schema, existing.answers) : undefined;
+    return NextResponse.json({ ok: true, duplicate: true, submissionId: existing.id,
+      ...(score && score.max > 0 ? { score: { points: score.points, max: score.max } } : {}) });
+  }
 
   // Form must be live.
   const acceptance = formAcceptance(form);
@@ -56,7 +68,7 @@ export async function POST(
   // Validate against the version the respondent actually answered. If the
   // owner re-published while they were filling it in, their answers still
   // count — they're stored against the older version.
-  let answered = { versionId: form.versionId, schema: form.schema };
+  let answered = { versionId: form.versionId, schema: form.schema, settings: form.settings };
   if (input.formVersionId !== form.versionId) {
     const older = await resolveFormVersion(form.id, input.formVersionId);
     if (!older) {
@@ -68,31 +80,13 @@ export async function POST(
     answered = older;
   }
 
-  // Per-form response cap (best-effort count; the monthly plan gate is atomic).
-  if (form.settings.submissionLimit) {
-    const { count } = await admin!
-      .from("submissions")
-      .select("id", { count: "exact", head: true })
-      .eq("form_id", form.id)
-      .is("deleted_at", null);
-    if ((count ?? 0) >= form.settings.submissionLimit) {
-      return NextResponse.json(
-        { error: form.settings.closedMessage ?? "This form is no longer accepting responses." },
-        { status: 410 },
-      );
-    }
-  }
-
   // Answers validated against the exact published version.
   const checked = validateAnswers(answered.schema, input.answers);
   if (!checked.ok) {
     return NextResponse.json({ error: checked.error }, { status: 400 });
   }
 
-  // Paid steps: recompute each expected charge and atomically claim its
-  // paid row. The claim (single guarded UPDATE) makes double-spend races
-  // lose exactly once; the marker becomes the submission id below.
-  const paymentMarker = `pending:${input.idempotencyKey}`;
+  // Recompute charges here; the transaction validates and links all paid rows.
   const paymentAnswers = Object.entries(checked.value).filter((entry): entry is [string, Extract<(typeof checked.value)[string], { type: "payment" }>] => entry[1].type === "payment");
   for (const [blockId, a] of paymentAnswers) {
     const block = answered.schema.blocks.find((b) => b.id === blockId);
@@ -103,15 +97,15 @@ export async function POST(
     if (expected === null || a.value.amount_paise !== expected) {
       return NextResponse.json({ error: "The paid amount does not match this form. Please pay again." }, { status: 402 });
     }
-    const claimed = await claimPayment({ formId: form.id, paymentId: a.value.payment_id, expectedPaise: expected, marker: paymentMarker });
-    if (!claimed.ok) {
-      return NextResponse.json({ error: claimed.error }, { status: 409 });
-    }
+
   }
+
+  const files = await verifySubmissionFiles(form, answered.schema, checked.value);
+  if (!files.ok) return NextResponse.json({ error: files.error }, { status: 400 });
 
   // Hidden fields: small, plain, and only when the form collects them.
   let hidden: Record<string, string> = {};
-  if (form.settings.collectQueryParams !== false) {
+  if (answered.settings.collectQueryParams !== false) {
     const entries = Object.entries(input.hiddenFields).slice(0, 20);
     for (const [k, v] of entries) {
       if (/^[A-Za-z0-9_.-]{1,64}$/.test(k) && typeof v === "string" && v.length <= 200) {
@@ -127,7 +121,7 @@ export async function POST(
   const plan = await getWorkspacePlan(form.workspaceId);
   const source = input.source?.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20) || null;
 
-  const { data: result, error: rpcError } = await admin!.rpc("submit_form", {
+  const { data: result, error: rpcError } = await admin!.rpc("submit_form_safe", {
     p_form_id: form.id,
     p_workspace_id: form.workspaceId,
     p_version_id: answered.versionId,
@@ -137,13 +131,17 @@ export async function POST(
     p_source: source,
     p_duration_ms: durationMs,
     p_monthly_limit: PLANS[plan].entitlements.monthlySubmissions,
+    p_session_id: input.sessionId ?? null,
+    p_resume_token: input.resumeToken ?? null,
   });
   if (rpcError) {
     return NextResponse.json({ error: "We couldn't save your response. Please try again — your answers are kept." }, { status: 500 });
   }
   const out = result as { ok: boolean; duplicate?: boolean; submission_id?: string; error?: string };
   if (!out.ok) {
-    if (out.error === "LIMIT_REACHED") {
+    if (out.error === "PAYMENT_MISMATCH") return NextResponse.json({ error: "This payment was already used or doesn't match this question. Your answers are kept." }, { status: 409 });
+    if (out.error === "FILE_MISMATCH") return NextResponse.json({ error: "An upload is missing or unavailable. Please upload it again." }, { status: 400 });
+    if (["LIMIT_REACHED", "FORM_LIMIT_REACHED", "CLOSED"].includes(out.error ?? "")) {
       return NextResponse.json(
         { error: form.settings.closedMessage ?? "This form has stopped accepting responses." },
         { status: 403 },
@@ -152,40 +150,9 @@ export async function POST(
     return NextResponse.json({ error: "We couldn't save your response. Please try again — your answers are kept." }, { status: 500 });
   }
 
-  // Point claimed payments at the real submission (best-effort: rows stay
-  // claimed under the idempotency marker even if this update is lost).
-  if (paymentAnswers.length > 0 && out.submission_id) {
-    await linkPaymentToSubmission(paymentMarker, out.submission_id);
-  }
-
-  // Attach uploaded files to this submission (ids were issued by the
-  // authorize endpoint for this form; anything else is ignored).
-  const fileIds = Object.values(checked.value)
-    .filter((a) => a.type === "file_upload")
-    .flatMap((a) => (a.type === "file_upload" ? a.value : []))
-    .slice(0, 50);
-  if (fileIds.length > 0 && out.submission_id) {
-    await admin!
-      .from("uploaded_files")
-      .update({ submission_id: out.submission_id, status: "attached" })
-      .eq("form_id", form.id)
-      .eq("status", "pending")
-      .in("id", fileIds);
-  }
-
-  // Best-effort visit completion (analytics must never fail a submission).
-  if (input.sessionId) {
-    await admin!
-      .from("form_visits")
-      .update({ completed_at: new Date().toISOString(), duration_ms: durationMs })
-      .eq("form_id", form.id)
-      .eq("session_id", input.sessionId)
-      .is("completed_at", null);
-  }
-
   // Quiz mode: grade against the stored answer key (never sent to the browser).
   let score: { points: number; max: number } | undefined;
-  if (form.settings.quizMode && form.settings.showScore !== false) {
+  if (answered.settings.quizMode && answered.settings.showScore !== false) {
     const graded = scoreAnswers(answered.schema, checked.value);
     if (graded.max > 0) score = { points: graded.points, max: graded.max };
   }

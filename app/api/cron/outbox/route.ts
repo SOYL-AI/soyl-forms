@@ -8,8 +8,9 @@ import { recallText } from "@/lib/forms/recall";
 import { isAnswerable } from "@/lib/forms/logic";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { PLANS } from "@/lib/plans";
-import { confirmationEmail, isEmailConfigured, resolveResponderRecipient, responseEmail, sendEmail } from "@/lib/email/resend";
+import { confirmationEmail, isEmailConfigured, resolveResponderRecipient, responseEmail } from "@/lib/email/resend";
 import { getAppUrl, getProductName } from "@/lib/config";
+import { deliverEmail } from "@/lib/email/deliver";
 import type { AnswerValue } from "@/types/forms";
 
 function authorized(req: Request): boolean {
@@ -22,16 +23,15 @@ type Admin = NonNullable<ReturnType<typeof getServiceSupabase>>;
 
 /**
  * Owner email notification for one submission. Best-effort: plan-gated,
- * monthly-capped via usage_monthly.notification_emails, never retried (a
- * missed email must not block or re-fire webhooks).
+ * atomically quota-reserved and retried with a stable provider idempotency key.
  */
 async function notifyOwners(
   admin: Admin,
   submission: { id: string; form_id: string; submitted_at: string; answers: unknown; form_version_id: string },
   workspaceId: string,
-): Promise<"sent" | "skipped" | "failed"> {
-  if (!isEmailConfigured()) return "skipped";
-  const { data: form } = await admin.from("forms").select("title, settings").eq("id", submission.form_id).maybeSingle();
+  eventId: string,
+): Promise<"sent" | "skipped" | "failed" | "uncertain"> {
+  const { data: form } = await admin.from("form_versions").select("schema, settings").eq("id", submission.form_version_id).maybeSingle();
   const settings = formSettingsSchema.safeParse((form as { settings: unknown } | null)?.settings ?? {});
   const recipients = settings.success ? settings.data.notifyEmails ?? [] : [];
   if (recipients.length === 0) return "skipped";
@@ -39,11 +39,7 @@ async function notifyOwners(
   const plan = await getWorkspacePlan(workspaceId);
   const ent = PLANS[plan].entitlements;
   if (!ent.emailNotifications) return "skipped";
-
-  const month = `${new Date().toISOString().slice(0, 7)}-01`;
-  const { data: usage } = await admin.from("usage_monthly").select("notification_emails").eq("workspace_id", workspaceId).eq("month", month).maybeSingle();
-  const sent = (usage as { notification_emails: number } | null)?.notification_emails ?? 0;
-  if (sent >= ent.monthlyNotificationEmails) return "skipped";
+  if (!isEmailConfigured()) return "failed";
 
   const { data: version } = await admin.from("form_versions").select("schema").eq("id", submission.form_version_id).maybeSingle();
   const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
@@ -53,18 +49,13 @@ async function notifyOwners(
     : Object.entries(answers).map(([k, v]) => ({ question: k, answer: typeof v.value === "string" ? v.value : JSON.stringify(v.value) }));
 
   const mail = responseEmail({
-    formTitle: (form as { title: string } | null)?.title ?? "Your form",
+    formTitle: (form as { schema: { title?: string } } | null)?.schema?.title ?? "Your form",
     submittedAt: submission.submitted_at,
     rows,
     responseUrl: `${getAppUrl()}/forms/${submission.form_id}/responses/${submission.id}`,
     productName: getProductName(),
   });
-  const res = await sendEmail({ to: recipients, ...mail });
-  if (!res.ok) return "failed";
-  await admin
-    .from("usage_monthly")
-    .upsert({ workspace_id: workspaceId, month, notification_emails: sent + 1, updated_at: new Date().toISOString() }, { onConflict: "workspace_id,month" });
-  return "sent";
+  return deliverEmail(`${eventId}:owners`, workspaceId, ent.monthlyNotificationEmails, { to: recipients, ...mail });
 }
 
 /**
@@ -78,20 +69,16 @@ async function notifyRespondent(
   admin: Admin,
   submission: { id: string; form_id: string; submitted_at: string; answers: unknown; form_version_id: string },
   workspaceId: string,
-): Promise<"sent" | "skipped" | "failed"> {
-  if (!isEmailConfigured()) return "skipped";
-  const { data: form } = await admin.from("forms").select("title, settings").eq("id", submission.form_id).maybeSingle();
+  eventId: string,
+): Promise<"sent" | "skipped" | "failed" | "uncertain"> {
+  const { data: form } = await admin.from("form_versions").select("schema, settings").eq("id", submission.form_version_id).maybeSingle();
   const settings = formSettingsSchema.safeParse((form as { settings: unknown } | null)?.settings ?? {});
   if (!settings.success || settings.data.responderEnabled !== true) return "skipped";
 
   const plan = await getWorkspacePlan(workspaceId);
   const ent = PLANS[plan].entitlements;
   if (!ent.emailNotifications) return "skipped";
-
-  const month = `${new Date().toISOString().slice(0, 7)}-01`;
-  const { data: usage } = await admin.from("usage_monthly").select("notification_emails").eq("workspace_id", workspaceId).eq("month", month).maybeSingle();
-  const sent = (usage as { notification_emails: number } | null)?.notification_emails ?? 0;
-  if (sent >= ent.monthlyNotificationEmails) return "skipped";
+  if (!isEmailConfigured()) return "failed";
 
   const { data: version } = await admin.from("form_versions").select("schema").eq("id", submission.form_version_id).maybeSingle();
   const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
@@ -104,18 +91,13 @@ async function notifyRespondent(
     .filter((b) => isAnswerable(b.type))
     .map((b) => ({ question: recallText(b.title, parsed.data.blocks, answers), answer: displayAnswer(b, answers[b.id]) }));
   const mail = confirmationEmail({
-    formTitle: (form as { title: string } | null)?.title ?? "Your form",
+    formTitle: (form as { schema: { title?: string } } | null)?.schema?.title ?? "Your form",
     subject: settings.data.responderSubject,
     message: settings.data.responderMessage,
     rows,
     productName: getProductName(),
   });
-  const res = await sendEmail({ to: [to], ...mail, replyTo: settings.data.notifyEmails?.[0] });
-  if (!res.ok) return "failed";
-  await admin
-    .from("usage_monthly")
-    .upsert({ workspace_id: workspaceId, month, notification_emails: sent + 1, updated_at: new Date().toISOString() }, { onConflict: "workspace_id,month" });
-  return "sent";
+  return deliverEmail(`${eventId}:respondent`, workspaceId, ent.monthlyNotificationEmails, { to: [to], ...mail, replyTo: settings.data.notifyEmails?.[0] });
 }
 
 /**
@@ -132,89 +114,83 @@ export async function POST(req: Request) {
   const admin = getServiceSupabase();
   if (!admin) return NextResponse.json({ error: "Server misconfigured." }, { status: 500 });
 
-  const { data: events } = await admin
-    .from("outbox_events")
-    .select("id, workspace_id, payload, attempts")
-    .eq("status", "pending")
-    .eq("type", "form.submission.completed")
-    .lte("available_at", new Date().toISOString())
-    .order("available_at", { ascending: true })
-    .limit(25);
-
   let delivered = 0;
   let failed = 0;
   let emails = 0;
-  for (const evt of (events ?? []) as Array<{
-    id: string;
-    workspace_id: string;
-    payload: { submissionId?: string; formId?: string; notified?: boolean };
-    attempts: number;
-  }>) {
-    await admin.from("outbox_events").update({ status: "processing" }).eq("id", evt.id);
-
-    const { data: sub } = await admin
-      .from("submissions")
-      .select("id, form_id, form_version_id, submitted_at, answers")
-      .eq("id", evt.payload.submissionId ?? "")
-      .maybeSingle();
-    const submission = sub as {
-      id: string;
-      form_id: string;
-      form_version_id: string;
-      submitted_at: string;
-      answers: unknown;
-    } | null;
-
-    // Notifications go out on the first attempt only.
-    let notified = evt.payload.notified === true;
-    if (submission && !notified) {
-      const outcome = await notifyOwners(admin, submission, evt.workspace_id);
-      if (outcome === "sent") emails += 1;
-      const responder = await notifyRespondent(admin, submission, evt.workspace_id);
-      if (responder === "sent") emails += 1;
-      notified = true;
+  const started = Date.now();
+  for (let i = 0; i < 25 && Date.now() - started < 30_000; i++) {
+    const { data: claimed, error: claimError } = await admin.rpc("claim_outbox_event");
+    if (claimError) return NextResponse.json({ error: "Couldn't claim queued events." }, { status: 503 });
+    const evt = claimed?.[0] as { id: string; workspace_id: string; attempts: number; lease_token: string;
+      payload: { submissionId?: string; formId?: string; owners?: boolean; respondent?: boolean; hooks?: string[]; notified?: boolean } } | undefined;
+    if (!evt) break;
+    const payload = { ...evt.payload, hooks: [...(evt.payload.hooks ?? [])] };
+    // Migrate legacy email bookkeeping without resending already attempted emails.
+    if (payload.notified) { payload.owners = true; payload.respondent = true; }
+    async function checkpoint() {
+      const { data, error } = await admin!.from("outbox_events")
+        .update({ payload, lease_until: new Date(Date.now() + 120_000).toISOString() })
+        .eq("id", evt!.id).eq("status", "processing").eq("lease_token", evt!.lease_token)
+        .gt("lease_until", new Date().toISOString()).select("id");
+      if (error || !data?.length) throw new Error("Outbox lease lost.");
     }
-
-    const { data: hooks } = submission
-      ? await admin.from("webhooks").select("id").eq("form_id", submission.form_id).eq("is_active", true)
-      : { data: null };
-
     let ok = true;
-    if (submission && hooks && hooks.length > 0) {
-      const { data: version } = await admin.from("form_versions").select("schema").eq("id", submission.form_version_id).maybeSingle();
-      const schema = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
-      const event: DeliveryEvent = {
-        eventId: evt.id,
-        formId: submission.form_id,
-        submissionId: submission.id,
-        submittedAt: submission.submitted_at,
-        answers: submission.answers,
-        fields: schema.success ? submissionFields(schema.data.blocks, (submission.answers ?? {}) as Record<string, AnswerValue>) : undefined,
-      };
-      for (const h of hooks as Array<{ id: string }>) {
-        const res = await deliverToWebhook(h.id, event, evt.attempts + 1);
-        if (!res.ok) ok = false;
+    let uncertain = false;
+    try {
+      const { data: submission, error: subError } = await admin.from("submissions")
+        .select("id, form_id, form_version_id, submitted_at, answers, deleted_at").eq("id", payload.submissionId ?? "").maybeSingle();
+      if (subError) throw new Error("Couldn't load response.");
+      if (submission && !submission.deleted_at) {
+        if (!payload.owners) {
+          await checkpoint();
+          const outcome = await notifyOwners(admin, submission, evt.workspace_id, evt.id);
+          if (outcome === "sent") emails++;
+          if (outcome === "failed") ok = false;
+          else if (outcome === "uncertain") { ok = false; uncertain = true; }
+          else { payload.owners = true; await checkpoint(); }
+        }
+        if (!payload.respondent) {
+          await checkpoint();
+          const outcome = await notifyRespondent(admin, submission, evt.workspace_id, evt.id);
+          if (outcome === "sent") emails++;
+          if (outcome === "failed") ok = false;
+          else if (outcome === "uncertain") { ok = false; uncertain = true; }
+          else { payload.respondent = true; await checkpoint(); }
+        }
+        const { data: hooks, error: hookError } = await admin.from("webhooks").select("id")
+          .eq("form_id", submission.form_id).eq("is_active", true);
+        if (hookError) throw new Error("Couldn't load destinations.");
+        const { data: version, error: versionError } = await admin.from("form_versions").select("schema")
+          .eq("id", submission.form_version_id).maybeSingle();
+        if (versionError) throw new Error("Couldn't load published version.");
+        const schema = formSchemaV1.safeParse(version?.schema);
+        const event: DeliveryEvent = { eventId: evt.id, formId: submission.form_id, submissionId: submission.id,
+          submittedAt: submission.submitted_at, answers: submission.answers,
+          fields: schema.success ? submissionFields(schema.data.blocks, submission.answers as Record<string, AnswerValue>) : undefined };
+        for (const hook of hooks ?? []) {
+          if (payload.hooks.includes(hook.id)) continue;
+          await checkpoint();
+          const { data: previous, error: previousError } = await admin.from("webhook_deliveries").select("id")
+            .eq("webhook_id", hook.id).eq("event_id", evt.id).not("delivered_at", "is", null).limit(1);
+          if (previousError) throw new Error("Couldn't read delivery state.");
+          if (!previous?.length && !(await deliverToWebhook(hook.id, event, evt.attempts)).ok) { ok = false; continue; }
+          payload.hooks.push(hook.id);
+          await checkpoint();
+        }
       }
+    } catch {
+      ok = false;
+      console.error("[outbox] event processing failed", { eventId: evt.id });
     }
-
-    const payload = { ...evt.payload, notified };
-    if (ok) {
-      await admin.from("outbox_events").update({ status: "completed", payload, processed_at: new Date().toISOString() }).eq("id", evt.id);
-      delivered += 1;
-    } else {
-      const attempts = evt.attempts + 1;
-      if (attempts >= 5) {
-        await admin.from("outbox_events").update({ status: "failed", attempts, payload, processed_at: new Date().toISOString() }).eq("id", evt.id);
-        failed += 1;
-      } else {
-        const backoffMin = Math.min(2 ** attempts, 120);
-        await admin
-          .from("outbox_events")
-          .update({ status: "pending", attempts, payload, available_at: new Date(Date.now() + backoffMin * 60_000).toISOString() })
-          .eq("id", evt.id);
-      }
-    }
+    const terminal = !ok && (evt.attempts >= 5 || uncertain);
+    const { error: finishError } = await admin.from("outbox_events").update({
+      payload, status: ok ? "completed" : terminal ? "failed" : "pending",
+      lease_token: null, lease_until: null,
+      processed_at: ok || terminal ? new Date().toISOString() : null,
+      available_at: new Date(Date.now() + Math.min(2 ** evt.attempts, 120) * 60_000).toISOString(),
+    }).eq("id", evt.id).eq("lease_token", evt.lease_token).gt("lease_until", new Date().toISOString());
+    if (finishError) console.error("[outbox] checkpoint failed", { eventId: evt.id });
+    if (ok) delivered++; else if (terminal) failed++;
   }
-
   return NextResponse.json({ ok: true, delivered, failed, emails });
 }

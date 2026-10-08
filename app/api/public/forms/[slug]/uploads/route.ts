@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { randomBytes, createHash } from "node:crypto";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { checkRateLimit } from "@/lib/security/rateLimit";
-import { clientIp, formAcceptance, resolvePublicForm } from "@/lib/forms/public";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
+import { clientIp, formAcceptance, resolvePublicForm, resolveFormVersion } from "@/lib/forms/public";
 import { isR2Configured, newR2Key, presignedPutUrl } from "@/lib/r2";
-import { canUploadFile } from "@/lib/plans";
+import { PLANS } from "@/lib/plans";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { getPlatformFlags } from "@/lib/platform";
 
@@ -51,16 +52,15 @@ function acceptedMime(reported: string, fileName: string, allowed: string[]): st
 
 const authorizeSchema = z.object({
   questionId: z.string().min(1).max(64),
+  formVersionId: z.string().uuid(),
   fileName: z.string().min(1).max(1000),
   mimeType: z.string().max(200),
   sizeBytes: z.number().int().min(1).max(100 * 1024 * 1024),
 });
 
-export async function POST(
-  req: Request,
-  { params }: { params: { slug: string } },
-) {
-  const limit = checkRateLimit(`upload:${clientIp(req.headers)}:${params.slug}`, 30, 60_000);
+export async function POST(req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const limit = await enforceRateLimit(`upload:${clientIp(req.headers)}:${params.slug}`, 30, 60_000);
   if (!limit.ok) {
     return NextResponse.json({ error: "Too many uploads. Wait a moment." }, { status: 429 });
   }
@@ -90,7 +90,9 @@ export async function POST(
     return NextResponse.json({ error: acceptance.message }, { status: 410 });
   }
 
-  const block = form.schema.blocks.find((b) => b.id === body.data.questionId);
+  const version = await resolveFormVersion(form.id, body.data.formVersionId);
+  if (!version) return NextResponse.json({ error: "This form version is unavailable." }, { status: 409 });
+  const block = version.schema.blocks.find((b) => b.id === body.data.questionId);
   if (!block || block.type !== "file_upload") {
     return NextResponse.json({ error: "Unknown file question." }, { status: 400 });
   }
@@ -111,31 +113,18 @@ export async function POST(
   const admin = getServiceSupabase();
   const plan = await getWorkspacePlan(form.workspaceId);
 
-  const { data: files } = await admin!
-    .from("uploaded_files")
-    .select("size_bytes")
-    .eq("workspace_id", form.workspaceId)
-    .neq("status", "deleted");
-  const used = ((files ?? []) as Array<{ size_bytes: number }>).reduce(
-    (s, f) => s + f.size_bytes,
-    0,
-  );
-  const quota = canUploadFile({ plan, storageUsedBytes: used, fileBytes: body.data.sizeBytes });
-  if (!quota.ok) {
-    return NextResponse.json({ error: quota.reason }, { status: 403 });
-  }
-
   // Server-chosen random key: clients never pick storage paths, and no
   // respondent data (names/emails) goes into the key.
   const fileId = crypto.randomUUID();
   const key = newR2Key(form.workspaceId, form.id, fileId);
-  const uploadUrl = await presignedPutUrl(key, mimeType);
+  const uploadUrl = await presignedPutUrl(key, mimeType, body.data.sizeBytes);
   if (!uploadUrl) {
     return NextResponse.json({ error: "Uploads are temporarily unavailable. Please try again later." }, { status: 503 });
   }
 
   const safeName = body.data.fileName.replace(/[^\w.\-() ]+/g, "_").slice(0, 200);
-  const { error } = await admin!.from("uploaded_files").insert({
+  const uploadToken = randomBytes(32).toString("hex");
+  const { data: reserved, error } = await admin!.rpc("reserve_upload", { p_storage_limit: PLANS[plan].entitlements.storageBytes, p_file: {
     id: fileId,
     workspace_id: form.workspaceId,
     form_id: form.id,
@@ -145,11 +134,11 @@ export async function POST(
     original_name: safeName,
     mime_type: mimeType,
     size_bytes: body.data.sizeBytes,
-    status: "pending",
-  });
-  if (error) {
+    upload_token_hash: createHash("sha256").update(uploadToken).digest("hex"),
+  } });
+  if (error || !reserved) {
     return NextResponse.json({ error: "We couldn't start this upload. Please try again." }, { status: 500 });
   }
   // The URL is signed for this exact content type; the browser must send it.
-  return NextResponse.json({ fileId, uploadUrl, contentType: mimeType });
+  return NextResponse.json({ fileId, uploadUrl, uploadToken, contentType: mimeType });
 }

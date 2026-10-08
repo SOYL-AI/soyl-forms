@@ -18,7 +18,6 @@ import { scoreAnswers } from "@/lib/forms/quiz";
 import { recallLabels } from "@/lib/forms/recall";
 import { displayAnswer } from "@/lib/forms/answers";
 import { isAnswerable } from "@/lib/forms/logic";
-import { computeFunnel } from "@/lib/forms/funnel";
 import type { AnswerValue, Block, FormSettings } from "@/types/forms";
 import { AppShell } from "@/components/app/AppShell";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
@@ -28,6 +27,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { formatDateTime, pct } from "@/lib/utils";
+import { hasWorkspaceRole } from "@/lib/security/workspace";
 import { StateActions } from "./StateActions";
 import { ExportCsvButton } from "@/components/app/ExportCsvButton";
 
@@ -72,89 +72,51 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
   const admin = getServiceSupabase();
   if (!admin) return null;
 
-  const [{ count: views }, { data: visits }, { data: subs }] = await Promise.all([
-    admin.from("form_visits").select("id", { count: "exact", head: true }).eq("form_id", formId),
-    admin.from("form_visits").select("duration_ms, source").eq("form_id", formId).not("completed_at", "is", null).limit(2000),
-    admin.from("submissions").select("answers, submitted_at, source").eq("form_id", formId).is("deleted_at", null).order("submitted_at", { ascending: true }).limit(2000),
-  ]);
-
-  const submissions = (subs ?? []) as Array<{ answers: Record<string, AnswerValue>; submitted_at: string; source: string | null }>;
-  const { data: funnelVisits } = await admin
-    .from("form_visits")
-    .select("last_block_id, completed_at, started_at")
-    .eq("form_id", formId)
-    .limit(2000);
-  const completions = submissions.length;
-  const viewCount = views ?? 0;
-  if (viewCount === 0 && completions === 0) return null;
-
-  const durations = ((visits ?? []) as Array<{ duration_ms: number | null }>)
-    .map((v) => v.duration_ms)
-    .filter((d): d is number => typeof d === "number" && d > 0);
-  const avgSecs = durations.length > 0 ? Math.round(durations.reduce((s, d) => s + d, 0) / durations.length / 1000) : null;
-  const fromQr = submissions.filter((s) => s.source === "qr").length;
-
-  const byDay = new Map<string, number>();
-  for (const s of submissions) {
-    const day = s.submitted_at.slice(0, 10);
-    byDay.set(day, (byDay.get(day) ?? 0) + 1);
-  }
-  const days: Array<{ label: string; count: number }> = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
-    days.push({ label: d.slice(5), count: byDay.get(d) ?? 0 });
-  }
+  const analytical = (blocks ?? []).filter((b) => ["yes_no", "single_choice", "multiple_choice", "dropdown", "rating", "opinion_scale", "number", "slider", "nps", "matrix", "ranking"].includes(b.type) || Boolean(b.quiz));
+  const { data: raw, error } = await admin.rpc("form_analytics", { p_form_id: formId, p_question_ids: analytical.map((b) => b.id) });
+  if (error || !raw) return <p role="alert" className="mt-6 text-sm">Analytics are temporarily unavailable. Please try again.</p>;
+  const stats = raw as { views: number; completions: number; completedVisits: number; avgSecs: number | null; fromQr: number;
+    days: Record<string, number>; answers: Record<string, Array<{ answer: AnswerValue; count: number }>>;
+    reached: Record<string, number>; abandoned: number; inProgress: number };
+  const { completions, avgSecs, fromQr } = stats;
+  const viewCount = stats.views;
+  if (!viewCount && !completions) return null;
+  const days = Array.from({ length: 14 }, (_, i) => {
+    const date = new Date(Date.now() - (13 - i) * 86400_000).toISOString().slice(0, 10);
+    return { label: date.slice(5), count: stats.days[date] ?? 0 };
+  });
   const maxDay = Math.max(1, ...days.map((d) => d.count));
-
-  // Drop-off funnel: incomplete visits are abandoned after 30 idle minutes,
-  // fresher ones count as answering now. Completions reach every step.
-  const answerableBlocks = (blocks ?? []).filter((b) => isAnswerable(b.type));
-  const incomplete = ((funnelVisits ?? []) as Array<{ last_block_id: string | null; completed_at: string | null; started_at: string }>).filter(
-    (v) => !v.completed_at,
-  );
-  const staleAt = Date.now() - 30 * 60_000;
-  const abandonedVisits = incomplete.filter((v) => Date.parse(v.started_at) <= staleAt);
-  const inProgress = incomplete.length - abandonedVisits.length;
-  const funnel =
-    answerableBlocks.length > 0 && (viewCount > 0 || completions > 0)
-      ? computeFunnel({
-          order: answerableBlocks.map((b) => b.id),
-          labels: Object.fromEntries(answerableBlocks.map((b) => [b.id, recallLabels(b.title, blocks ?? [])])),
-          lastBlocks: incomplete.map((v) => v.last_block_id),
-          completions,
-        })
-      : null;
-
-  const answerMaps = submissions.map((s) => s.answers);
+  const answerable = (blocks ?? []).filter((b) => isAnswerable(b.type));
+  const funnel = answerable.length ? { started: viewCount, completed: stats.completedVisits,
+    steps: answerable.map((b) => ({ label: recallLabels(b.title, blocks ?? []), reached: stats.reached[b.id] ?? 0 })) } : null;
+  const inProgress = stats.inProgress;
   const sections: React.ReactNode[] = [];
 
-  if (quiz && blocks && answerMaps.length > 0) {
-    const results = answerMaps.map((a) => scoreAnswers({ blocks }, a));
-    const max = results[0]?.max ?? 0;
-    if (max > 0) {
-      const avg = results.reduce((s, r) => s + r.points, 0) / results.length;
-      const perQuestion = blocks
-        .filter((b) => results[0]?.perQuestion.some((q) => q.id === b.id))
-        .map((b) => ({
-          label: recallLabels(b.title, blocks),
-          count: results.filter((r) => r.perQuestion.find((q) => q.id === b.id)?.correct).length,
-        }));
-      sections.push(
-        <Card key="__quiz" className="md:col-span-2">
-          <p className="text-sm font-semibold">Quiz results</p>
-          <p className="mt-2 font-display text-3xl tracking-tight">
-            {Math.round(avg * 10) / 10} / {max}
-            <span className="ml-2 align-middle font-sans text-xs font-normal text-ink-faint">average score</span>
-          </p>
-          <p className="mt-4 text-xs font-medium text-ink-faint">Answered correctly</p>
-          <Bars rows={perQuestion} max={Math.max(1, results.length)} />
-        </Card>,
-      );
-    }
+  if (quiz && blocks && completions > 0) {
+    const maximum = scoreAnswers({ blocks }, {}).max;
+    let points = 0;
+    const perQuestion = blocks.filter((b) => b.quiz).map((b) => {
+      let count = 0;
+      for (const group of stats.answers[b.id] ?? []) {
+        const result = scoreAnswers({ blocks: [b] }, { [b.id]: group.answer });
+        points += result.points * group.count;
+        if (result.perQuestion[0]?.correct) count += group.count;
+      }
+      return { label: recallLabels(b.title, blocks), count };
+    });
+    if (maximum > 0) sections.push(<Card key="__quiz" className="md:col-span-2">
+      <p className="text-sm font-semibold">Quiz results</p>
+      <p className="mt-2 font-display text-3xl tracking-tight">{Math.round(points / completions * 10) / 10} / {maximum}
+        <span className="ml-2 align-middle font-sans text-xs font-normal text-ink-faint">average score</span></p>
+      <p className="mt-4 text-xs font-medium text-ink-faint">Answered correctly</p><Bars rows={perQuestion} max={completions} />
+    </Card>);
   }
 
   for (const block of blocks ?? []) {
-    const nps = npsScore(block, answerMaps);
+    const groups = stats.answers[block.id] ?? [];
+    const answerMaps = groups.map((g) => ({ [block.id]: g.answer }));
+    const weights = groups.map((g) => g.count);
+    const nps = npsScore(block, answerMaps, weights);
     if (nps && nps.total > 0) {
       sections.push(
         <Card key={block.id}>
@@ -175,7 +137,7 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
       );
       continue;
     }
-    const ranking = rankingDistribution(block, answerMaps);
+    const ranking = rankingDistribution(block, answerMaps, weights);
     if (ranking && ranking.total > 0) {
       sections.push(
         <Card key={block.id}>
@@ -193,7 +155,7 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
       );
       continue;
     }
-    const choice = choiceDistribution(block, answerMaps);
+    const choice = choiceDistribution(block, answerMaps, weights);
     if (choice) {
       const max = Math.max(1, ...choice.map((c) => c.count));
       sections.push(
@@ -204,7 +166,7 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
       );
       continue;
     }
-    const numeric = numericDistribution(block, answerMaps);
+    const numeric = numericDistribution(block, answerMaps, weights);
     if (numeric && numeric.total > 0) {
       const max = Math.max(1, ...numeric.counts.map((c) => c.count));
       sections.push(
@@ -226,7 +188,7 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
       );
       continue;
     }
-    const matrix = matrixDistribution(block, answerMaps);
+    const matrix = matrixDistribution(block, answerMaps, weights);
     if (matrix && matrix.rows.some((r) => r.total > 0)) {
       sections.push(
         <Card key={block.id} className="md:col-span-2">
@@ -271,7 +233,7 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Stat label="Views" value={viewCount.toLocaleString("en-IN")} />
         <Stat label="Completions" value={completions.toLocaleString("en-IN")} />
-        <Stat label="Completion rate" value={viewCount > 0 ? `${pct(completions, viewCount)}%` : "—"} />
+        <Stat label="Completion rate" value={viewCount > 0 ? `${pct(stats.completedVisits, viewCount)}%` : "—"} />
         <Stat label="Avg. time" value={avgSecs !== null ? `${avgSecs}s` : "—"} />
         <Stat label="From QR" value={fromQr.toLocaleString("en-IN")} />
       </div>
@@ -288,7 +250,7 @@ async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Blo
           <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">Drop-off · where starters stop</p>
           <p className="mt-1 text-xs text-ink-faint">
             {funnel.started.toLocaleString("en-IN")} started · {funnel.completed.toLocaleString("en-IN")} finished ·{" "}
-            {abandonedVisits.length.toLocaleString("en-IN")} abandoned
+            {stats.abandoned.toLocaleString("en-IN")} abandoned
             {inProgress > 0 && ` · ${inProgress} answering now`}
           </p>
           <Bars rows={funnel.steps.map((st) => ({ label: st.label, count: st.reached }))} max={Math.max(1, funnel.started)} />
@@ -317,19 +279,21 @@ function preview(blocks: Block[] | null, row: SubmissionRow): string {
   return text.length > 140 ? `${text.slice(0, 140)}…` : text || "—";
 }
 
-export default async function ResponsesPage({
-  params,
-  searchParams,
-}: {
-  params: { formId: string };
-  searchParams?: { from?: string; to?: string; q?: string; tag?: string };
-}) {
+export default async function ResponsesPage(
+  props: {
+    params: Promise<{ formId: string }>;
+    searchParams?: Promise<{ from?: string; to?: string; q?: string; tag?: string; page?: string }>;
+  }
+) {
+  const searchParams = await props.searchParams;
+  const params = await props.params;
   if (!isSupabaseConfigured()) return <ConfigRequired area="responses" />;
   const res = await getAppContext();
   if (!res.ok) redirect(`/login?next=/forms/${params.formId}/responses`);
   const owned = await getFormForOwner(params.formId);
   if ("error" in owned) redirect("/dashboard");
   const form = owned.form;
+  const canEdit = await hasWorkspaceRole(form.workspace_id, "editor");
   const admin = getServiceSupabase()!;
 
   const { data: formRow } = await admin.from("forms").select("published_version_id").eq("id", form.id).single();
@@ -345,23 +309,32 @@ export default async function ResponsesPage({
   }
   const quiz = Boolean(versionSettings.quizMode && blocks);
 
-  let query = admin
-    .from("submissions")
-    .select("id, submitted_at, source, answers, tags")
-    .eq("form_id", form.id)
-    .is("deleted_at", null)
-    .order("submitted_at", { ascending: false })
-    .limit(100);
-  if (searchParams?.from) query = query.gte("submitted_at", searchParams.from);
-  if (searchParams?.to) query = query.lte("submitted_at", `${searchParams.to}T23:59:59.999Z`);
-  const { data } = await query;
-  let rows = (data ?? []) as SubmissionRow[];
-  const q = searchParams?.q?.trim().toLowerCase();
-  if (q) rows = rows.filter((r) => JSON.stringify(r.answers).toLowerCase().includes(q));
-  const activeTag = searchParams?.tag?.trim().toLowerCase();
-  if (activeTag) rows = rows.filter((r) => (r.tags ?? []).some((t) => t.toLowerCase() === activeTag));
-  const filtered = Boolean(searchParams?.from || searchParams?.to || q || activeTag);
-  const allTags = [...new Set((data ?? []).flatMap((r) => ((r as SubmissionRow).tags ?? [])))].sort();
+  const page = Math.max(1, Math.min(10001, Number.parseInt(searchParams?.page ?? "1", 10) || 1));
+  const date = (value?: string) => value && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) ? value : null;
+  const from = date(searchParams?.from);
+  const to = date(searchParams?.to);
+  const q = searchParams?.q?.trim().slice(0, 200) ?? "";
+  const activeTag = searchParams?.tag?.trim().toLowerCase().slice(0, 30) ?? "";
+  const { data, error: searchError } = await admin.rpc("search_form_responses", {
+    p_form_id: form.id, p_query: q, p_tag: activeTag,
+    p_from: from ? `${from}T00:00:00Z` : null,
+    p_to: to ? new Date(Date.parse(to) + 86400_000).toISOString() : null,
+    p_offset: (page - 1) * 100, p_limit: 100,
+  });
+  if (searchError) throw new Error("Responses are temporarily unavailable. Please try again.");
+  const rows = (data?.rows ?? []) as SubmissionRow[];
+  const total = Number(data?.total ?? 0);
+  const filtered = Boolean(from || to || q || activeTag);
+  const allTags = (data?.tags ?? []) as string[];
+  const pageUrl = (next: number) => {
+    const params = new URLSearchParams();
+    if (from) params.set("from", from);
+    if (to) params.set("to", to);
+    if (q) params.set("q", q);
+    if (activeTag) params.set("tag", activeTag);
+    params.set("page", String(next));
+    return `/forms/${form.id}/responses?${params}`;
+  };
 
   return (
     <AppShell ctx={res.ctx} active="forms">
@@ -373,7 +346,7 @@ export default async function ResponsesPage({
         active="responses"
         actions={
           <>
-            <StateActions formId={form.id} status={form.status} canReopen={form.status === "closed"} />
+            {canEdit && <StateActions formId={form.id} status={form.status} canReopen={form.status === "closed"} />}
             <ExportCsvButton href={`/api/forms/${form.id}/export`} />
           </>
         }
@@ -468,8 +441,13 @@ export default async function ResponsesPage({
             ))}
           </ul>
           <p className="mt-3 text-xs text-ink-faint">
-            Showing {rows.length === 100 ? "the latest 100" : rows.length} response{rows.length === 1 ? "" : "s"}. Export CSV for everything.
+            Showing {(page - 1) * 100 + 1}?{(page - 1) * 100 + rows.length} of {total.toLocaleString("en-IN")} responses.
           </p>
+          <nav aria-label="Response pages" className="mt-3 flex items-center gap-4 text-sm">
+            {page > 1 && <Link href={pageUrl(page - 1)}>Previous</Link>}
+            <span>Page {page}</span>
+            {page * 100 < total && <Link href={pageUrl(page + 1)}>Next</Link>}
+          </nav>
         </>
       )}
     </AppShell>

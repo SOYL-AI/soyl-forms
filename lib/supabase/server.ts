@@ -9,9 +9,9 @@ import { noStoreFetch } from "./fetch";
  * Returns null when env is not configured so pages can render an honest
  * "configuration required" state instead of crashing.
  */
-export function getServerSupabase() {
+export async function getServerSupabase() {
   if (!isSupabaseConfigured()) return null;
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string,
@@ -38,7 +38,7 @@ export function getServerSupabase() {
 
 /** Current user id for the request, or null (signed out / unconfigured). */
 export async function getSessionUserId(): Promise<string | null> {
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (!supabase) return null;
   const {
     data: { user },

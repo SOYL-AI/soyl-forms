@@ -13,7 +13,8 @@ import { BrandStudio } from "./BrandStudio";
 
 export const metadata: Metadata = { title: "Brand kit", robots: { index: false } };
 
-export default async function BrandPage({ searchParams }: { searchParams?: { new?: string } }) {
+export default async function BrandPage(props: { searchParams?: Promise<{ new?: string }> }) {
+  const searchParams = await props.searchParams;
   if (!isSupabaseConfigured()) return <ConfigRequired area="your brand kits" />;
   const res = await getAppContext();
   if (!res.ok) redirect(res.reason === "signed-out" ? "/login?next=/brand" : "/dashboard");

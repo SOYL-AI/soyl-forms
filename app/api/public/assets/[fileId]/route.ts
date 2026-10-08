@@ -7,7 +7,8 @@ import { presignedGetUrl } from "@/lib/r2";
  * uploads are `kind = 'submission'` and are never served here. Redirects to
  * a 1-hour signed URL so the bucket itself stays private.
  */
-export async function GET(_req: Request, { params }: { params: { fileId: string } }) {
+export async function GET(_req: Request, props: { params: Promise<{ fileId: string }> }) {
+  const params = await props.params;
   if (!/^[0-9a-f-]{36}$/i.test(params.fileId)) {
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
@@ -21,8 +22,7 @@ export async function GET(_req: Request, { params }: { params: { fileId: string 
   const row = data as { r2_key: string; status: string; kind: string; mime_type: string } | null;
   if (
     !row ||
-    row.status === "deleted" ||
-    row.status === "quarantined" ||
+    row.status !== "attached" ||
     (row.kind !== "brand_asset" && row.kind !== "question_media") ||
     !row.mime_type.startsWith("image/")
   ) {

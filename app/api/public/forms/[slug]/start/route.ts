@@ -1,19 +1,18 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { checkRateLimit } from "@/lib/security/rateLimit";
-import { clientIp, resolvePublicForm } from "@/lib/forms/public";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
+import { clientIp, resolvePublicForm, resolveFormVersion } from "@/lib/forms/public";
 
 const startSchema = z.object({
   sessionId: z.string().min(1).max(100),
+  formVersionId: z.string().uuid().optional(),
   source: z.string().max(500).optional(),
 });
 
-export async function POST(
-  req: Request,
-  { params }: { params: { slug: string } },
-) {
-  const limit = checkRateLimit(`start:${clientIp(req.headers)}:${params.slug}`, 60, 60_000);
+export async function POST(req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const limit = await enforceRateLimit(`start:${clientIp(req.headers)}:${params.slug}`, 60, 60_000);
   if (!limit.ok) {
     return NextResponse.json({ error: "Too many requests." }, { status: 429 });
   }
@@ -29,12 +28,14 @@ export async function POST(
   }
 
   const admin = getServiceSupabase();
-  await admin!.from("form_visits").insert({
+  const version = body.data.formVersionId ? await resolveFormVersion(resolved.form.id, body.data.formVersionId) : null;
+  if (body.data.formVersionId && !version) return NextResponse.json({ error: "Invalid version." }, { status: 400 });
+  await admin!.from("form_visits").upsert({
     form_id: resolved.form.id,
-    form_version_id: resolved.form.versionId,
+    form_version_id: version?.versionId ?? resolved.form.versionId,
     session_id: body.data.sessionId,
     source: body.data.source?.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20) || null,
-  });
+  }, { onConflict: "form_id,session_id", ignoreDuplicates: true });
 
   return NextResponse.json({ ok: true });
 }

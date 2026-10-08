@@ -38,6 +38,7 @@ import {
   TextField,
   ThemeFontLink,
 } from "./blocks";
+import type { ResumeState } from "@/lib/forms/resume";
 import { cn } from "@/lib/utils";
 
 type DraftValue = string | string[] | number | Record<string, string | string[] | number> | null;
@@ -271,6 +272,7 @@ export function FormRenderer({
   persistKey,
   persistPrefix,
   initialAnswers,
+  initialResume,
   tracking,
   preview,
   focusBlockId,
@@ -300,8 +302,9 @@ export function FormRenderer({
   persistPrefix?: string;
   /** Prefilled answers (URL parameters). Seeded only when no saved session exists. */
   initialAnswers?: Answers;
+  initialResume?: ResumeState;
   /** Public-route analytics + save/resume. Absent in previews/demos. */
-  tracking?: { slug: string; sessionId: string; versionId?: string };
+  tracking?: { slug: string; sessionId: string; versionId?: string; idempotencyKey: string };
   /** Builder/marketing preview: no persistence, no redirects. */
   preview?: boolean;
   /** Builder: jump the preview to the block being edited. */
@@ -335,6 +338,7 @@ export function FormRenderer({
   const fileNames = useRef<Record<string, Record<string, string>>>({});
   /** URL-prefill seeds once: never clobber a restored session or typed input. */
   const prefillSeeded = useRef(false);
+  const restoredKey = useRef<string | null>(null);
 
   const current: Block | undefined = byId.get(currentId);
   const autoAdvance = settings?.autoAdvance ?? true;
@@ -342,6 +346,8 @@ export function FormRenderer({
   // Restore a half-finished session: this version first, else an older version of the same form.
   // When nothing was saved, seed URL-prefilled answers (once per mount).
   useEffect(() => {
+    if (restoredKey.current === (persistKey ?? "preview")) return;
+    restoredKey.current = persistKey ?? "preview";
     const seedPrefill = (seed: Answers) => {
       const d: Record<string, DraftValue> = {};
       const o: Record<string, string> = {};
@@ -364,6 +370,14 @@ export function FormRenderer({
         setAnswers(a);
       }
     };
+    if (initialResume) {
+      seedPrefill(initialResume.answers);
+      if (initialResume.currentId && order.includes(initialResume.currentId)) setCurrentId(initialResume.currentId);
+      setHistory(initialResume.history.filter((id) => order.includes(id)));
+      prefillSeeded.current = true;
+      setRestored(true);
+      return;
+    }
     let restoredAny = false;
     if (!persistKey) {
       if (initialAnswers && !prefillSeeded.current) {
@@ -420,7 +434,7 @@ export function FormRenderer({
       seedPrefill(initialAnswers);
     }
     setRestored(true);
-  }, [persistKey, persistPrefix, order, byId, initialAnswers]);
+  }, [persistKey, persistPrefix, order, byId, initialAnswers, initialResume]);
 
   useEffect(() => {
     if (!persistKey || !restored || completed) return;
@@ -438,7 +452,7 @@ export function FormRenderer({
     fetch(`/api/public/forms/${tracking.slug}/progress`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ sessionId: tracking.sessionId, blockId: currentId }),
+      body: JSON.stringify({ sessionId: tracking.sessionId, formVersionId: tracking.versionId, blockId: currentId }),
     }).catch(() => {});
   }, [tracking, restored, completed, currentId]);
 
@@ -446,7 +460,7 @@ export function FormRenderer({
   useEffect(() => {
     if (!tracking || !restored || completed || Object.keys(answers).length === 0) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    const t = { slug: tracking.slug, sessionId: tracking.sessionId };
+    const t = tracking;
     saveTimer.current = setTimeout(() => {
       let token: string | undefined;
       try {
@@ -457,7 +471,7 @@ export function FormRenderer({
       fetch(`/api/public/forms/${t.slug}/resume`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ sessionId: t.sessionId, answers, ...(token ? { token } : {}) }),
+        body: JSON.stringify({ sessionId: t.sessionId, idempotencyKey: t.idempotencyKey, formVersionId: t.versionId, currentId, history, answers, ...(token ? { token } : {}) }),
       })
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
@@ -475,7 +489,7 @@ export function FormRenderer({
     return () => {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
-  }, [tracking, restored, completed, answers]);
+  }, [tracking, restored, completed, answers, currentId, history]);
 
   // Live-preview safety: if the schema changes under us (builder edits),
   // fall back to the first block instead of stranding on a deleted step.
@@ -872,12 +886,12 @@ export function FormRenderer({
               } catch {
                 /* ignore */
               }
-              if (!token && Object.keys(answers).length > 0) {
+              if (Object.keys(answers).length > 0) {
                 try {
                   const r = await fetch(`/api/public/forms/${tracking.slug}/resume`, {
                     method: "PUT",
                     headers: { "content-type": "application/json" },
-                    body: JSON.stringify({ sessionId: tracking.sessionId, answers }),
+                    body: JSON.stringify({ ...(token ? { token } : {}), sessionId: tracking.sessionId, idempotencyKey: tracking.idempotencyKey, formVersionId: tracking.versionId, currentId, history, answers }),
                   });
                   token = ((await r.json().catch(() => null)) as { token?: string } | null)?.token ?? null;
                   if (token) window.sessionStorage.setItem(`soyl:resume:${tracking.slug}`, token);
@@ -1380,6 +1394,7 @@ export function FormRenderer({
           <BlockShell {...common} hint={current.required || minimal ? undefined : "You can attach up to 10 files"}>
             <FileUploadInput
               slug={uploads?.slug ?? null}
+              formVersionId={tracking?.versionId}
               questionId={current.id}
               value={files}
               names={fileNames.current[current.id] ?? {}}

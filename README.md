@@ -147,3 +147,5 @@ reads them server-side.
   failure; monthly grants are idempotent per workspace+month+plan.
 - Public forms load no analytics, no dashboard JS, and only the two web
   fonts the theme uses.
+
+See [the reliability implementation and rollout notes](docs/20_reliability_plan.md) before deploying the new submission, upload, resume, and queue migrations.

@@ -11,7 +11,8 @@ import { Th, Td, Mono } from "@/components/ui/table";
 import { formatBytes, formatDate, formatDateTime } from "@/lib/utils";
 import { FormStatusButton, OverrideForm, WorkspaceStatusButton } from "../../Controls";
 
-export default async function AdminWorkspaceDetail({ params }: { params: { id: string } }) {
+export default async function AdminWorkspaceDetail(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
   const admin = getServiceSupabase();
   if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   if (!/^[0-9a-f-]{36}$/i.test(params.id)) notFound();

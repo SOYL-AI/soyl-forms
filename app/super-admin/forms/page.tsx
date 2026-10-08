@@ -5,7 +5,8 @@ import { StatusBadge } from "@/components/ui/badge";
 import { formatDate } from "@/lib/utils";
 import { FormStatusButton, SearchForm } from "../Controls";
 
-export default async function AdminFormsPage({ searchParams }: { searchParams?: { q?: string } }) {
+export default async function AdminFormsPage(props: { searchParams?: Promise<{ q?: string }> }) {
+  const searchParams = await props.searchParams;
   const admin = getServiceSupabase();
   if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   const q = searchParams?.q?.trim() ?? "";

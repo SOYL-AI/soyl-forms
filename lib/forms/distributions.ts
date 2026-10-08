@@ -36,15 +36,17 @@ export interface MatrixStat {
 export function choiceDistribution(
   block: Block,
   answers: Array<Record<string, AnswerValue>>,
+  weights: number[] = [],
 ): ChoiceStat[] | null {
   if (block.type === "yes_no") {
     let yes = 0;
     let no = 0;
-    for (const a of answers) {
+    for (const [index, a] of answers.entries()) {
+    const weight = weights[index] ?? 1;
       const v = a[block.id];
       if (v?.type === "yes_no") {
-        if (v.value === "yes") yes += 1;
-        else if (v.value === "no") no += 1;
+        if (v.value === "yes") yes += weight;
+        else if (v.value === "no") no += weight;
       }
     }
     return [
@@ -61,19 +63,20 @@ export function choiceDistribution(
   }
   const counts = new Map(block.options.map((o) => [o.id, 0]));
   let other = 0;
-  for (const a of answers) {
+  for (const [index, a] of answers.entries()) {
+    const weight = weights[index] ?? 1;
     const v = a[block.id];
     if (!v) continue;
     if (
       (v.type === "single_choice" || v.type === "dropdown") &&
       typeof v.value === "string"
     ) {
-      if (v.value === OTHER_OPTION_ID) other += 1;
-      else counts.set(v.value, (counts.get(v.value) ?? 0) + 1);
+      if (v.value === OTHER_OPTION_ID) other += weight;
+      else counts.set(v.value, (counts.get(v.value) ?? 0) + weight);
     } else if (v.type === "multiple_choice" && Array.isArray(v.value)) {
       for (const id of v.value) {
-        if (id === OTHER_OPTION_ID) other += 1;
-        else counts.set(id, (counts.get(id) ?? 0) + 1);
+        if (id === OTHER_OPTION_ID) other += weight;
+        else counts.set(id, (counts.get(id) ?? 0) + weight);
       }
     }
   }
@@ -92,6 +95,7 @@ export function choiceDistribution(
 export function numericDistribution(
   block: Block,
   answers: Array<Record<string, AnswerValue>>,
+  weights: number[] = [],
 ): NumericStat | null {
   if (
     block.type !== "rating" &&
@@ -102,25 +106,25 @@ export function numericDistribution(
   ) {
     return null;
   }
-  const values: number[] = [];
-  for (const a of answers) {
+  const counts = new Map<number, number>();
+  let total = 0;
+  let sum = 0;
+  for (const [index, a] of answers.entries()) {
+    const weight = weights[index] ?? 1;
     const v = a[block.id];
     if (
       v &&
       (v.type === "rating" || v.type === "opinion_scale" || v.type === "number" || v.type === "slider" || v.type === "nps") &&
       typeof v.value === "number"
     ) {
-      values.push(v.value);
+      counts.set(v.value, (counts.get(v.value) ?? 0) + weight);
+      total += weight;
+      sum += v.value * weight;
     }
   }
-  const counts = new Map<number, number>();
-  for (const n of values) counts.set(n, (counts.get(n) ?? 0) + 1);
   return {
-    average:
-      values.length > 0
-        ? Math.round((values.reduce((s, n) => s + n, 0) / values.length) * 10) / 10
-        : null,
-    total: values.length,
+    average: total > 0 ? Math.round((sum / total) * 10) / 10 : null,
+    total,
     counts: [...counts.entries()]
       .map(([value, count]) => ({ value, count }))
       .sort((a, b) => a.value - b.value),
@@ -131,6 +135,7 @@ export function numericDistribution(
 export function matrixDistribution(
   block: Block,
   answers: Array<Record<string, AnswerValue>>,
+  weights: number[] = [],
 ): MatrixStat | null {
   if (block.type !== "matrix") return null;
   const colIndex = new Map(block.columns.map((c, i) => [c.id, i]));
@@ -141,7 +146,8 @@ export function matrixDistribution(
     total: 0,
   }));
   const rowIndex = new Map(block.rows.map((r, i) => [r.id, i]));
-  for (const a of answers) {
+  for (const [index, a] of answers.entries()) {
+    const weight = weights[index] ?? 1;
     const v = a[block.id];
     if (!v || v.type !== "matrix") continue;
     for (const [rowId, pick] of Object.entries(v.value)) {
@@ -151,8 +157,8 @@ export function matrixDistribution(
       for (const colId of Array.isArray(pick) ? pick : [pick]) {
         const ci = colIndex.get(colId);
         if (ci === undefined) continue;
-        row.counts[ci] = (row.counts[ci] ?? 0) + 1;
-        row.total += 1;
+        row.counts[ci] = (row.counts[ci] ?? 0) + weight;
+        row.total += weight;
       }
     }
   }
@@ -160,17 +166,18 @@ export function matrixDistribution(
 }
 
 /** NPS = % promoters (9–10) − % detractors (0–6), rounded to a whole number. */
-export function npsScore(block: Block, answers: Array<Record<string, AnswerValue>>): NpsStat | null {
+export function npsScore(block: Block, answers: Array<Record<string, AnswerValue>>, weights: number[] = []): NpsStat | null {
   if (block.type !== "nps") return null;
   let promoters = 0;
   let passives = 0;
   let detractors = 0;
-  for (const a of answers) {
+  for (const [index, a] of answers.entries()) {
+    const weight = weights[index] ?? 1;
     const v = a[block.id];
     if (!v || v.type !== "nps") continue;
-    if (v.value >= 9) promoters += 1;
-    else if (v.value >= 7) passives += 1;
-    else detractors += 1;
+    if (v.value >= 9) promoters += weight;
+    else if (v.value >= 7) passives += weight;
+    else detractors += weight;
   }
   const total = promoters + passives + detractors;
   return {
@@ -183,16 +190,17 @@ export function npsScore(block: Block, answers: Array<Record<string, AnswerValue
 }
 
 /** Average rank per option (1 = ranked first), best first. */
-export function rankingDistribution(block: Block, answers: Array<Record<string, AnswerValue>>): RankingStat | null {
+export function rankingDistribution(block: Block, answers: Array<Record<string, AnswerValue>>, weights: number[] = []): RankingStat | null {
   if (block.type !== "ranking") return null;
   const sums = new Map(block.options.map((o) => [o.id, 0]));
   let total = 0;
-  for (const a of answers) {
+  for (const [index, a] of answers.entries()) {
+    const weight = weights[index] ?? 1;
     const v = a[block.id];
     if (!v || v.type !== "ranking") continue;
-    total += 1;
+    total += weight;
     v.value.forEach((id, i) => {
-      if (sums.has(id)) sums.set(id, (sums.get(id) ?? 0) + i + 1);
+      if (sums.has(id)) sums.set(id, (sums.get(id) ?? 0) + (i + 1) * weight);
     });
   }
   const options = block.options

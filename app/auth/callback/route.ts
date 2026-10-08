@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   if (!code || !isSupabaseConfigured()) {
     return NextResponse.redirect(`${base}/login?error=auth`);
   }
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL as string,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY as string,

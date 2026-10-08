@@ -8,7 +8,8 @@ import { getProductName, getSupportEmail } from "@/lib/config";
 export const metadata: Metadata = { title: "Delete your account" };
 
 /** Public account-deletion page (the URL Google Play's Data safety form asks for). */
-export default function DeleteAccountPage({ searchParams }: { searchParams?: { done?: string } }) {
+export default async function DeleteAccountPage(props: { searchParams?: Promise<{ done?: string }> }) {
+  const searchParams = await props.searchParams;
   const name = getProductName();
   const email = getSupportEmail();
   return (

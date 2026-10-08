@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { checkRateLimit } from "@/lib/security/rateLimit";
-import { clientIp, resolvePublicForm } from "@/lib/forms/public";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
+import { clientIp, resolvePublicForm, resolveFormVersion } from "@/lib/forms/public";
 
 const progressSchema = z.object({
   sessionId: z.string().min(1).max(100),
+  formVersionId: z.string().uuid(),
   blockId: z.string().min(1).max(64),
 });
 
@@ -13,8 +14,9 @@ const progressSchema = z.object({
  * Drop-off ping: records the furthest question a session reached.
  * Best-effort analytics — never fails loudly, never touches answers.
  */
-export async function POST(req: Request, { params }: { params: { slug: string } }) {
-  const limit = checkRateLimit(`progress:${clientIp(req.headers)}:${params.slug}`, 60, 60_000);
+export async function POST(req: Request, props: { params: Promise<{ slug: string }> }) {
+  const params = await props.params;
+  const limit = await enforceRateLimit(`progress:${clientIp(req.headers)}:${params.slug}`, 60, 60_000);
   if (!limit.ok) return NextResponse.json({ error: "Too many requests." }, { status: 429 });
 
   const body = progressSchema.safeParse(await req.json().catch(() => null));
@@ -26,12 +28,9 @@ export async function POST(req: Request, { params }: { params: { slug: string } 
   }
 
   const admin = getServiceSupabase();
-  await admin!
-    .from("form_visits")
-    .update({ last_block_id: body.data.blockId, progress_at: new Date().toISOString() })
-    .eq("form_id", resolved.form.id)
-    .eq("session_id", body.data.sessionId)
-    .is("completed_at", null);
+  const version = await resolveFormVersion(resolved.form.id, body.data.formVersionId);
+  if (!version || !version.schema.blocks.some((b) => b.id === body.data.blockId)) return NextResponse.json({ error: "Unknown question." }, { status: 400 });
+  await admin!.rpc("record_form_progress", { p_form_id: resolved.form.id, p_session_id: body.data.sessionId, p_block_id: body.data.blockId });
 
   return NextResponse.json({ ok: true });
 }

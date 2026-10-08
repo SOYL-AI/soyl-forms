@@ -81,6 +81,6 @@ export async function deleteMyAccount(args: { confirmation: string }): Promise<{
   if (userError) return { ok: false, error: "We couldn't finish deleting your account. Please try again." };
 
   await auditLog({ actorUserId: null, actorType: "user", action: "account.deleted", targetType: "user", targetId: userId });
-  await getServerSupabase()?.auth.signOut().catch(() => {});
+  await (await getServerSupabase())?.auth.signOut().catch(() => {});
   return { ok: true };
 }

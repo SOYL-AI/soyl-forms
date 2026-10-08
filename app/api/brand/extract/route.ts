@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { checkRateLimit } from "@/lib/security/rateLimit";
+import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { getUserWorkspaceId } from "@/lib/workspaces";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { ensureMonthlyCredits, getAiBalance, refundCredits, spendCredits } from "@/lib/ai/credits";
@@ -32,7 +32,7 @@ const schema = z.object({
 export async function POST(req: Request) {
   const userId = await getSessionUserId();
   if (!userId) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
-  const limit = checkRateLimit(`brand-extract:${userId}`, 8, 60_000);
+  const limit = await enforceRateLimit(`brand-extract:${userId}`, 8, 60_000);
   if (!limit.ok) return NextResponse.json({ error: "Slow down a little." }, { status: 429 });
 
   const body = schema.safeParse(await req.json().catch(() => null));
@@ -62,7 +62,8 @@ export async function POST(req: Request) {
       .select("id, r2_key, mime_type, original_name, kind")
       .in("id", input.sourceFileIds)
       .eq("workspace_id", workspaceId)
-      .eq("kind", "brand_source");
+      .eq("kind", "brand_source")
+      .eq("status", "attached");
     for (const f of (files ?? []) as Array<{ id: string; r2_key: string; mime_type: string; original_name: string }>) {
       work.push(
         (async () => {

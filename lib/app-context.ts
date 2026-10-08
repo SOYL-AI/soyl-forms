@@ -28,7 +28,7 @@ export type AppContextResult =
  * first visit unless registrations are paused.
  */
 export async function getAppContext(): Promise<AppContextResult> {
-  const supabase = getServerSupabase();
+  const supabase = await getServerSupabase();
   if (!supabase) return { ok: false, reason: "error", message: "Service temporarily unavailable. Please try again." };
   const {
     data: { user },

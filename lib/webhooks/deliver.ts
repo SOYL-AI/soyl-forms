@@ -1,6 +1,7 @@
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { decryptSecret } from "@/lib/security/secrets";
 import { signWebhook, submissionEventBody } from "./sign";
+import { publicFetch } from "@/lib/security/public-fetch";
 
 export interface DeliveryEvent {
   eventId: string;
@@ -65,12 +66,12 @@ export async function deliverToWebhook(
   let status: number | null = null;
   let error: string | undefined;
   try {
-    const res = await fetch(hook.url, {
+    const res = await publicFetch(hook.url, {
       method: "POST",
       headers: signed.headers,
       body: signed.body,
-      signal: AbortSignal.timeout(10_000),
-      redirect: "manual",
+      timeoutMs: 10_000,
+      maxBytes: 65_536,
     });
     status = res.status;
     await res.arrayBuffer().catch(() => null);
