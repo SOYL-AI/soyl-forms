@@ -5,6 +5,10 @@ import { requireAdmin } from "@/lib/admin";
 import { getProductName } from "@/lib/config";
 import { AdminNav } from "./AdminNav";
 
+// Operator data and authorization are evaluated for each request, including
+// builds without provider credentials. Never prerender this protected tree.
+export const dynamic = "force-dynamic";
+
 export const metadata: Metadata = { title: { default: "Operator console", template: "%s · Operator console" }, robots: { index: false } };
 
 export default async function SuperAdminLayout({ children }: { children: React.ReactNode }) {

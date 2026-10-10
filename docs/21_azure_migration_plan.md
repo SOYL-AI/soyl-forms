@@ -1,6 +1,6 @@
 # Azure lean launch migration proposal
 
-Date: 10 October 2026. Status: approved; owner confirmed hosted signup/sign-in and authorized phase 2 to proceed on `migration/azure-lean-launch`. Database/application conversion is in progress. Recovery, logout/re-login and Android acceptance remain production cutover gates. Production cutover has not happened.
+Date: 10 October 2026. Status: approved; owner confirmed hosted signup/sign-in and authorized phase 2 to proceed on `migration/azure-lean-launch`. The converted application/database and workers are deployed to Azure staging; operational evidence and outstanding gates are recorded in [the staging runbook](23_azure_platform_staging.md). Recovery, logout/re-login, Android and real-provider feature acceptance remain production cutover gates. Production cutover has not happened.
 
 Launch scope updated by the owner on 10 October 2026: Google sign-in is deferred until after launch. Email/password through Entra External ID is the launch method; Google configuration and acceptance do not block this migration. Web and Android email/password authentication acceptance remain required.
 
@@ -58,7 +58,7 @@ Exit: migrated functionality and adversarial cross-workspace tests pass; there i
 
 1. Add a reproducible production container and infrastructure/deployment definitions. Use secrets through Azure secret references/managed identity where supported; keep credentials out of Git and client bundles.
 2. Configure TLS/domain, OIDC callbacks, Android app links, Razorpay webhooks, R2 CORS, verified-upload lifecycle and email sender configuration for the new environment. Google redirects are deferred with Google sign-in.
-3. Implement Azure-specific trusted-proxy client-IP handling from documented ingress behavior and test forged forwarding headers. Existing `TRUSTED_PROXY` choices do not yet include Azure. Remove the rate-limiter's dependency on a Supabase key by requiring a dedicated rate-limit HMAC secret.
+3. Implement Azure-specific trusted-proxy client-IP handling from documented ingress behavior and test forged forwarding headers. Azure now uses the rightmost appended forwarding address; a dedicated rate-limit HMAC secret replaces the Supabase key in Azure builds.
 4. Separate lightweight liveness from readiness. Readiness checks PostgreSQL with a timeout and confirms the expected migration version without exposing secrets.
 5. Run outbox processing every minute and cleanup hourly. Preserve frozen email payload/provider keys, destination-level delivery state, bounded retries, expiring claims and failure visibility. Adapt batch sizes/time budgets to measured throughput rather than carrying forward a fixed 25-event HTTP-worker ceiling. Scheduled jobs use UTC cron expressions and dedicated job timeouts; overlapping executions cannot double-claim events.
 6. Provision backups/PITR and exercise restoration to a separate temporary database/server. Document connection/secret switching and domain rollback.

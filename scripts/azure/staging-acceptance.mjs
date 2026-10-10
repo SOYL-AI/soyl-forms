@@ -133,14 +133,17 @@ try {
     assert(simultaneous.every(r=>r.response.status===200),'50 concurrent submissions failed');
     await traffic('steady',1800,5);await traffic('burst',300,10);
   } else if(hot) {
-    // One genuine source IP: enforce the real 20/IP/form/minute limit rather
-    // than spoof forwarding headers or bypass abuse controls for a capacity claim.
+    // Azure jobs can use multiple genuine egress addresses. Verify the shared
+    // 20/IP/form/minute limit using new HMAC bucket counts, without spoofing IPs.
+    const before=(await db.query('select key from public_rate_limits')).rows.map(row=>row.key);
     const started=Date.now();
     const results=await Promise.all(Array.from({length:50},()=>submit(forms[1])));
     const accepted=results.filter(r=>r.response.status===200).length;
     const limited=results.filter(r=>r.response.status===429).length;
-    assert(accepted===20 && limited===30,'Hot form rate boundary or concurrent writes failed');
-    stats.hot={requests:50,acknowledged:accepted,intentionalRateLimits:limited,elapsedMs:Date.now()-started};
+    const buckets=(await db.query('select hits from public_rate_limits where key<>all($1::text[])',[before])).rows;
+    stats.hot={requests:50,acknowledged:accepted,intentionalRateLimits:limited,elapsedMs:Date.now()-started,sourceBuckets:buckets.length};
+    console.log(JSON.stringify({event:'staging_hot_form_observed',...stats.hot,statuses:results.reduce((counts,r)=>({...counts,[r.response.status]:(counts[r.response.status]??0)+1}),{})}));
+    assert(buckets.length>0 && buckets.length<=3 && accepted===buckets.reduce((total,row)=>total+Math.min(row.hits,20),0) && accepted+limited===50 && limited>0 && buckets.every(row=>row.hits<=21),'Hot form rate boundary or concurrent writes failed');
     console.log(JSON.stringify({event:'staging_hot_form_rate_boundary_verified',...stats.hot}));
   } else {
     const simultaneous=await Promise.all(Array.from({length:10},()=>submit(forms[1])));
