@@ -133,6 +133,7 @@ try {
     assert(simultaneous.every(r=>r.response.status===200),'50 concurrent submissions failed');
     await traffic('steady',1800,5);await traffic('burst',300,10);
   } else if(hot) {
+    assert(Number((await db.query("select count(*) as n from app_users where display_name='STAGING automated acceptance fixture'")).rows[0].n)===users.length,'Run hot rate accounting after other staging fixtures are removed');
     // Azure jobs can use multiple genuine egress addresses. Verify the shared
     // 20/IP/form/minute limit using new HMAC bucket counts, without spoofing IPs.
     const before=(await db.query('select key from public_rate_limits')).rows.map(row=>row.key);

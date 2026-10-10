@@ -64,6 +64,15 @@ suite("Azure platform against real PostgreSQL and non-owner roles", () => {
     expect((await admin.query("select count(*) from subscriptions where workspace_id=$1", [workspace])).rows[0].count).toBe("1");
     expect((await admin.query("select count(*) from ai_credit_ledger where workspace_id=$1", [workspace])).rows[0].count).toBe("1");
   });
+
+  it('shares an atomic rate limit across concurrent runtime connections',async()=>{
+    const key=randomUUID().replaceAll('-','').repeat(2);
+    try {
+      const replies=await Promise.all(Array.from({length:50},()=>getDatabasePool().query<{data:{ok:boolean}}> ('select platform.consume_rate_limit($1,20,60000) as data',[key])));
+      expect(replies.filter(reply=>reply.rows[0].data.ok)).toHaveLength(20);
+      expect((await admin.query('select hits from public_rate_limits where key=$1',[key])).rows[0].hits).toBe(21);
+    } finally {await admin.query('delete from public_rate_limits where key=$1',[key]);}
+  });
   it("scopes bearer API access to current creator permissions without a browser cookie", async () => {
     const secret=newMcpKey(),id=randomUUID();
     await admin.query("insert into workspace_api_keys(id,workspace_id,key_hash,key_prefix,created_by) values($1,$2,$3,'test',$4)",[id,workspace,hashMcpKey(secret),ownerId]);
