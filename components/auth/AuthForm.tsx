@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { isNativeApp } from "@/lib/native";
 import { signInWithGoogleInApp } from "@/lib/native-auth";
+import { safeAuthNext } from "@/lib/auth/redirect";
 import { PLANS, isPlanCode } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
@@ -18,7 +19,7 @@ import { Notice } from "@/components/ui/notice";
  */
 export function resolveNext(params: URLSearchParams): string {
   const explicit = params.get("next");
-  if (explicit && explicit.startsWith("/") && !explicit.startsWith("//")) return explicit;
+  if (explicit) return safeAuthNext(explicit);
   const plan = params.get("plan");
   if (plan && isPlanCode(plan) && plan !== "free") {
     const interval = params.get("interval") === "yearly" ? "yearly" : "monthly";

@@ -9,6 +9,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Bound memory use for PostgreSQL/DOM fixtures alongside Docker and Android tooling.
+    maxWorkers: 2,
     include: ["tests/**/*.test.ts", "tests/**/*.test.tsx", "lib/**/*.test.ts"],
     environment: "node",
   },
