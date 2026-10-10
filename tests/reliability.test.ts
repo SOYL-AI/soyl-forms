@@ -78,6 +78,9 @@ describe("upload contents and trusted proxies", () => {
     vi.stubEnv("TRUSTED_PROXY", "");
     const headers = new Headers({ "x-forwarded-for": "1.1.1.1", "cf-connecting-ip": "8.8.8.8" });
     expect(clientIp(headers)).toBe("unknown");
+    vi.stubEnv("TRUSTED_PROXY", "azure");
+    expect(clientIp(new Headers({"x-forwarded-for":"1.1.1.1, 8.8.4.4"}))).toBe("8.8.4.4");
+    expect(clientIp(new Headers({"x-forwarded-for":"1.1.1.1, invalid"}))).toBe("unknown");
     vi.stubEnv("TRUSTED_PROXY", "cloudflare");
     expect(clientIp(headers)).toBe("8.8.8.8");
     headers.set("cf-connecting-ip", "forged");

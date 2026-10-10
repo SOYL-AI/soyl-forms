@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { handleMcpBody } from "@/lib/mcp/protocol";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
 import { parseBearer, verifyMcpKey } from "@/lib/mcp/keys";
+import { clientIp } from "@/lib/forms/public";
+import { readBoundedText } from "@/lib/security/request-body";
 import { enforceRateLimit } from "@/lib/security/rateLimit";
 
 export const runtime = "nodejs";
@@ -26,7 +28,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+  const ip = clientIp(req.headers);
   const limit = await enforceRateLimit(`mcp:${verified.prefix}:${ip}`, 60, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
@@ -37,7 +39,7 @@ export async function POST(req: Request) {
 
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(await readBoundedText(req,1_048_576));
   } catch {
     return NextResponse.json(
       { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error." } },
@@ -47,6 +49,7 @@ export async function POST(req: Request) {
 
   const { httpStatus, json } = await handleMcpBody(body, {
     workspaceId: verified.workspaceId,
+    userId: verified.userId,
     tools: MCP_TOOLS,
   });
   if (httpStatus === 202) return new NextResponse(null, { status: 202 });

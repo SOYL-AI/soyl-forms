@@ -1,6 +1,9 @@
+import { processAccountDeletion } from "@/lib/account/azure-delete";
 import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { deleteR2Object } from "@/lib/r2";
+import { isAzureBackend } from "@/lib/backend";
+import { cleanupUploads,completeCleanup,cleanupExpiredData } from "@/lib/db/repositories/jobs";
 
 /** Expire unattached uploads before deleting their objects; failed deletions retry. */
 export async function POST(req: Request) {
@@ -12,6 +15,18 @@ export async function POST(req: Request) {
   }
   if (req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  }
+  if(isAzureBackend()) {
+    try {
+      const deadline=Date.now()+60_000;
+      let cleaned=0;
+      for(const file of await cleanupUploads()) {
+        if(Date.now()>deadline-40_000) break;
+        try {await deleteR2Object(file.r2_key);if(await completeCleanup(file.id,file.r2_key)) cleaned++;}
+        catch { /* Preserve the deleted row so object deletion retries next sweep. */ }
+      }
+      return NextResponse.json({ok:true,cleaned,partialsCleaned:await cleanupExpiredData(),accountDeletion:await processAccountDeletion(deadline)});
+    } catch {return NextResponse.json({error:'Cleanup could not finish. Please retry.'},{status:503});}
   }
   const admin = getServiceSupabase();
   if (!admin) {

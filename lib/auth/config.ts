@@ -1,4 +1,5 @@
 import type { SessionOptions } from "iron-session";
+import { isAzureBackend } from "@/lib/backend";
 
 export const AUTH_TRANSACTION_SECONDS = 600;
 export const AUTH_SESSION_SECONDS = 30 * 24 * 60 * 60;
@@ -12,7 +13,7 @@ function required(name: string): string {
 
 /** Deliberately opt-in while real-provider acceptance is pending. */
 export function isEntraProofEnabled(): boolean {
-  return process.env.ENTRA_AUTH_PROOF_ENABLED === "true";
+  return isAzureBackend() || process.env.ENTRA_AUTH_PROOF_ENABLED === "true";
 }
 
 export function getEntraConfig() {

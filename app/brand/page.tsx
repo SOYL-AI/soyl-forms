@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getAppContext } from "@/lib/app-context";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { listBrandKits } from "@/lib/brand/actions";
 import { isAiConfigured } from "@/lib/ai/client";
 import { isR2Configured } from "@/lib/r2";
@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Brand kit", robots: { index: false }
 
 export default async function BrandPage(props: { searchParams?: Promise<{ new?: string }> }) {
   const searchParams = await props.searchParams;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="your brand kits" />;
+  if (!isApplicationConfigured()) return <ConfigRequired area="your brand kits" />;
   const res = await getAppContext();
   if (!res.ok) redirect(res.reason === "signed-out" ? "/login?next=/brand" : "/dashboard");
   const { ctx } = res;

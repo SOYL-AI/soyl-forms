@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getAppContext } from "@/lib/app-context";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { listBrandKitSummaries } from "@/lib/brand/actions";
 import { isAiConfigured } from "@/lib/ai/client";
 import { ensureMonthlyCredits, getAiBalance } from "@/lib/ai/credits";
@@ -14,7 +14,7 @@ export const metadata: Metadata = { title: "Create with AI", robots: { index: fa
 
 export default async function CreatePage(props: { searchParams?: Promise<{ kit?: string }> }) {
   const searchParams = await props.searchParams;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="AI Studio" />;
+  if (!isApplicationConfigured()) return <ConfigRequired area="AI Studio" />;
   const res = await getAppContext();
   if (!res.ok) redirect(res.reason === "signed-out" ? "/login?next=/create" : "/dashboard");
   const { ctx } = res;

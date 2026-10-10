@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { clientIp, resolvePublicForm, resolveFormVersion } from "@/lib/forms/public";
+import { isAzureBackend } from "@/lib/backend";
+import { recordProgress } from "@/lib/db/repositories/respondents";
 
 const progressSchema = z.object({
   sessionId: z.string().min(1).max(100),
@@ -30,7 +32,8 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   const admin = getServiceSupabase();
   const version = await resolveFormVersion(resolved.form.id, body.data.formVersionId);
   if (!version || !version.schema.blocks.some((b) => b.id === body.data.blockId)) return NextResponse.json({ error: "Unknown question." }, { status: 400 });
-  await admin!.rpc("record_form_progress", { p_form_id: resolved.form.id, p_session_id: body.data.sessionId, p_block_id: body.data.blockId });
+  if (isAzureBackend()) await recordProgress(resolved.form.id, body.data.formVersionId, body.data.sessionId, body.data.blockId);
+  else await admin!.rpc("record_form_progress", { p_form_id: resolved.form.id, p_session_id: body.data.sessionId, p_block_id: body.data.blockId });
 
   return NextResponse.json({ ok: true });
 }

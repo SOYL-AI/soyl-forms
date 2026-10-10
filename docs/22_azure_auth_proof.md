@@ -1,6 +1,6 @@
 # Azure authentication proof
 
-Status: implemented in isolation; real-provider/browser and Android acceptance are pending. The production platform still uses Supabase. Do not enable the new identity as the platform's primary auth until the proof passes and the application/database migration is complete.
+Status: owner confirmed successful hosted account creation and sign-in on 10 October 2026 and authorized platform migration to continue. Password recovery, logout/re-login and Android acceptance remain production cutover checks. The production platform still uses Supabase; the application/database conversion is in progress.
 
 Owner decision, 10 October 2026: Google sign-in is deferred until after launch. Google credentials and tests are not prerequisites for continuing this migration. Required launch acceptance covers Entra-hosted email/password on web and Android.
 
@@ -91,11 +91,11 @@ Recorded on 10 October 2026:
 - Live Azure HTTP proof passed: signed-out UI/privacy headers, dedicated Entra authorization with PKCE, HttpOnly transaction cookie, configured callback despite a forged forwarding header, forged-callback rejection and logout CSRF rejection. `/api/health/ready` returned 200 with `{"status":"ready"}`. Billing APIs returned 404 in the isolated preview; an unconfigured local container returned readiness 503.
 - Initial Azure migration execution `soyl-forms-migrate-ljd2kiv` succeeded. A rerun exposed SQLSTATE 42501 on protected role attributes; the bootstrap fix was deployed, and executions `soyl-forms-migrate-7s36hbw` and `soyl-forms-migrate-szxkaze` both succeeded. The first fixed run also logged verification of the unchanged migration history.
 
-Interactive acceptance remains unexecuted. Open the [hosted proof](https://soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azurecontainerapps.io/auth/entra/proof) and record each result before enabling platform auth:
+Owner-observed signup and sign-in passed. Record the remaining interactive results against the [hosted proof](https://soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azurecontainerapps.io/auth/entra/proof) before production cutover:
 
 | Check | Required observed result | Status |
 | --- | --- | --- |
-| Signup and email verification | Verified hosted signup returns to the proof with the expected identity | Pending |
+| Signup and email verification | Verified hosted signup returns to the proof with the expected identity | Owner reports account creation and successful sign-in; explicit email verification observation still to record |
 | Password login and recovery | Existing account signs in; recovery email and password reset work | Pending |
 | Logout and re-login | Local session is revoked; subsequent login is successful | Pending |
 | Google login and cancellation | Configured Google identity works; cancellation has a safe retry path | Deferred after launch; not a launch gate |
@@ -109,7 +109,7 @@ $env:AZURE_DATABASE_TESTS = 'true'
 try { npm run azure:test:db } finally { Remove-Item Env:AZURE_DATABASE_TESTS }
 ```
 
-Before phase 2 starts, record actual results for hosted signup/email verification, email/password login, recovery, logout/re-login, expiry/disabled accounts, Android browser return, intercepted-ticket rejection and WebView/cold-start behavior. Browser automation currently has no connected browser; unit fixtures and live OIDC discovery are not substitutes for this acceptance gate. A connected browser or operator-assisted test is needed. Google sign-in and Google denial/cancellation will be tested separately after launch.
+The owner authorized phase 2 after confirming signup/sign-in. Before production cutover, record actual results for hosted signup/email verification, email/password login, recovery, logout/re-login, expiry/disabled accounts, Android browser return, intercepted-ticket rejection and WebView/cold-start behavior. Browser automation currently has no connected browser; unit fixtures and live OIDC discovery are not substitutes for this acceptance gate. A connected browser or operator-assisted test is needed. Google sign-in and Google denial/cancellation will be tested separately after launch.
 
 ## Operator signup check
 

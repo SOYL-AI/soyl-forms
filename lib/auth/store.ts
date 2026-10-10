@@ -6,7 +6,7 @@ export function hashAuthToken(value: string): string { return createHash("sha256
 export function nativeChallenge(verifier: string): string { return createHash("sha256").update(verifier).digest("base64url"); }
 
 export interface EntraUser { id: string; email: string | null; email_verified: boolean; display_name: string | null }
-export interface ProviderIdentity { issuer: string; subject: string; email: string | null; emailVerified: boolean; name: string | null }
+export interface ProviderIdentity { objectId?: string | null; issuer: string; subject: string; email: string | null; emailVerified: boolean; name: string | null }
 
 export async function beginAuthTransaction(state: string): Promise<void> {
   await getDatabasePool().query("select identity.begin_oauth($1)", [hashAuthToken(state)]);
@@ -16,8 +16,8 @@ export async function consumeAuthTransaction(state: string): Promise<boolean> {
   return result.rows[0]?.consumed === true;
 }
 export async function resolveEntraUser(identity: ProviderIdentity): Promise<string> {
-  const result = await getDatabasePool().query<{ id: string }>("select identity.resolve_user($1,$2,$3,$4,$5) as id",
-    [identity.issuer, identity.subject, identity.email, identity.emailVerified, identity.name]);
+  const result = await getDatabasePool().query<{ id: string }>("select identity.resolve_verified_user($1,$2,$3,$4,$5,$6) as id",
+    [identity.issuer, identity.subject, identity.email, identity.emailVerified, identity.name, identity.objectId ?? null]);
   if (!result.rows[0]?.id) throw new Error("Identity could not be resolved");
   return result.rows[0].id;
 }

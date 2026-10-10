@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { overview } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { AlertTriangle, ArrowUpRight } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase/admin";
@@ -20,83 +22,7 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string; sub?: 
 }
 
 export default async function SuperAdminOverview() {
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm text-ink-soft">Server misconfigured.</p>;
-  const monthStart = `${new Date().toISOString().slice(0, 7)}-01`;
-
-  const [
-    { count: users },
-    { count: users7d },
-    { count: users30d },
-    { data: signups },
-    { count: workspaces },
-    { count: suspendedWs },
-    { count: publishedForms },
-    { count: closedForms },
-    { count: subsToday },
-    { count: subs7d },
-    { count: subs30d },
-    { data: recentSubmissions },
-    { data: subs },
-    { data: files },
-    { data: deliveries },
-    { data: usage },
-    { data: ledger },
-    { data: lastHour },
-  ] = await Promise.all([
-    admin.from("profiles").select("id", { count: "exact", head: true }),
-    admin.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", dayStart(7)),
-    admin.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", dayStart(30)),
-    admin.from("profiles").select("created_at").gte("created_at", dayStart(30)).limit(5000),
-    admin.from("workspaces").select("id", { count: "exact", head: true }).eq("status", "active"),
-    admin.from("workspaces").select("id", { count: "exact", head: true }).eq("status", "suspended"),
-    admin.from("forms").select("id", { count: "exact", head: true }).eq("status", "published"),
-    admin.from("forms").select("id", { count: "exact", head: true }).eq("status", "closed"),
-    admin.from("submissions").select("id", { count: "exact", head: true }).gte("submitted_at", dayStart(0)),
-    admin.from("submissions").select("id", { count: "exact", head: true }).gte("submitted_at", dayStart(7)),
-    admin.from("submissions").select("id", { count: "exact", head: true }).gte("submitted_at", dayStart(30)),
-    admin.from("submissions").select("submitted_at").gte("submitted_at", dayStart(30)).limit(20000),
-    admin.from("subscriptions").select("plan_code, status, billing_interval"),
-    admin.from("uploaded_files").select("size_bytes").neq("status", "deleted").limit(10000),
-    admin.from("webhook_deliveries").select("http_status").order("delivered_at", { ascending: false, nullsFirst: true }).limit(500),
-    admin.from("usage_monthly").select("workspace_id, completed_submissions, file_storage_bytes, notification_emails").eq("month", monthStart).order("completed_submissions", { ascending: false }).limit(10),
-    admin.from("ai_credit_ledger").select("delta").lt("delta", 0).gte("created_at", dayStart(30)).limit(10000),
-    admin.from("submissions").select("form_id").gte("submitted_at", new Date(Date.now() - 3600_000).toISOString()).limit(10000),
-  ]);
-
-  const revenue = revenueSnapshot((subs ?? []) as Array<{ plan_code: string; status: string; billing_interval: string | null }>);
-  const storageBytes = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
-  const dl = (deliveries ?? []) as Array<{ http_status: number | null }>;
-  const failedDl = dl.filter((d) => d.http_status === null || d.http_status >= 400).length;
-  const creditsSpent = ((ledger ?? []) as Array<{ delta: number }>).reduce((s, l) => s + Math.abs(l.delta), 0);
-
-  const responseSeries = dailySeries(((recentSubmissions ?? []) as Array<{ submitted_at: string }>).map((s) => ({ at: s.submitted_at })), 30, "responses");
-  const signupSeries = dailySeries(((signups ?? []) as Array<{ created_at: string }>).map((s) => ({ at: s.created_at })), 30, "signups");
-  const planMix = [
-    { label: "Free", count: revenue.byPlan.free },
-    { label: "Starter", count: revenue.byPlan.starter },
-    { label: "Pro", count: revenue.byPlan.pro },
-  ];
-
-  // Abuse signals: bursty forms in the last hour.
-  const burst = new Map<string, number>();
-  for (const r of (lastHour ?? []) as Array<{ form_id: string }>) burst.set(r.form_id, (burst.get(r.form_id) ?? 0) + 1);
-  const bursty = [...burst.entries()].filter(([, n]) => n >= 100).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-  // Top workspaces this month with names + plan.
-  const top = (usage ?? []) as Array<{ workspace_id: string; completed_submissions: number; file_storage_bytes: number; notification_emails: number }>;
-  const wsIds = top.map((u) => u.workspace_id);
-  const [{ data: spaces }, { data: topSubs }] = wsIds.length
-    ? await Promise.all([
-        admin.from("workspaces").select("id, name").in("id", wsIds),
-        admin.from("subscriptions").select("workspace_id, plan_code, status, override_reason, override_expires_at").in("workspace_id", wsIds),
-      ])
-    : [{ data: [] }, { data: [] }];
-  const nameById = new Map(((spaces ?? []) as Array<{ id: string; name: string }>).map((w) => [w.id, w.name]));
-  const planById = new Map(
-    ((topSubs ?? []) as Array<{ workspace_id: string; plan_code: string; status: string }>).map((s) => [s.workspace_id, s]),
-  );
-
+  const {users,users7d,users30d,workspaces,suspendedWs,revenue,publishedForms,closedForms,subsToday,subs7d,subs30d,storageBytes,dl,failedDl,creditsSpent,responseSeries,signupSeries,planMix,top,nameById,planById,bursty} = isAzureBackend() ? await overview() : await loadLegacyOverview();
   return (
     <div className="space-y-8">
       <div>
@@ -217,4 +143,85 @@ export default async function SuperAdminOverview() {
       </Card>
     </div>
   );
+}
+
+async function loadLegacyOverview() {
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+  const monthStart = `${new Date().toISOString().slice(0, 7)}-01`;
+
+  const [
+    { count: users },
+    { count: users7d },
+    { count: users30d },
+    { data: signups },
+    { count: workspaces },
+    { count: suspendedWs },
+    { count: publishedForms },
+    { count: closedForms },
+    { count: subsToday },
+    { count: subs7d },
+    { count: subs30d },
+    { data: recentSubmissions },
+    { data: subs },
+    { data: files },
+    { data: deliveries },
+    { data: usage },
+    { data: ledger },
+    { data: lastHour },
+  ] = await Promise.all([
+    admin.from("profiles").select("id", { count: "exact", head: true }),
+    admin.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", dayStart(7)),
+    admin.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", dayStart(30)),
+    admin.from("profiles").select("created_at").gte("created_at", dayStart(30)).limit(5000),
+    admin.from("workspaces").select("id", { count: "exact", head: true }).eq("status", "active"),
+    admin.from("workspaces").select("id", { count: "exact", head: true }).eq("status", "suspended"),
+    admin.from("forms").select("id", { count: "exact", head: true }).eq("status", "published"),
+    admin.from("forms").select("id", { count: "exact", head: true }).eq("status", "closed"),
+    admin.from("submissions").select("id", { count: "exact", head: true }).gte("submitted_at", dayStart(0)),
+    admin.from("submissions").select("id", { count: "exact", head: true }).gte("submitted_at", dayStart(7)),
+    admin.from("submissions").select("id", { count: "exact", head: true }).gte("submitted_at", dayStart(30)),
+    admin.from("submissions").select("submitted_at").gte("submitted_at", dayStart(30)).limit(20000),
+    admin.from("subscriptions").select("plan_code, status, billing_interval"),
+    admin.from("uploaded_files").select("size_bytes").neq("status", "deleted").limit(10000),
+    admin.from("webhook_deliveries").select("http_status").order("delivered_at", { ascending: false, nullsFirst: true }).limit(500),
+    admin.from("usage_monthly").select("workspace_id, completed_submissions, file_storage_bytes, notification_emails").eq("month", monthStart).order("completed_submissions", { ascending: false }).limit(10),
+    admin.from("ai_credit_ledger").select("delta").lt("delta", 0).gte("created_at", dayStart(30)).limit(10000),
+    admin.from("submissions").select("form_id").gte("submitted_at", new Date(Date.now() - 3600_000).toISOString()).limit(10000),
+  ]);
+
+  const revenue = revenueSnapshot((subs ?? []) as Array<{ plan_code: string; status: string; billing_interval: string | null }>);
+  const storageBytes = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
+  const dl = (deliveries ?? []) as Array<{ http_status: number | null }>;
+  const failedDl = dl.filter((d) => d.http_status === null || d.http_status >= 400).length;
+  const creditsSpent = ((ledger ?? []) as Array<{ delta: number }>).reduce((s, l) => s + Math.abs(l.delta), 0);
+
+  const responseSeries = dailySeries(((recentSubmissions ?? []) as Array<{ submitted_at: string }>).map((s) => ({ at: s.submitted_at })), 30, "responses");
+  const signupSeries = dailySeries(((signups ?? []) as Array<{ created_at: string }>).map((s) => ({ at: s.created_at })), 30, "signups");
+  const planMix = [
+    { label: "Free", count: revenue.byPlan.free },
+    { label: "Starter", count: revenue.byPlan.starter },
+    { label: "Pro", count: revenue.byPlan.pro },
+  ];
+
+  // Abuse signals: bursty forms in the last hour.
+  const burst = new Map<string, number>();
+  for (const r of (lastHour ?? []) as Array<{ form_id: string }>) burst.set(r.form_id, (burst.get(r.form_id) ?? 0) + 1);
+  const bursty = [...burst.entries()].filter(([, n]) => n >= 100).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // Top workspaces this month with names + plan.
+  const top = (usage ?? []) as Array<{ workspace_id: string; completed_submissions: number; file_storage_bytes: number; notification_emails: number }>;
+  const wsIds = top.map((u) => u.workspace_id);
+  const [{ data: spaces }, { data: topSubs }] = wsIds.length
+    ? await Promise.all([
+        admin.from("workspaces").select("id, name").in("id", wsIds),
+        admin.from("subscriptions").select("workspace_id, plan_code, status, override_reason, override_expires_at").in("workspace_id", wsIds),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const nameById = new Map(((spaces ?? []) as Array<{ id: string; name: string }>).map((w) => [w.id, w.name]));
+  const planById = new Map(
+    ((topSubs ?? []) as Array<{ workspace_id: string; plan_code: string; status: string }>).map((s) => [s.workspace_id, s]),
+  );
+
+  return {users,users7d,users30d,workspaces,suspendedWs,revenue,publishedForms,closedForms,subsToday,subs7d,subs30d,storageBytes,dl,failedDl,creditsSpent,responseSeries,signupSeries,planMix,top,nameById,planById,bursty};
 }

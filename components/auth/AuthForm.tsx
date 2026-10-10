@@ -12,6 +12,8 @@ import { PLANS, isPlanCode } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { isAzureBackend } from "@/lib/backend";
+import { EntraProofSignIn } from "./EntraProof";
 
 /**
  * Where to send someone after auth. Pricing CTAs pass ?plan=&interval= so
@@ -112,6 +114,13 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     router.refresh();
   }
 
+  if (isAzureBackend()) {
+    return <div className="space-y-4">
+      <p className="text-sm text-ink-soft">Continue with your email and password. You can create an account or reset your password on the secure sign-in page.</p>
+      <EntraProofSignIn next={next} label={mode === "signup" ? "Create your account" : "Sign in securely"} />
+      {params.get("error") && <p role="alert" className="text-sm">Sign-in could not be completed. Please try again.</p>}
+    </div>;
+  }
   if (checkEmail) {
     return (
       <Notice tone="positive" title="Check your inbox">

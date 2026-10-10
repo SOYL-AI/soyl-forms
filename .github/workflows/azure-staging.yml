@@ -1,0 +1,72 @@
+name: Azure staging release
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: azure-staging-release
+  cancel-in-progress: false
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: azure-staging
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      REGISTRY: soylformsn4nsiocbpshei.azurecr.io
+      RESOURCE_GROUP: soyl-forms-staging-rg
+      APP_ORIGIN: https://soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azurecontainerapps.io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: 6bab6008-0fa7-4a06-9c90-76dd66196434
+          subscription-id: f51e344a-8bea-45cb-a18b-506a27c7a031
+      - name: Build and push immutable application image
+        shell: bash
+        run: |
+          set -euo pipefail
+          az acr login --name soylformsn4nsiocbpshei
+          tag="$REGISTRY/soyl-forms:$GITHUB_SHA"
+          docker build --build-arg BACKEND=azure --build-arg APP_URL="$APP_ORIGIN" --build-arg NATIVE_APP_SCHEME=com.soylai.forms.authproof -t "$tag" .
+          docker push "$tag"
+          digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$tag")
+          [[ "$digest" == "$REGISTRY/soyl-forms@sha256:"* ]]
+          echo "APP_IMAGE=$digest" >> "$GITHUB_ENV"
+      - name: Apply migrations before switching application
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The image contains the exact migrations/bootstrap matching this commit.
+          az containerapp job update -g "$RESOURCE_GROUP" -n soyl-forms-migrate --image "$APP_IMAGE" --output none
+          execution=$(az containerapp job start -g "$RESOURCE_GROUP" -n soyl-forms-migrate --query name -o tsv)
+          for attempt in $(seq 1 60); do
+            state=$(az containerapp job execution show -g "$RESOURCE_GROUP" -n soyl-forms-migrate --job-execution-name "$execution" --query properties.status -o tsv)
+            if [[ "$state" == Succeeded ]]; then exit 0; fi
+            if [[ "$state" == Failed || "$state" == Stopped ]]; then echo "Migration failed; application unchanged"; exit 1; fi
+            sleep 5
+          done
+          echo "Migration did not finish; application unchanged"
+          exit 1
+      - name: Roll application and verify readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          az containerapp update -g "$RESOURCE_GROUP" -n soyl-forms-web --image "$APP_IMAGE" --output none
+          target=$(az containerapp show -g "$RESOURCE_GROUP" -n soyl-forms-web --query properties.latestRevisionName -o tsv)
+          for attempt in $(seq 1 60); do
+            ready=$(az containerapp show -g "$RESOURCE_GROUP" -n soyl-forms-web --query properties.latestReadyRevisionName -o tsv)
+            if [[ "$ready" == "$target" ]] && curl --fail --silent --show-error --max-time 10 "$APP_ORIGIN/api/health/ready"; then
+              curl --fail --silent --show-error --max-time 15 "$APP_ORIGIN/login" > /dev/null
+              echo "Staging release verified: $APP_IMAGE" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Staging revision did not become ready; investigate revision logs"
+          exit 1

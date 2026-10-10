@@ -8,9 +8,11 @@ import { RespondentClient } from "@/components/renderer/RespondentClient";
 import { publicSchema } from "@/lib/forms/quiz";
 import { getProductName } from "@/lib/config";
 import { resolveTheme, themeFontsHref } from "@/lib/forms/themes";
-import { getWorkspacePlan } from "@/lib/billing/plan";
+import { getPublicFormPlan } from "@/lib/billing/plan";
 import { PLANS } from "@/lib/plans";
 import type { FormSettings, FormTheme } from "@/types/forms";
+import { isAzureBackend } from "@/lib/backend";
+import { responseCount } from "@/lib/db/repositories/respondents";
 
 export async function generateMetadata(props: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const params = await props.params;
@@ -102,14 +104,14 @@ export default async function PublicFormPage(
 
   const admin = getServiceSupabase()!;
   if (resolved.form.settings.submissionLimit) {
-    const { count } = await admin.from("submissions").select("id", { count: "exact", head: true }).eq("form_id", form.id).is("deleted_at", null);
+    const count = isAzureBackend() ? await responseCount(form.id) : (await admin.from("submissions").select("id", { count: "exact", head: true }).eq("form_id", form.id).is("deleted_at", null)).count;
     if ((count ?? 0) >= resolved.form.settings.submissionLimit) {
       return <Unavailable embed={embed} title="This form is full" message={resolved.form.settings.closedMessage ?? "This form is no longer accepting responses."} />;
     }
   }
 
   // Branding follows the workspace's effective plan (webhook-confirmed).
-  const plan = await getWorkspacePlan(form.workspaceId);
+  const plan = await getPublicFormPlan(form);
   const showBranding = !PLANS[plan].entitlements.removeBranding;
   const theme = resolveTheme(form.theme);
 

@@ -33,6 +33,9 @@ try {
   if (migration.status !== 0) throw new Error("Migration runner failed");
   stage = "grant-runtime-auth";
   await client.query("grant soyl_auth to soyl_runtime");
+  if ((await client.query("select 1 from pg_roles where rolname='soyl_app'")).rowCount) {
+    await client.query("grant soyl_app to soyl_runtime");
+  }
   console.log("Azure database bootstrap completed with separate migration/runtime roles.");
 } catch (error) {
   console.error(JSON.stringify({ event: "azure_database_bootstrap_failed", stage, code: typeof error?.code === "string" && /^[A-Z0-9]{5}$/.test(error.code) ? error.code : "unknown" }));

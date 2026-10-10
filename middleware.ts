@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { authCookieOptions } from "@/lib/supabase/cookies";
 import { isNativeUserAgent } from "@/lib/native";
+import { isAzureBackend } from "@/lib/backend";
 
 /** In the Android app, marketing and purchase pages lead to the app itself (Play Billing policy). */
 const NATIVE_REDIRECTS: Record<string, string> = {
@@ -32,7 +33,7 @@ export async function middleware(request: NextRequest) {
 
   let response = NextResponse.next({ request });
   // Isolated Entra proof must not depend on the legacy provider's availability.
-  if (request.nextUrl.pathname.startsWith("/auth/entra/")) return response;
+  if (isAzureBackend() || request.nextUrl.pathname.startsWith("/auth/entra/")) return response;
   if (!isSupabaseConfigured()) return response;
 
   const supabase = createServerClient(

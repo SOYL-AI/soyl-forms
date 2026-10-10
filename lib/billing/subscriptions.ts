@@ -109,6 +109,7 @@ export interface StoredSubscription {
   plan_code: string;
   status: string;
   override_reason?: string | null;
+  override_plan_code?: string | null;
   override_expires_at?: string | null;
 }
 
@@ -124,7 +125,7 @@ export function resolveEffectivePlan(sub: StoredSubscription | null): {
   if (sub?.override_reason && sub?.plan_code) {
     const exp = sub.override_expires_at ? new Date(sub.override_expires_at).getTime() : NaN;
     if (Number.isNaN(exp) || exp > Date.now()) {
-      const code = sub.plan_code;
+      const code = sub.override_plan_code ?? sub.plan_code;
       if (code === "starter" || code === "pro" || code === "free") {
         return { plan: code, source: "override" };
       }

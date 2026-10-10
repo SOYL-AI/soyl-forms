@@ -1,4 +1,5 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { isAzureBackend } from "@/lib/backend";
 import type { Metadata } from "next";
 import { isEntraProofEnabled } from "@/lib/auth/config";
 import { getEntraSessionUser } from "@/lib/auth/session";
@@ -10,6 +11,10 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Sign-in verification", robots: { index: false, follow: false } };
 
 export default async function EntraProofPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
+  if (isAzureBackend() && process.env.AUTH_PROOF_ONLY !== "true") {
+    const input = await searchParams;
+    redirect(input.error ? "/login?error=auth" : "/login");
+  }
   if (!isEntraProofEnabled()) notFound();
   let unavailable = false;
   const user = await getEntraSessionUser().catch(() => { unavailable = true; return null; });

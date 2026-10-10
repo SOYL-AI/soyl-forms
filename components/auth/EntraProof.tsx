@@ -9,7 +9,7 @@ function base64url(bytes: Uint8Array): string {
   return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function EntraProofSignIn() {
+export function EntraProofSignIn({ next = "/auth/entra/proof", label = "Continue to secure sign-in" }: { next?: string; label?: string }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   async function signIn() {
@@ -17,7 +17,7 @@ export function EntraProofSignIn() {
     setError(null);
     try {
       const url = new URL("/auth/entra/start", window.location.origin);
-      url.searchParams.set("next", "/auth/entra/proof");
+      url.searchParams.set("next", next);
       if (isNativeApp()) {
         const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)));
         sessionStorage.setItem(NATIVE_VERIFIER_KEY, verifier);
@@ -37,7 +37,7 @@ export function EntraProofSignIn() {
   }
   return <div className="space-y-3">
     <button type="button" className="rounded-lg bg-indigo-600 px-5 py-3 font-medium text-white disabled:opacity-60" disabled={busy} onClick={() => void signIn()}>
-      {busy ? "Opening sign-in…" : "Continue to secure sign-in"}
+      {busy ? "Opening sign-in…" : label}
     </button>
     {error && <p role="alert">{error}</p>}
   </div>;

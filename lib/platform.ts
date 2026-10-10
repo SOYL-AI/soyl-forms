@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
+import { isAzureBackend } from "@/lib/backend";
+import { getDatabasePool, withUserTransaction } from "@/lib/db/pool";
 
 /**
  * Operator feature flags (super-admin → Settings). Read server-side at the
@@ -20,6 +22,10 @@ export type PlatformFlags = z.infer<typeof platformFlagsSchema>;
 export const DEFAULT_FLAGS: PlatformFlags = platformFlagsSchema.parse({});
 
 export async function getPlatformFlags(): Promise<PlatformFlags> {
+  if (isAzureBackend()) {
+    const result = await getDatabasePool().query<{ value: unknown }>("select value from platform_settings where key='flags'");
+    return platformFlagsSchema.parse(result.rows[0]?.value ?? {});
+  }
   const admin = getServiceSupabase();
   if (!admin) return DEFAULT_FLAGS;
   try {
@@ -37,6 +43,10 @@ export async function getPlatformFlags(): Promise<PlatformFlags> {
 }
 
 export async function setPlatformFlags(flags: PlatformFlags, updatedBy: string): Promise<void> {
+  if (isAzureBackend()) {
+    await withUserTransaction(updatedBy, db => db.query("select platform.set_flags($1)", [JSON.stringify(platformFlagsSchema.parse(flags))]));
+    return;
+  }
   const admin = getServiceSupabase();
   if (!admin) throw new Error("Server misconfigured.");
   const { error } = await admin.from("platform_settings").upsert(

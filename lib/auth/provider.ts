@@ -51,6 +51,7 @@ export async function exchangeAuthorization(url: URL, transaction: AuthTransacti
   }
   return {
     issuer: claims.iss, subject: claims.sub,
+    objectId: typeof claims.oid === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(claims.oid) ? claims.oid : null,
     email: typeof claims.email === "string" ? claims.email : null,
     // Entra may omit email_verified. Do not infer ownership from the email claim alone.
     emailVerified: claims.email_verified === true,

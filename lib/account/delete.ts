@@ -6,6 +6,9 @@ import { deleteR2Object, isR2Configured } from "@/lib/r2";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 
+import { isAzureBackend } from "@/lib/backend";
+import { requestDeletion } from "./azure-delete";
+
 const DELETE_CONFIRMATION = "DELETE";
 
 /**
@@ -19,12 +22,13 @@ const DELETE_CONFIRMATION = "DELETE";
  * 4. Detach them from records in workspaces they don't own (nullable FKs).
  * 5. Delete the auth user (profile, memberships, admin role cascade).
  */
-export async function deleteMyAccount(args: { confirmation: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function deleteMyAccount(args: { confirmation: string }): Promise<{ ok: true; pending?: boolean } | { ok: false; error: string }> {
   if (args.confirmation.trim().toUpperCase() !== DELETE_CONFIRMATION) {
     return { ok: false, error: `Type ${DELETE_CONFIRMATION} to confirm.` };
   }
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
+  if(isAzureBackend()) return requestDeletion(userId);
   const admin = getServiceSupabase();
   if (!admin) return { ok: false, error: "Account deletion is temporarily unavailable. Please try again later." };
 

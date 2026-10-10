@@ -1,10 +1,15 @@
-import { createHmac } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getSessionUserId } from "@/lib/supabase/server";
 import { AI_CREDIT_PACKS } from "@/lib/plans";
 import { getAiBalance, getUserWorkspaceId } from "@/lib/workspaces";
+import { isAzureBackend } from "@/lib/backend";
+import { purchaseCredits } from "@/lib/db/repositories/billing";
+import { databaseResult } from "@/lib/db/result";
+import { verifyCreditPurchase } from "@/lib/billing/provider-api";
+import { readWorkspaceRole } from "@/lib/db/repositories/workspaces";
 
 const verifySchema = z.object({
   orderId: z.string().min(1).max(100),
@@ -39,7 +44,7 @@ export async function POST(req: Request) {
   const expected = createHmac("sha256", secret)
     .update(`${body.data.orderId}|${body.data.paymentId}`)
     .digest("hex");
-  if (expected !== body.data.signature) {
+  if (expected.length!==body.data.signature.length || !timingSafeEqual(Buffer.from(expected),Buffer.from(body.data.signature))) {
     return NextResponse.json({ error: "Payment signature mismatch." }, { status: 400 });
   }
 
@@ -47,13 +52,20 @@ export async function POST(req: Request) {
   if (!workspaceId) {
     return NextResponse.json({ error: "No workspace yet." }, { status: 400 });
   }
+  if(isAzureBackend() && await readWorkspaceRole(userId,workspaceId)!=='owner') return NextResponse.json({error:'Only workspace owners manage billing.'},{status:403});
+  try {
+    if(!await verifyCreditPurchase({workspaceId,packId:pack.id,credits:pack.credits,amount:pack.paise,orderId:body.data.orderId,paymentId:body.data.paymentId})) {
+      return NextResponse.json({error:"This captured payment does not match this credit pack and workspace."},{status:400});
+    }
+  } catch {return NextResponse.json({error:"Could not confirm the payment with Razorpay. Please retry."},{status:502});}
   const admin = getServiceSupabase();
-  const { data: balance } = await admin!.rpc("grant_ai_credits", {
+  const { data: balance,error } = isAzureBackend() ? await databaseResult(purchaseCredits(userId,workspaceId,pack.credits,body.data.paymentId)) : await admin!.rpc("grant_ai_credits", {
     p_workspace_id: workspaceId,
     p_amount: pack.credits,
     p_reason: "purchase",
     p_ref: body.data.paymentId,
   });
+  if(error) return NextResponse.json({error:"Could not apply the purchase. Please retry."},{status:503});
   void balance;
 
   return NextResponse.json({ ok: true, balance: await getAiBalance(workspaceId) });

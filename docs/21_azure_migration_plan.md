@@ -1,6 +1,6 @@
 # Azure lean launch migration proposal
 
-Date: 10 October 2026. Status: approved; phase 1 implementation in progress on `migration/azure-lean-launch`. Production cutover has not happened.
+Date: 10 October 2026. Status: approved; owner confirmed hosted signup/sign-in and authorized phase 2 to proceed on `migration/azure-lean-launch`. Database/application conversion is in progress. Recovery, logout/re-login and Android acceptance remain production cutover gates. Production cutover has not happened.
 
 Launch scope updated by the owner on 10 October 2026: Google sign-in is deferred until after launch. Email/password through Entra External ID is the launch method; Google configuration and acceptance do not block this migration. Web and Android email/password authentication acceptance remain required.
 

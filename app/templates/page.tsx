@@ -5,7 +5,7 @@ import { TemplateGallery } from "@/components/marketing/TemplateGallery";
 import { AppShell } from "@/components/app/AppShell";
 import { PageHeader } from "@/components/ui/card";
 import { getAppContext } from "@/lib/app-context";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { TEMPLATES } from "@/lib/forms/templates";
 
 export const metadata: Metadata = {
@@ -15,7 +15,7 @@ export const metadata: Metadata = {
 
 export default async function TemplatesPage(props: { searchParams?: Promise<{ category?: string }> }) {
   const searchParams = await props.searchParams;
-  const ctx = isSupabaseConfigured() ? await getAppContext() : null;
+  const ctx = isApplicationConfigured() ? await getAppContext() : null;
   const signedIn = Boolean(ctx?.ok);
 
   if (ctx?.ok) {

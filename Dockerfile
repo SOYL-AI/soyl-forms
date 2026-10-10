@@ -5,6 +5,9 @@ RUN npm ci
 
 FROM dependencies AS builder
 COPY . .
+ARG BACKEND=supabase
+ARG APP_URL=https://forms.soylai.com
+ENV NEXT_PUBLIC_BACKEND=$BACKEND NEXT_PUBLIC_APP_URL=$APP_URL
 ARG NATIVE_APP_SCHEME=com.soylai.forms
 ENV NEXT_PUBLIC_NATIVE_APP_SCHEME=$NATIVE_APP_SCHEME
 ENV NEXT_TELEMETRY_DISABLED=1
@@ -18,6 +21,7 @@ COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
 COPY --from=builder --chown=nextjs:nextjs /app/public ./public
 COPY --from=builder --chown=nextjs:nextjs /app/azure/migrations ./azure/migrations
+COPY --from=builder --chown=nextjs:nextjs /app/scripts/azure/run-job.mjs ./scripts/azure/
 COPY --from=builder --chown=nextjs:nextjs /app/scripts/azure/migrate.mjs /app/scripts/azure/bootstrap-database.mjs ./scripts/azure/
 USER nextjs
 EXPOSE 3000

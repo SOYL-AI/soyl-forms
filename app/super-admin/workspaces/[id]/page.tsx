@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { workspaceDetail } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -13,41 +15,14 @@ import { FormStatusButton, OverrideForm, WorkspaceStatusButton } from "../../Con
 
 export default async function AdminWorkspaceDetail(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   if (!/^[0-9a-f-]{36}$/i.test(params.id)) notFound();
-
-  const { data: wsRow } = await admin.from("workspaces").select("id, name, slug, status, owner_user_id, created_at").eq("id", params.id).maybeSingle();
-  const ws = wsRow as { id: string; name: string; slug: string; status: string; owner_user_id: string; created_at: string } | null;
-  if (!ws) notFound();
-  const month = `${new Date().toISOString().slice(0, 7)}-01`;
-
-  const [{ data: sub }, { data: members }, { data: forms }, { data: usage }, { data: history }, { data: files }, { data: credits }, { data: kits }, { data: audit }] =
-    await Promise.all([
-      admin.from("subscriptions").select("*").eq("workspace_id", ws.id).maybeSingle(),
-      admin.from("workspace_members").select("user_id, role, created_at").eq("workspace_id", ws.id),
-      admin.from("forms").select("id, title, slug, status, updated_at, published_at").eq("workspace_id", ws.id).order("updated_at", { ascending: false }).limit(100),
-      admin.from("usage_monthly").select("*").eq("workspace_id", ws.id).eq("month", month).maybeSingle(),
-      admin.from("usage_monthly").select("month, completed_submissions, notification_emails, webhook_attempts").eq("workspace_id", ws.id).order("month", { ascending: false }).limit(6),
-      admin.from("uploaded_files").select("size_bytes, kind").eq("workspace_id", ws.id).neq("status", "deleted").limit(10000),
-      admin.from("ai_credits").select("balance").eq("workspace_id", ws.id).maybeSingle(),
-      admin.from("brand_kits").select("id, name, is_default").eq("workspace_id", ws.id),
-      admin.from("audit_logs").select("id, action, actor_user_id, metadata, created_at").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(20),
-    ]);
-
+  const result=isAzureBackend() ? await workspaceDetail(params.id) : await loadLegacyWorkspace(params.id);
+  if(!result) notFound();
+  const {ws,sub,members,forms,usage,history,storage,live,credits,kits,audit,emails}=result;
   const stored = (sub ?? null) as (StoredSubscription & Record<string, string | null | boolean>) | null;
   const effective = resolveEffectivePlan(stored);
   const ent = PLANS[effective.plan].entitlements;
   const u = (usage ?? {}) as { completed_submissions?: number; notification_emails?: number; webhook_attempts?: number };
-  const storage = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
-  const memberIds = ((members ?? []) as Array<{ user_id: string }>).map((m) => m.user_id);
-  const emails = new Map<string, string>();
-  for (const id of memberIds) {
-    const { data } = await admin.auth.admin.getUserById(id);
-    if (data?.user?.email) emails.set(id, data.user.email);
-  }
-  const live = ((forms ?? []) as Array<{ status: string }>).filter((f) => f.status === "published").length;
-
   return (
     <div className="space-y-6">
       <Link href="/super-admin/workspaces" className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink-soft hover:text-ink">
@@ -240,4 +215,39 @@ export default async function AdminWorkspaceDetail(props: { params: Promise<{ id
       </Card>
     </div>
   );
+}
+
+async function loadLegacyWorkspace(id:string){
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
+
+  const { data: wsRow } = await admin.from("workspaces").select("id, name, slug, status, owner_user_id, created_at").eq("id", id).maybeSingle();
+  const ws = wsRow as { id: string; name: string; slug: string; status: string; owner_user_id: string; created_at: string } | null;
+  if (!ws) notFound();
+  const month = `${new Date().toISOString().slice(0, 7)}-01`;
+
+  const [{ data: sub }, { data: members }, { data: forms }, { data: usage }, { data: history }, { data: files }, { data: credits }, { data: kits }, { data: audit }] =
+    await Promise.all([
+      admin.from("subscriptions").select("*").eq("workspace_id", ws.id).maybeSingle(),
+      admin.from("workspace_members").select("user_id, role, created_at").eq("workspace_id", ws.id),
+      admin.from("forms").select("id, title, slug, status, updated_at, published_at").eq("workspace_id", ws.id).order("updated_at", { ascending: false }).limit(100),
+      admin.from("usage_monthly").select("*").eq("workspace_id", ws.id).eq("month", month).maybeSingle(),
+      admin.from("usage_monthly").select("month, completed_submissions, notification_emails, webhook_attempts").eq("workspace_id", ws.id).order("month", { ascending: false }).limit(6),
+      admin.from("uploaded_files").select("size_bytes, kind").eq("workspace_id", ws.id).neq("status", "deleted").limit(10000),
+      admin.from("ai_credits").select("balance").eq("workspace_id", ws.id).maybeSingle(),
+      admin.from("brand_kits").select("id, name, is_default").eq("workspace_id", ws.id),
+      admin.from("audit_logs").select("id, action, actor_user_id, metadata, created_at").eq("workspace_id", ws.id).order("created_at", { ascending: false }).limit(20),
+    ]);
+
+  const storage = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
+  const memberIds = ((members ?? []) as Array<{ user_id: string }>).map((m) => m.user_id);
+  const emails = new Map<string, string>();
+  for (const id of memberIds) {
+    const { data } = await admin.auth.admin.getUserById(id);
+    if (data?.user?.email) emails.set(id, data.user.email);
+  }
+  const live = ((forms ?? []) as Array<{ status: string }>).filter((f) => f.status === "published").length;
+
+  return {ws,sub,members,forms,usage,history,storage,live,credits,kits,audit,emails};
 }
