@@ -4,6 +4,8 @@ Date: 10 October 2026. Status: approved; owner confirmed hosted signup/sign-in a
 
 Launch scope updated by the owner on 10 October 2026: Google sign-in is deferred until after launch. Email/password through Entra External ID is the launch method; Google configuration and acceptance do not block this migration. Web and Android email/password authentication acceptance remain required.
 
+Data decision confirmed by the owner on 11 October 2026: launch with the fresh Azure database and leave the old Supabase data archived. Do not import legacy accounts, forms or responses, and do not delete their source data or verified object backup. Bootstrap the explicitly designated administrator through its dedicated Entra account; no automatic legacy identity linking is needed.
+
 Owner confirmed a dedicated SOYL Forms identity tenant and USD 4,600 of Azure credits shared across company projects. Credit expiry remains unconfirmed. Isolated resource group: `soyl-forms-staging-rg` (Central India). External ID tenant: `soylforms.onmicrosoft.com`, tenant ID `47f0c7e0-77a5-4ae0-b3b4-b9b48269d014` (Asia Pacific identity geography). Existing company resources are outside this migration's scope.
 
 ## Objective and boundaries

@@ -59,7 +59,7 @@ Rolling updates from revision 2 to revision 3 during steady traffic and revision
 
 Preserved source export: 29 tables/109 rows, including four old accounts, five forms, eight responses and one file reference. The REST export had matching double reads, but is **not an atomic PostgreSQL snapshot**. Take a final consistent export during a write freeze if importing at cutover. Archive and credentials remain in ignored local storage; neither customer data nor secrets belong in Git.
 
-The one referenced R2 object was downloaded and verified using conditional ETag reads, a second HEAD, byte count and SHA-256. No source data/object was deleted. The owner must choose whether to import the old internal data or launch clean while preserving it. Do not merge identities by email automatically; any account/workspace mapping needs an explicit verified identity migration.
+The one referenced R2 object was downloaded and verified using conditional ETag reads, a second HEAD, byte count and SHA-256. No source data/object was deleted. **On 11 October 2026 the owner selected a fresh Azure launch, leaving all old Supabase accounts, forms and responses in the archive. No legacy import or identity mapping will run.** Preserve the existing Azure owner identity and platform configuration; a fresh launch does not require dropping the already provisioned database. Do not merge identities by email automatically.
 
 Actual Azure PITR drill:
 
@@ -94,7 +94,7 @@ CI now runs the regular checks and a separate PostgreSQL 17 service job that app
 
 Before production cutover:
 
-1. Resolve the old-data decision and validate any import, account mapping and final source snapshot.
+1. Data decision resolved: launch fresh; retain the source Supabase data, local export and verified R2 backup without importing them. Verify the designated initial administrator in Azure before cutover.
 2. Azure Communication Services Email is provisioned in India with a verified Azure sender and a dedicated managed-identity grant. The real single-notification pipeline and accounting passed. Confirm inbox placement, verify the prepared custom sender domain in GoDaddy, request the required email quota, then complete respondent/invitation receipt and delivery/bounce monitoring. No Resend key is needed for the Azure target. Default managed-domain throughput is only 10 emails/hour. ACS Email retires 30 September 2028; treat it as a temporary provider and follow the replacement deadlines in docs/24.
 3. Complete password recovery, logout/re-login, explicit email verification observation, every interactive creator/form feature and real in-app deletion. The CLI operator lacks permission to inspect the Entra email OTP policy; a tenant administrator must verify/reset policy through the tenant's normal administration flow. Do not grant the runtime application policy-write permission for setup.
 4. Test Android signup/login/recovery/logout/system-browser return and actual device forms/files/payments. A separate QA APK is available locally; no store release has occurred.

@@ -46,7 +46,7 @@ jobs:
       - run: node scripts/azure/migrate.mjs
       - run: node scripts/azure/migrate.mjs
       - run: node scripts/azure/grant-auth-role.mjs
-      - run: npx vitest run tests/azure-auth-postgres.test.ts tests/azure-platform-postgres.test.ts
+      - run: npx vitest run tests/azure-auth-postgres.test.ts tests/azure-platform-postgres.test.ts tests/azure-superadmin-bootstrap-postgres.test.ts
       - run: npm run build
         env:
           NEXT_PUBLIC_BACKEND: azure
