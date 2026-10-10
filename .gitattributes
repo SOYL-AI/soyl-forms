@@ -1,2 +1,7 @@
 # Migration checksums must be identical on Windows and Linux.
 azure/migrations/*.sql text eol=lf
+# These three files were originally applied with CRLF bytes. Preserve their
+# exact deployed SHA-256 checksums; all new SQL migrations continue to use LF.
+azure/migrations/0021_account_deletion.sql -text whitespace=cr-at-eol
+azure/migrations/0022_launch_guards.sql -text whitespace=cr-at-eol
+azure/migrations/0023_deletion_privacy.sql -text whitespace=cr-at-eol

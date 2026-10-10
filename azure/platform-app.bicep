@@ -6,16 +6,19 @@ param integrationSettings array
 param tenantId string = '47f0c7e0-77a5-4ae0-b3b4-b9b48269d014'
 param clientId string = 'bccc18ff-25c7-426e-827f-1ff928f98de9'
 param emailEndpoint string = 'https://soyl-forms-communication.india.communication.azure.com'
+param appOrigin string = ''
+@allowed(['staging','production'])
+param deploymentStage string = 'staging'
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = { name: 'soyl-forms-env' }
 resource runtimeIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = { name: 'soyl-forms-runtime' }
-var appOrigin = 'https://soyl-forms-web.${environment.properties.defaultDomain}'
+var resolvedAppOrigin = empty(appOrigin) ? 'https://soyl-forms-web.${environment.properties.defaultDomain}' : appOrigin
 var integrationSecrets=[for setting in integrationSettings: {name:setting.secretName,keyVaultUrl:'${vaultUri}secrets/${setting.secretName}',identity:runtimeIdentity.id}]
 var integrationEnv=[for setting in integrationSettings: {name:setting.envName,secretRef:setting.secretName}]
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: 'soyl-forms-web'
   location: location
-  tags: { project: 'soyl-forms', environment: 'staging' }
+  tags: { project: 'soyl-forms', environment: deploymentStage }
   identity: { type: 'UserAssigned', userAssignedIdentities: { '${runtimeIdentity.id}': {} } }
   properties: {
     managedEnvironmentId: environment.id
@@ -39,11 +42,11 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         resources: { cpu: json('0.5'), memory: '1Gi' }
         env: concat([
           { name: 'TRUSTED_PROXY', value: 'azure' }
-          { name: 'APP_ORIGIN', value: appOrigin }
+          { name: 'APP_ORIGIN', value: resolvedAppOrigin }
           { name: 'ENTRA_AUTH_PROOF_ENABLED', value: 'true' }
           { name: 'ENTRA_TENANT_ID', value: tenantId }
           { name: 'ENTRA_CLIENT_ID', value: clientId }
-          { name: 'ENTRA_APP_ORIGIN', value: appOrigin }
+          { name: 'ENTRA_APP_ORIGIN', value: resolvedAppOrigin }
           { name: 'DATABASE_URL', secretRef: 'database-url' }
           { name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }
           { name: 'AUTH_SESSION_SECRET', secretRef: 'session-secret' }
@@ -61,4 +64,4 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
     }
   }
 }
-output origin string = appOrigin
+output origin string = resolvedAppOrigin

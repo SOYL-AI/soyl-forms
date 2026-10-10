@@ -4,7 +4,7 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: azure-staging-release
+  group: azure-platform-release
   cancel-in-progress: false
 jobs:
   verify:
@@ -31,6 +31,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          current_origin=$(az containerapp show -g "$RESOURCE_GROUP" -n soyl-forms-web --query "properties.template.containers[0].env[?name=='APP_ORIGIN'].value | [0]" -o tsv)
+          [[ "$current_origin" == "$APP_ORIGIN" ]] || { echo "Preview releases are disabled after production cutover"; exit 1; }
           az acr login --name soylformsn4nsiocbpshei
           tag="$REGISTRY/soyl-forms:$GITHUB_SHA"
           docker build --build-arg BACKEND=azure --build-arg APP_URL="$APP_ORIGIN" --build-arg NATIVE_APP_SCHEME=com.soylai.forms.authproof -t "$tag" .

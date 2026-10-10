@@ -10,7 +10,8 @@ resource release 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' =
 resource github 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31' = {
   parent:release
   name:'github-staging-environment'
-  properties:{issuer:'https://token.actions.githubusercontent.com',subject:'repo:SOYL-AI/soyl-forms:environment:azure-staging',audiences:['api://AzureADTokenExchange']}
+  // This repository emits GitHub's immutable organization/repository IDs in sub.
+  properties:{issuer:'https://token.actions.githubusercontent.com',subject:'repo:SOYL-AI@258314092/soyl-forms@1374943497:environment:azure-staging',audiences:['api://AzureADTokenExchange']}
 }
 resource push 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name:guid(registry.id,release.id,'acr-push')

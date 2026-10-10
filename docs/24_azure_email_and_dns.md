@@ -51,6 +51,20 @@ Production app records, to apply as part of coordinated cutover:
 
 The TXT ownership record can be added beforehand. **Do not switch the existing forms CNAME until the production application configuration, data decision, Entra callbacks and domain/certificate procedure are ready.** It currently targets `1feabb4b68b07b2a.vercel-dns-017.com`. Preserve that value for the pre-write rollback window. Azure managed certificate issuance requires correct public DNS and compatible CAA records. Once Azure accepts new writes, do not revert to stale Supabase without reconciliation.
 
+## Production release procedure
+
+The main-branch `azure-production.yml` workflow uses the separate `azure-production` GitHub environment and `soyl-forms-production-release` identity. The environment permits only main. Both release workflows share one concurrency group to prevent simultaneous deployments to the same lean application. Preview releases refuse a runtime that has already switched to the production origin.
+
+Resolve data mapping and provider/user acceptance first. Register `https://forms.soylai.com` through `scripts/azure/set-identity-origin.ps1 -RegisterOnly` (already prepared during identity setup). Plan a brief cutover window: change the DNS records, run `scripts/azure/prepare-production-domain.ps1 -Bind`, then dispatch `gh workflow run azure-production.yml --ref main`. Certificate issuance can take several minutes. The domain script checks public CNAME and ownership TXT before changing Azure; check CAA authorization for DigiCert as well.
+
+The workflow refuses deployment unless public DNS targets Azure, the custom domain has an SNI certificate binding and HTTPS readiness works. It then builds with the production origin and normal Android scheme `com.soylai.forms`, applies migrations before app rollout, sets both runtime origins to production and checks the new revision. Confirm actual login/form/payment/email flows afterward. This is a release procedure prepared for the authorized cutover, not evidence that production DNS or interactive acceptance is already complete.
+
+When reapplying `azure/platform-app.bicep` after cutover, pass `appOrigin=https://forms.soylai.com` and `deploymentStage=production`; keep the deployed integration settings and email endpoint. The scheduler can continue calling the generated Azure hostname with its secret.
+
+GitHub emits immutable IDs in this repository's OIDC subject: `repo:SOYL-AI@258314092/soyl-forms@1374943497:environment:azure-staging` (or `azure-production`). Both Bicep trust records use the observed format. The first release sign-in rejected the older name-only subject before making app/database changes; the trust was corrected without introducing a stored password or widening resource permissions.
+
+The next release attempt stopped at strict migration checksum validation: migrations 0021, 0022 and 0023 were originally applied with CRLF bytes before Git normalization. They were extracted from the exact previously successful migration image `sha256:74a9f03069ca3cd71e710deebc59778ce0da5c423c06cafeb6875c4b5b976f69`; comparing all 24 files proved only those line endings differed, with identical SQL after LF normalization. Their exact original bytes are restored, and `.gitattributes` disables conversion for these three files only. No applied SQL content, stored history checksum or validator rule was changed. New migrations remain LF. Local strict verification passes all 26 files with the restored bytes.
+
 ## References
 
 - [ACS repeatable requests](https://learn.microsoft.com/en-us/rest/api/communication/repeatable-requests)
@@ -59,3 +73,5 @@ The TXT ownership record can be added beforehand. **Do not switch the existing f
 - [Email service limits](https://learn.microsoft.com/en-us/azure/communication-services/concepts/service-limits#email)
 - [Managed identity email authorization](https://learn.microsoft.com/en-us/samples/azure-samples/communication-services-dotnet-quickstarts/email-sample-send-email-with-managed-identity/)
 - [Data residency](https://learn.microsoft.com/en-us/azure/communication-services/concepts/privacy)
+- [GitHub OIDC subject formats](https://docs.github.com/en/actions/reference/security/oidc)
+- [Container Apps managed certificates](https://learn.microsoft.com/en-us/azure/container-apps/custom-domains-managed-certificates)
