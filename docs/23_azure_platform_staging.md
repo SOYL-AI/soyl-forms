@@ -10,8 +10,8 @@ Preview: https://soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azureconta
 | --- | --- |
 | Resource group | `soyl-forms-staging-rg`, Central India |
 | Web application | `soyl-forms-web`, Container Apps Consumption, 0.5 CPU/1 GiB, min 1/max 3 replicas, HTTP concurrency 20 |
-| Application image | `soylformsn4nsiocbpshei.azurecr.io/soyl-forms@sha256:a6ff1d1030074bee9aba52661784f72a097bf6d124ee068e5706edb491749ae6` |
-| Current revision | `soyl-forms-web--0000003` |
+| Application image | `soylformsn4nsiocbpshei.azurecr.io/soyl-forms@sha256:9df7e57fa8705374d16b56f987b83049227d3bd270f4f4845853a68b741f0415` |
+| Current revision | `soyl-forms-web--0000004` |
 | PostgreSQL | `soyl-forms-pg-n4nsiocbpshei`, PostgreSQL 17, B1ms, 32 GiB, private network only, 7-day PITR, no HA |
 | Schema | Azure migrations `0001` through `0024`; immutable SHA-256 migration history and advisory locking |
 | Migration image | `soylformsn4nsiocbpshei.azurecr.io/soyl-forms-migrations@sha256:74a9f03069ca3cd71e710deebc59778ce0da5c423c06cafeb6875c4b5b976f69` |
@@ -31,19 +31,27 @@ The migration covers creator/dashboard/builder operations, public submissions/pr
 
 | Check | Result and limit |
 | --- | --- |
-| Regular regression suite | 299 passed, 19 opt-in PostgreSQL tests skipped; typecheck and lint passed, including three directory-deletion regression tests |
-| Real PostgreSQL | All 19 auth/platform integration tests passed using the non-owner runtime role, including cross-workspace access, concurrent quotas/invitations, immutable publications, lease fencing, MCP, billing accounting and durable deletion |
+| Regular regression suite | 299 passed, 20 opt-in PostgreSQL tests skipped; typecheck and lint passed, including three directory-deletion regression tests |
+| Real PostgreSQL | All 20 auth/platform integration tests passed using the non-owner runtime role, including cross-workspace access, concurrent quotas/invitations, immutable publications, lease fencing, MCP, billing accounting and durable deletion. Fifty concurrent calls on a shared rate key admit exactly twenty |
 | CSV | More than 10,000 rows streamed and checked for complete output, tags and final row; repeatable-read snapshot, bounded cursor chunks and cancellation cleanup |
 | Azure image | Full Next.js production build passed in Docker; runtime runs as a non-root user |
 | Staging HTTP smoke | Execution `soyl-forms-verification-19hq170` succeeded: real SSR, progress, resume save/read/invalidation, retry-safe submission, actual R2 PUT/verification/attachment, anonymous private download denied and concurrent submissions |
 | Smoke accounting | 4 seed + 12 acknowledged = 16 database rows = 16 usage. Free-response outbox drained; two test workspaces/users and the R2 test object removed |
 | Directory provider | A dedicated generated customer fixture was created/deleted with real Graph application credentials; deletion retry verified and all generated directory fixtures removed. In-app interactive deletion remains an acceptance gate |
 | Cleanup | Actual scheduled-job execution `soyl-forms-cleanup-14f8gqx` succeeded against the deployed app |
-| Sustained load | Running under execution `soyl-forms-verification-oa9qzp2`; final results will be recorded after accounting verification and fixture cleanup |
+| Sustained load | Execution `soyl-forms-verification-oa9qzp2`: steady 9,000/9,000 accepted, p95 34 ms/p99 101 ms; burst 3,000/3,000 accepted, p95 34 ms/p99 90 ms. Zero unexpected errors or rate-limit rejections in these phases |
+| Load accounting | 10,000 seed + 12,052 unique acknowledged responses = 22,052 rows = 22,052 usage; checked at `16:45:31Z`. Outbox drained by `16:47:21Z` in scheduler logs and confirmed by the runner at `16:47:31Z`; all 100 synthetic users/workspaces and the test R2 object were removed at `16:47:32Z` |
+| Billing plans | All four real Razorpay test plan IDs match application amount, INR currency and interval: Starter 199/month or 1,990/year; Pro 499/month or 4,990/year. No charge was made by this read-only check |
+| GitHub CI | Both regular and PostgreSQL jobs passed on code commit `d095c5b` (run `38068836404`), including clean legacy and Azure builds |
+| Isolated hot-form check | Execution `soyl-forms-hot-form-verification-onijwl7` passed: 50 simultaneous requests to one form, 40 accepted/10 intentional 429s over two real source buckets, completed in 674 ms. Exact database/usage accounting, outbox drain and removal of two users/workspaces plus the R2 object passed |
 
 The load runner seeds 100 labelled synthetic creator workspaces and 10,000 responses, exercises 50 simultaneous submissions, 5 submissions/second for 30 minutes and 10/second for five minutes, plus public page reads. It uses the actual deployed API and rate limiter. Requests originate in Azure Central India and are spread over 100 forms. This measures regional API throughput, not end-user browser latency or geographically distributed traffic to one hot form. The smoke test separately exercises ten concurrent submissions in the same workspace. Payment/provider and paid email throughput are outside the measured submission latency.
 
-A rolling update from revision 2 to revision 3 was performed during steady traffic. Inspect the final load report before claiming restart/revision recovery passed.
+The load execution succeeded after exact accounting, outbox drain (approximately two minutes after the burst) and cleanup. Cloud logs showed a burst backlog of 513 at `16:45:29Z`, 38 at `16:46:25Z` and zero at `16:47:21Z`, with no terminal failures. The app scaled from one to two replicas during the combined concurrency checks. Database CPU in a five-minute window covering early burst traffic averaged 15.4%/maximum 25.5%; connections averaged 15.8/maximum 19. These are observed windows, not promised maximums or evidence of indefinite B1ms CPU-credit headroom.
+
+Run `--hot` after other automated fixtures have been removed: the check compares newly created HMAC rate-bucket counts and deliberately refuses concurrent fixture runs. Azure job traffic used two outbound source buckets, so expecting twenty accepted requests across the entire runner would be incorrect; the actual gate is twenty per IP/form/minute. Early QA attempts exposed this test assumption and bucket interference from the ongoing distributed-form run; their fixtures were removed. The isolated retry verified the correct boundary without forged IP headers or an abuse-control bypass. This small burst is not a sustained single-form capacity guarantee.
+
+Rolling updates from revision 2 to revision 3 during steady traffic and revision 3 to revision 4 near the end of the burst caused no observed failures in this run. This verifies these application rollouts, not all worker/provider crash cases.
 
 ## Backups and actual restore drill
 
@@ -89,7 +97,7 @@ Before production cutover:
 3. Complete password recovery, logout/re-login, explicit email verification observation, every interactive creator/form feature and real in-app deletion. The CLI operator lacks permission to inspect the Entra email OTP policy; a tenant administrator must verify/reset policy through the tenant's normal administration flow. Do not grant the runtime application policy-write permission for setup.
 4. Test Android signup/login/recovery/logout/system-browser return and actual device forms/files/payments. A separate QA APK is available locally; no store release has occurred.
 5. Complete real Razorpay test checkouts for subscriptions, cancellation, credit packs and form payments, plus duplicate/out-of-order events. Test webhook configuration alone is not payment acceptance. Configure production callbacks/webhook secret and perform controlled live-mode acceptance before public paid traffic.
-6. Finish sustained load, accounting/cleanup, deliberately hot-form/rate-limit tests, worker restart recovery, real webhook/Sheets delivery and AI smoke. Capture the limits of each result.
+6. Sustained load, exact accounting/cleanup and a hot-form rate-limit burst passed. Complete worker restart recovery, real webhook/Sheets delivery and AI smoke; use geographically distributed hot-form tests when forecasting larger bursts. Capture the limits of each result.
 7. Verify alert delivery/external uptime, exercise the CI release, review dependency findings, credit expiry and actual costs, then produce the concrete production cutover for final review.
 
 Production runtime dependency audit currently reports zero vulnerabilities. Seven high findings remain in development/build tooling through the braces dependency; the available force changes would change major toolchains and are not a safe unattended fix. Do not classify the entire dependency tree as clean.
