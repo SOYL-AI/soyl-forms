@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { auditList } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { Table, Td, Th, Mono } from "@/components/ui/table";
@@ -6,31 +8,8 @@ import { SearchForm } from "../Controls";
 
 export default async function AdminAuditPage(props: { searchParams?: Promise<{ q?: string }> }) {
   const searchParams = await props.searchParams;
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   const q = searchParams?.q?.trim() ?? "";
-
-  let query = admin
-    .from("audit_logs")
-    .select("id, actor_user_id, actor_type, action, target_type, target_id, workspace_id, metadata, created_at")
-    .order("created_at", { ascending: false })
-    .limit(200);
-  if (q) {
-    query = /^[0-9a-f-]{36}$/i.test(q) ? query.or(`workspace_id.eq.${q},actor_user_id.eq.${q},target_id.eq.${q}`) : query.ilike("action", `%${q}%`);
-  }
-  const { data } = await query;
-  const rows = (data ?? []) as Array<{
-    id: string;
-    actor_user_id: string | null;
-    actor_type: string;
-    action: string;
-    target_type: string;
-    target_id: string | null;
-    workspace_id: string | null;
-    metadata: Record<string, unknown>;
-    created_at: string;
-  }>;
-
+  const {rows} = isAzureBackend() ? {rows:await auditList(q)} : await loadLegacyAudit(q);
   return (
     <div className="space-y-6">
       <div>
@@ -95,4 +74,32 @@ export default async function AdminAuditPage(props: { searchParams?: Promise<{ q
       </Table>
     </div>
   );
+}
+
+async function loadLegacyAudit(q:string) {
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+
+  let query = admin
+    .from("audit_logs")
+    .select("id, actor_user_id, actor_type, action, target_type, target_id, workspace_id, metadata, created_at")
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (q) {
+    query = /^[0-9a-f-]{36}$/i.test(q) ? query.or(`workspace_id.eq.${q},actor_user_id.eq.${q},target_id.eq.${q}`) : query.ilike("action", `%${q}%`);
+  }
+  const { data } = await query;
+  const rows = (data ?? []) as Array<{
+    id: string;
+    actor_user_id: string | null;
+    actor_type: string;
+    action: string;
+    target_type: string;
+    target_id: string | null;
+    workspace_id: string | null;
+    metadata: Record<string, unknown>;
+    created_at: string;
+  }>;
+
+  return {rows};
 }

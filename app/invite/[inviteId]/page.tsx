@@ -2,24 +2,27 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { getAppContext } from "@/lib/app-context";
 import { AppShell } from "@/components/app/AppShell";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
 import { Card, PageHeader } from "@/components/ui/card";
 import { isInviteExpired, ROLE_LABELS, isMemberRole } from "@/lib/teams";
 import { AcceptInviteButton } from "./AcceptButton";
+import { isAzureBackend } from "@/lib/backend";
+import { readInvite } from "@/lib/db/repositories/teams";
+import { databaseResult } from "@/lib/db/result";
 
 export const metadata: Metadata = { title: "Workspace invite", robots: { index: false } };
 
 export default async function InvitePage(props: { params: Promise<{ inviteId: string }> }) {
   const params = await props.params;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="this invite" />;
+  if (!isApplicationConfigured()) return <ConfigRequired area="this invite" />;
   const res = await getAppContext();
   if (!res.ok) redirect(`/login?next=/invite/${params.inviteId}`);
   const admin = getServiceSupabase()!;
 
-  const { data: row } = await admin.from("workspace_invites").select("id, email, role, expires_at, accepted_at").eq("id", params.inviteId).maybeSingle();
+  const { data: row } = isAzureBackend() ? await databaseResult(readInvite(res.ctx.userId,params.inviteId)) : await admin.from("workspace_invites").select("id, email, role, expires_at, accepted_at").eq("id", params.inviteId).maybeSingle();
   const invite = row as { id: string; email: string; role: unknown; expires_at: string; accepted_at: string | null } | null;
 
   let body: React.ReactNode;

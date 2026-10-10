@@ -1,6 +1,10 @@
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { deleteR2Object, inspectAndFreezeUpload } from "@/lib/r2";
 import type { Answers, FormSchemaV1 } from "@/types/forms";
+import { isAzureBackend } from "@/lib/backend";
+import { databaseResult } from "@/lib/db/result";
+import { submissionFile } from "@/lib/db/repositories/respondents";
+import { freezeFile, readUpload } from "@/lib/db/repositories/uploads";
 
 export interface UploadRow {
   id: string;
@@ -17,12 +21,23 @@ export interface UploadRow {
   upload_token_hash: string | null;
 }
 
-export async function finalizeUpload(row: UploadRow): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function finalizeUpload(row: UploadRow, access?: {userId?:string;tokenHash?:string}): Promise<{ ok: true } | { ok: false; error: string }> {
   if (row.status !== "pending" && row.status !== "attached") return { ok: false, error: "This upload is unavailable." };
   if (row.verified_at) return { ok: true };
   let frozen: string | undefined;
   try {
     frozen = await inspectAndFreezeUpload(row.r2_key, row.size_bytes, row.mime_type);
+    if (isAzureBackend()) {
+      const changed = await freezeFile(access?.userId ?? null,row,frozen,access?.tokenHash ?? null);
+      if (!changed) {
+        await deleteR2Object(frozen);
+        frozen=undefined;
+        const winner=await readUpload(access?.userId ?? null,row.id,row.form_id,access?.tokenHash ?? null);
+        if (!winner?.verified_at || winner.status==='deleted') throw new Error("Upload changed during verification.");
+      }
+      await deleteR2Object(row.r2_key).catch(() => {});
+      return {ok:true};
+    }
     const admin = getServiceSupabase()!;
     const { data, error } = await admin.from("uploaded_files")
       .update({ r2_key: frozen, verified_at: new Date().toISOString(), ...(row.kind !== "submission" ? { status: "attached" } : {}) })
@@ -48,10 +63,10 @@ export async function verifySubmissionFiles(form: { id: string; workspaceId: str
     const block = schema.blocks.find((b) => b.id === questionId);
     if (!block || block.type !== "file_upload") return { ok: false, error: "Unknown upload question." };
     for (const fileId of answer.value) {
-      const { data, error } = await admin.from("uploaded_files").select("*").eq("id", fileId)
+      const { data, error } = isAzureBackend() ? await databaseResult(submissionFile(form.id, form.workspaceId, questionId, fileId)) : await admin.from("uploaded_files").select("*").eq("id", fileId)
         .eq("form_id", form.id).eq("workspace_id", form.workspaceId).eq("question_id", questionId)
         .eq("kind", "submission").eq("status", "pending").is("submission_id", null).maybeSingle();
-      const row = data as UploadRow | null;
+      const row = data as Pick<UploadRow, "verified_at" | "size_bytes" | "mime_type"> | null;
       if (error || !row || !row.verified_at || row.size_bytes > (block.maxSizeMb ?? 10) * 1024 * 1024 ||
           (block.allowedMimes?.length && !block.allowedMimes.includes(row.mime_type))) {
         return { ok: false, error: "An upload is missing, unverified, or belongs to another question. Please upload it again." };

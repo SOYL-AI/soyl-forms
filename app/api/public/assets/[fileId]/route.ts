@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { presignedGetUrl } from "@/lib/r2";
+import { isAzureBackend } from "@/lib/backend";
+import { publicAsset } from "@/lib/db/repositories/uploads";
+import { databaseResult } from "@/lib/db/result";
 
 /**
  * Public read for CREATOR assets only (logos, question images). Respondent
@@ -13,8 +16,8 @@ export async function GET(_req: Request, props: { params: Promise<{ fileId: stri
     return NextResponse.json({ error: "Not found." }, { status: 404 });
   }
   const admin = getServiceSupabase();
-  if (!admin) return NextResponse.json({ error: "Unavailable." }, { status: 503 });
-  const { data } = await admin
+  if (!isAzureBackend() && !admin) return NextResponse.json({ error: "Unavailable." }, { status: 503 });
+  const { data } = isAzureBackend() ? await databaseResult(publicAsset(params.fileId)) : await admin!
     .from("uploaded_files")
     .select("id, r2_key, status, kind, mime_type")
     .eq("id", params.fileId)

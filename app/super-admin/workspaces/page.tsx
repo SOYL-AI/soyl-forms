@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { workspaceList } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { Table, Td, Th, Mono } from "@/components/ui/table";
@@ -7,34 +9,8 @@ import { SearchForm, WorkspaceStatusButton } from "../Controls";
 
 export default async function AdminWorkspacesPage(props: { searchParams?: Promise<{ q?: string }> }) {
   const searchParams = await props.searchParams;
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   const q = searchParams?.q?.trim() ?? "";
-
-  let query = admin.from("workspaces").select("id, name, slug, status, created_at").order("created_at", { ascending: false }).limit(100);
-  if (q) query = /^[0-9a-f-]{36}$/i.test(q) ? query.eq("id", q) : query.ilike("name", `%${q}%`);
-  const { data } = await query;
-  const spaces = (data ?? []) as Array<{ id: string; name: string; slug: string; status: string; created_at: string }>;
-  const ids = spaces.map((w) => w.id);
-  const month = `${new Date().toISOString().slice(0, 7)}-01`;
-
-  const [{ data: subs }, { data: forms }, { data: usage }] = ids.length
-    ? await Promise.all([
-        admin.from("subscriptions").select("workspace_id, plan_code, status, override_reason, override_expires_at").in("workspace_id", ids),
-        admin.from("forms").select("workspace_id, status").in("workspace_id", ids).limit(5000),
-        admin.from("usage_monthly").select("workspace_id, completed_submissions").in("workspace_id", ids).eq("month", month),
-      ])
-    : [{ data: [] }, { data: [] }, { data: [] }];
-  const subByWs = new Map(((subs ?? []) as Array<Record<string, string | null>>).map((s) => [s.workspace_id as string, s]));
-  const formCount = new Map<string, { total: number; live: number }>();
-  for (const f of (forms ?? []) as Array<{ workspace_id: string; status: string }>) {
-    const cur = formCount.get(f.workspace_id) ?? { total: 0, live: 0 };
-    cur.total += 1;
-    if (f.status === "published") cur.live += 1;
-    formCount.set(f.workspace_id, cur);
-  }
-  const usageByWs = new Map(((usage ?? []) as Array<{ workspace_id: string; completed_submissions: number }>).map((u) => [u.workspace_id, u.completed_submissions]));
-
+  const {spaces,subByWs,formCount,usageByWs} = isAzureBackend() ? await workspaceList(q) : await loadLegacyWorkspaces(q);
   return (
     <div className="space-y-6">
       <div>
@@ -96,4 +72,35 @@ export default async function AdminWorkspacesPage(props: { searchParams?: Promis
       </Table>
     </div>
   );
+}
+
+async function loadLegacyWorkspaces(q:string) {
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+
+  let query = admin.from("workspaces").select("id, name, slug, status, created_at").order("created_at", { ascending: false }).limit(100);
+  if (q) query = /^[0-9a-f-]{36}$/i.test(q) ? query.eq("id", q) : query.ilike("name", `%${q}%`);
+  const { data } = await query;
+  const spaces = (data ?? []) as Array<{ id: string; name: string; slug: string; status: string; created_at: string }>;
+  const ids = spaces.map((w) => w.id);
+  const month = `${new Date().toISOString().slice(0, 7)}-01`;
+
+  const [{ data: subs }, { data: forms }, { data: usage }] = ids.length
+    ? await Promise.all([
+        admin.from("subscriptions").select("workspace_id, plan_code, status, override_reason, override_expires_at").in("workspace_id", ids),
+        admin.from("forms").select("workspace_id, status").in("workspace_id", ids).limit(5000),
+        admin.from("usage_monthly").select("workspace_id, completed_submissions").in("workspace_id", ids).eq("month", month),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }];
+  const subByWs = new Map(((subs ?? []) as Array<Record<string, string | null>>).map((s) => [s.workspace_id as string, s]));
+  const formCount = new Map<string, { total: number; live: number }>();
+  for (const f of (forms ?? []) as Array<{ workspace_id: string; status: string }>) {
+    const cur = formCount.get(f.workspace_id) ?? { total: 0, live: 0 };
+    cur.total += 1;
+    if (f.status === "published") cur.live += 1;
+    formCount.set(f.workspace_id, cur);
+  }
+  const usageByWs = new Map(((usage ?? []) as Array<{ workspace_id: string; completed_submissions: number }>).map((u) => [u.workspace_id, u.completed_submissions]));
+
+  return {spaces,subByWs,formCount,usageByWs};
 }

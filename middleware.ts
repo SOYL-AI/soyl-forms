@@ -3,6 +3,7 @@ import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { authCookieOptions } from "@/lib/supabase/cookies";
 import { isNativeUserAgent } from "@/lib/native";
+import { isAzureBackend } from "@/lib/backend";
 
 /** In the Android app, marketing and purchase pages lead to the app itself (Play Billing policy). */
 const NATIVE_REDIRECTS: Record<string, string> = {
@@ -18,12 +19,21 @@ const NATIVE_REDIRECTS: Record<string, string> = {
  * an expired access token was never persisted and users were signed out.
  */
 export async function middleware(request: NextRequest) {
+  if (process.env.AUTH_PROOF_ONLY === "true") {
+    const path = request.nextUrl.pathname;
+    if (path.startsWith("/auth/entra/") || path === "/api/health/live" || path === "/api/health/ready") return NextResponse.next();
+    if (path.startsWith("/api/")) return new NextResponse(null, { status: 404 });
+    const origin = process.env.ENTRA_APP_ORIGIN;
+    return origin ? NextResponse.redirect(new URL("/auth/entra/proof", origin)) : new NextResponse(null, { status: 503 });
+  }
   if (isNativeUserAgent(request.headers.get("user-agent"))) {
     const target = NATIVE_REDIRECTS[request.nextUrl.pathname];
     if (target) return NextResponse.redirect(new URL(target, request.url));
   }
 
   let response = NextResponse.next({ request });
+  // Isolated Entra proof must not depend on the legacy provider's availability.
+  if (isAzureBackend() || request.nextUrl.pathname.startsWith("/auth/entra/")) return response;
   if (!isSupabaseConfigured()) return response;
 
   const supabase = createServerClient(

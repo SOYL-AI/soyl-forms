@@ -7,10 +7,13 @@ import { Loader2 } from "lucide-react";
 import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { isNativeApp } from "@/lib/native";
 import { signInWithGoogleInApp } from "@/lib/native-auth";
+import { safeAuthNext } from "@/lib/auth/redirect";
 import { PLANS, isPlanCode } from "@/lib/plans";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { isAzureBackend } from "@/lib/backend";
+import { EntraProofSignIn } from "./EntraProof";
 
 /**
  * Where to send someone after auth. Pricing CTAs pass ?plan=&interval= so
@@ -18,7 +21,7 @@ import { Notice } from "@/components/ui/notice";
  */
 export function resolveNext(params: URLSearchParams): string {
   const explicit = params.get("next");
-  if (explicit && explicit.startsWith("/") && !explicit.startsWith("//")) return explicit;
+  if (explicit) return safeAuthNext(explicit);
   const plan = params.get("plan");
   if (plan && isPlanCode(plan) && plan !== "free") {
     const interval = params.get("interval") === "yearly" ? "yearly" : "monthly";
@@ -111,6 +114,13 @@ export function AuthForm({ mode }: { mode: "login" | "signup" }) {
     router.refresh();
   }
 
+  if (isAzureBackend()) {
+    return <div className="space-y-4">
+      <p className="text-sm text-ink-soft">Continue with your email and password. You can create an account or reset your password on the secure sign-in page.</p>
+      <EntraProofSignIn next={next} label={mode === "signup" ? "Create your account" : "Sign in securely"} />
+      {params.get("error") && <p role="alert" className="text-sm">Sign-in could not be completed. Please try again.</p>}
+    </div>;
+  }
   if (checkEmail) {
     return (
       <Notice tone="positive" title="Check your inbox">

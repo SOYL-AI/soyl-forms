@@ -8,6 +8,8 @@
 
 import { createHmac } from "node:crypto";
 import { getServiceSupabase } from "@/lib/supabase/admin";
+import { isAzureBackend } from "@/lib/backend";
+import { getDatabasePool } from "@/lib/db/pool";
 
 interface Bucket {
   count: number;
@@ -44,12 +46,13 @@ export function checkRateLimit(
 export async function enforceRateLimit(key: string, limit: number, windowMs: number) {
   if (process.env.NODE_ENV !== "production") return checkRateLimit(key, limit, windowMs);
   const admin = getServiceSupabase();
-  const secret = process.env.RATE_LIMIT_SECRET ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!admin || !secret) return { ok: false, retryAfterMs: windowMs };
+  const secret = process.env.RATE_LIMIT_SECRET ?? (isAzureBackend() ? undefined : process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if ((!isAzureBackend() && !admin) || !secret) return { ok: false, retryAfterMs: windowMs };
   const day = new Date().toISOString().slice(0, 10);
   const hashed = createHmac("sha256", secret).update(`${day}:${key}`).digest("hex");
   try {
-    const { data, error } = await admin.rpc("consume_rate_limit", { p_key: hashed, p_limit: limit, p_window_ms: windowMs });
+    if (isAzureBackend()) return (await getDatabasePool().query<{ result: { ok: boolean; retryAfterMs: number } }>("select platform.consume_rate_limit($1,$2,$3) as result", [hashed, limit, windowMs])).rows[0]?.result ?? { ok: false, retryAfterMs: windowMs };
+    const { data, error } = await admin!.rpc("consume_rate_limit", { p_key: hashed, p_limit: limit, p_window_ms: windowMs });
     if (error || !data) return { ok: false, retryAfterMs: windowMs };
     return data as { ok: boolean; retryAfterMs: number };
   } catch { return { ok: false, retryAfterMs: windowMs }; }

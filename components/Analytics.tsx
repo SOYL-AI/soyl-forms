@@ -13,7 +13,8 @@ import { usePathname } from "next/navigation";
  */
 export function Analytics() {
   const pathname = usePathname();
-  if (!pathname || pathname.startsWith("/f/")) return null;
+  // OAuth returns can contain short-lived authorization codes or handoff tickets.
+  if (!pathname || pathname.startsWith("/f/") || pathname.startsWith("/auth/")) return null;
 
   const plausible = process.env.NEXT_PUBLIC_PLAUSIBLE_DOMAIN;
   const posthogKey = process.env.NEXT_PUBLIC_POSTHOG_KEY;

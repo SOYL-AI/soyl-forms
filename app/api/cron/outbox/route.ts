@@ -12,6 +12,8 @@ import { confirmationEmail, isEmailConfigured, resolveResponderRecipient, respon
 import { getAppUrl, getProductName } from "@/lib/config";
 import { deliverEmail } from "@/lib/email/deliver";
 import type { AnswerValue } from "@/types/forms";
+import { isAzureBackend } from "@/lib/backend";
+import { runAzureOutbox } from "@/lib/azure-outbox";
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -30,7 +32,7 @@ async function notifyOwners(
   submission: { id: string; form_id: string; submitted_at: string; answers: unknown; form_version_id: string },
   workspaceId: string,
   eventId: string,
-): Promise<"sent" | "skipped" | "failed" | "uncertain"> {
+): Promise<Awaited<ReturnType<typeof deliverEmail>>> {
   const { data: form } = await admin.from("form_versions").select("schema, settings").eq("id", submission.form_version_id).maybeSingle();
   const settings = formSettingsSchema.safeParse((form as { settings: unknown } | null)?.settings ?? {});
   const recipients = settings.success ? settings.data.notifyEmails ?? [] : [];
@@ -70,7 +72,7 @@ async function notifyRespondent(
   submission: { id: string; form_id: string; submitted_at: string; answers: unknown; form_version_id: string },
   workspaceId: string,
   eventId: string,
-): Promise<"sent" | "skipped" | "failed" | "uncertain"> {
+): Promise<Awaited<ReturnType<typeof deliverEmail>>> {
   const { data: form } = await admin.from("form_versions").select("schema, settings").eq("id", submission.form_version_id).maybeSingle();
   const settings = formSettingsSchema.safeParse((form as { settings: unknown } | null)?.settings ?? {});
   if (!settings.success || settings.data.responderEnabled !== true) return "skipped";
@@ -111,6 +113,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "CRON_SECRET is not configured; scheduler disabled." }, { status: 503 });
   }
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  if(isAzureBackend()) return runAzureOutbox();
   const admin = getServiceSupabase();
   if (!admin) return NextResponse.json({ error: "Server misconfigured." }, { status: 500 });
 
@@ -145,7 +148,7 @@ export async function POST(req: Request) {
           await checkpoint();
           const outcome = await notifyOwners(admin, submission, evt.workspace_id, evt.id);
           if (outcome === "sent") emails++;
-          if (outcome === "failed") ok = false;
+          if (outcome === "failed" || outcome === "deferred") ok = false;
           else if (outcome === "uncertain") { ok = false; uncertain = true; }
           else { payload.owners = true; await checkpoint(); }
         }
@@ -153,7 +156,7 @@ export async function POST(req: Request) {
           await checkpoint();
           const outcome = await notifyRespondent(admin, submission, evt.workspace_id, evt.id);
           if (outcome === "sent") emails++;
-          if (outcome === "failed") ok = false;
+          if (outcome === "failed" || outcome === "deferred") ok = false;
           else if (outcome === "uncertain") { ok = false; uncertain = true; }
           else { payload.respondent = true; await checkpoint(); }
         }

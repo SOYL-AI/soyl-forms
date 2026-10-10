@@ -3,11 +3,14 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { enforceRateLimit } from "@/lib/security/rateLimit";
-import { getWorkspacePlan } from "@/lib/billing/plan";
+import { getPublicFormPlan } from "@/lib/billing/plan";
 import { PLANS } from "@/lib/plans";
-import { getWorkspaceRazorpay } from "@/lib/billing/connect-actions";
+import { getWorkspaceRazorpay } from "@/lib/billing/workspace-provider";
 import { clientIp, formAcceptance, resolveFormVersion, resolvePublicForm } from "@/lib/forms/public";
 import { expectedPaiseForBlock } from "@/lib/billing/payments-server";
+import { isAzureBackend } from "@/lib/backend";
+import { recordPayment } from "@/lib/db/repositories/payments";
+import { databaseResult } from "@/lib/db/result";
 
 const paySchema = z.object({
   blockId: z.string().min(1).max(64),
@@ -37,7 +40,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   const acceptance = formAcceptance(form);
   if (!acceptance.open) return NextResponse.json({ error: acceptance.message }, { status: 410 });
 
-  const plan = await getWorkspacePlan(form.workspaceId);
+  const plan = await getPublicFormPlan(form);
   if (!PLANS[plan].entitlements.paymentCollection) {
     return NextResponse.json({ error: "This form can't accept payments." }, { status: 403 });
   }
@@ -58,7 +61,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
     return NextResponse.json({ error: "The amount isn't known yet — answer the earlier questions first." }, { status: 400 });
   }
 
-  const provider = await getWorkspaceRazorpay(form.workspaceId);
+  const provider = await getWorkspaceRazorpay(form.workspaceId,form.id);
   if (!provider) {
     return NextResponse.json({ error: "The form owner hasn't connected payments yet." }, { status: 409 });
   }
@@ -77,9 +80,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   }
 
   const admin = getServiceSupabase();
-  const { error } = await admin!
-    .from("form_payments")
-    .insert({
+  const payment = {
       workspace_id: form.workspaceId,
       form_id: form.id,
       form_version_id: answered.versionId,
@@ -89,7 +90,8 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
       currency: "INR",
       status: "created",
       respondent_email: body.data.email?.trim() ?? null,
-    });
+    };
+  const {error}=isAzureBackend() ? await databaseResult(recordPayment(payment)) : await admin!.from("form_payments").insert(payment);
   if (error) return NextResponse.json({ error: "Couldn't start the payment. Please try again." }, { status: 500 });
 
   return NextResponse.json({ key: provider.keyId, orderId: order.id, amountPaise: expected });

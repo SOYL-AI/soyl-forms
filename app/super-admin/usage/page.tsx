@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { usageOverview } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { PLANS, isPlanCode } from "@/lib/plans";
@@ -12,67 +14,7 @@ import { formatBytes, pct } from "@/lib/utils";
  * emails, webhook attempts, AI credits — by workspace, with quota pressure.
  */
 export default async function AdminUsagePage() {
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
-  const month = `${new Date().toISOString().slice(0, 7)}-01`;
-
-  const [{ data: usage }, { data: files }, { data: subs }, { data: ledger }, { data: outbox }] = await Promise.all([
-    admin.from("usage_monthly").select("workspace_id, completed_submissions, notification_emails, webhook_attempts").eq("month", month).order("completed_submissions", { ascending: false }).limit(200),
-    admin.from("uploaded_files").select("workspace_id, size_bytes, kind").neq("status", "deleted").limit(20000),
-    admin.from("subscriptions").select("workspace_id, plan_code, status"),
-    admin.from("ai_credit_ledger").select("workspace_id, delta").lt("delta", 0).gte("created_at", month).limit(20000),
-    admin.from("outbox_events").select("status").gte("created_at", month).limit(20000),
-  ]);
-
-  const storageByWs = new Map<string, number>();
-  let brandBytes = 0;
-  for (const f of (files ?? []) as Array<{ workspace_id: string; size_bytes: number; kind: string }>) {
-    storageByWs.set(f.workspace_id, (storageByWs.get(f.workspace_id) ?? 0) + f.size_bytes);
-    if (f.kind !== "submission") brandBytes += f.size_bytes;
-  }
-  const creditsByWs = new Map<string, number>();
-  for (const l of (ledger ?? []) as Array<{ workspace_id: string; delta: number }>) {
-    creditsByWs.set(l.workspace_id, (creditsByWs.get(l.workspace_id) ?? 0) + Math.abs(l.delta));
-  }
-  const planByWs = new Map<string, "free" | "starter" | "pro">();
-  for (const s of (subs ?? []) as Array<{ workspace_id: string; plan_code: string; status: string }>) {
-    planByWs.set(s.workspace_id, isPlanCode(s.plan_code) && isSubscriptionEntitled(s.status) ? s.plan_code : "free");
-  }
-  const rows = (usage ?? []) as Array<{ workspace_id: string; completed_submissions: number; notification_emails: number; webhook_attempts: number }>;
-  const wsIds = [...new Set([...rows.map((r) => r.workspace_id), ...[...storageByWs.keys()].slice(0, 50), ...[...creditsByWs.keys()]])];
-  const { data: spaces } = wsIds.length ? await admin.from("workspaces").select("id, name").in("id", wsIds) : { data: [] };
-  const nameById = new Map(((spaces ?? []) as Array<{ id: string; name: string }>).map((w) => [w.id, w.name]));
-
-  const totals = {
-    responses: rows.reduce((s, r) => s + r.completed_submissions, 0),
-    emails: rows.reduce((s, r) => s + r.notification_emails, 0),
-    webhooks: rows.reduce((s, r) => s + r.webhook_attempts, 0),
-    storage: [...storageByWs.values()].reduce((s, n) => s + n, 0),
-    credits: [...creditsByWs.values()].reduce((s, n) => s + n, 0),
-  };
-  const ob = (outbox ?? []) as Array<{ status: string }>;
-  const obFailed = ob.filter((o) => o.status === "failed").length;
-
-  const merged = wsIds
-    .map((id) => {
-      const u = rows.find((r) => r.workspace_id === id);
-      const plan = planByWs.get(id) ?? "free";
-      return {
-        id,
-        name: nameById.get(id) ?? id.slice(0, 8),
-        plan,
-        responses: u?.completed_submissions ?? 0,
-        emails: u?.notification_emails ?? 0,
-        webhooks: u?.webhook_attempts ?? 0,
-        storage: storageByWs.get(id) ?? 0,
-        credits: creditsByWs.get(id) ?? 0,
-        quota: pct(u?.completed_submissions ?? 0, PLANS[plan].entitlements.monthlySubmissions),
-        storageQuota: pct(storageByWs.get(id) ?? 0, PLANS[plan].entitlements.storageBytes),
-      };
-    })
-    .sort((a, b) => b.responses - a.responses || b.storage - a.storage)
-    .slice(0, 100);
-
+  const {merged,totals,brandBytes,obFailed} = isAzureBackend() ? await usageOverview() : await loadLegacyUsage();
   return (
     <div className="space-y-6">
       <div>
@@ -134,4 +76,69 @@ export default async function AdminUsagePage() {
       </Table>
     </div>
   );
+}
+
+async function loadLegacyUsage() {
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+  const month = `${new Date().toISOString().slice(0, 7)}-01`;
+
+  const [{ data: usage }, { data: files }, { data: subs }, { data: ledger }, { data: outbox }] = await Promise.all([
+    admin.from("usage_monthly").select("workspace_id, completed_submissions, notification_emails, webhook_attempts").eq("month", month).order("completed_submissions", { ascending: false }).limit(200),
+    admin.from("uploaded_files").select("workspace_id, size_bytes, kind").neq("status", "deleted").limit(20000),
+    admin.from("subscriptions").select("workspace_id, plan_code, status"),
+    admin.from("ai_credit_ledger").select("workspace_id, delta").lt("delta", 0).gte("created_at", month).limit(20000),
+    admin.from("outbox_events").select("status").gte("created_at", month).limit(20000),
+  ]);
+
+  const storageByWs = new Map<string, number>();
+  let brandBytes = 0;
+  for (const f of (files ?? []) as Array<{ workspace_id: string; size_bytes: number; kind: string }>) {
+    storageByWs.set(f.workspace_id, (storageByWs.get(f.workspace_id) ?? 0) + f.size_bytes);
+    if (f.kind !== "submission") brandBytes += f.size_bytes;
+  }
+  const creditsByWs = new Map<string, number>();
+  for (const l of (ledger ?? []) as Array<{ workspace_id: string; delta: number }>) {
+    creditsByWs.set(l.workspace_id, (creditsByWs.get(l.workspace_id) ?? 0) + Math.abs(l.delta));
+  }
+  const planByWs = new Map<string, "free" | "starter" | "pro">();
+  for (const s of (subs ?? []) as Array<{ workspace_id: string; plan_code: string; status: string }>) {
+    planByWs.set(s.workspace_id, isPlanCode(s.plan_code) && isSubscriptionEntitled(s.status) ? s.plan_code : "free");
+  }
+  const rows = (usage ?? []) as Array<{ workspace_id: string; completed_submissions: number; notification_emails: number; webhook_attempts: number }>;
+  const wsIds = [...new Set([...rows.map((r) => r.workspace_id), ...[...storageByWs.keys()].slice(0, 50), ...[...creditsByWs.keys()]])];
+  const { data: spaces } = wsIds.length ? await admin.from("workspaces").select("id, name").in("id", wsIds) : { data: [] };
+  const nameById = new Map(((spaces ?? []) as Array<{ id: string; name: string }>).map((w) => [w.id, w.name]));
+
+  const totals = {
+    responses: rows.reduce((s, r) => s + r.completed_submissions, 0),
+    emails: rows.reduce((s, r) => s + r.notification_emails, 0),
+    webhooks: rows.reduce((s, r) => s + r.webhook_attempts, 0),
+    storage: [...storageByWs.values()].reduce((s, n) => s + n, 0),
+    credits: [...creditsByWs.values()].reduce((s, n) => s + n, 0),
+  };
+  const ob = (outbox ?? []) as Array<{ status: string }>;
+  const obFailed = ob.filter((o) => o.status === "failed").length;
+
+  const merged = wsIds
+    .map((id) => {
+      const u = rows.find((r) => r.workspace_id === id);
+      const plan = planByWs.get(id) ?? "free";
+      return {
+        id,
+        name: nameById.get(id) ?? id.slice(0, 8),
+        plan,
+        responses: u?.completed_submissions ?? 0,
+        emails: u?.notification_emails ?? 0,
+        webhooks: u?.webhook_attempts ?? 0,
+        storage: storageByWs.get(id) ?? 0,
+        credits: creditsByWs.get(id) ?? 0,
+        quota: pct(u?.completed_submissions ?? 0, PLANS[plan].entitlements.monthlySubmissions),
+        storageQuota: pct(storageByWs.get(id) ?? 0, PLANS[plan].entitlements.storageBytes),
+      };
+    })
+    .sort((a, b) => b.responses - a.responses || b.storage - a.storage)
+    .slice(0, 100);
+
+  return {merged,totals,brandBytes,obFailed};
 }

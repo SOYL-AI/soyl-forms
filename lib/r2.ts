@@ -24,6 +24,8 @@ export function getR2Client(): S3Client | null {
       process.env.R2_ENDPOINT || `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
     client = new S3Client({
       region: "auto",
+      maxAttempts: 2,
+      requestHandler: {connectionTimeout: 5_000, requestTimeout: 8_000, socketTimeout: 8_000, throwOnRequestTimeout: true},
       endpoint,
       credentials: {
         accessKeyId: process.env.R2_ACCESS_KEY_ID as string,

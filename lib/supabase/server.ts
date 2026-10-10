@@ -3,6 +3,8 @@ import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "./client";
 import { authCookieOptions } from "./cookies";
 import { noStoreFetch } from "./fetch";
+import { isAzureBackend } from "@/lib/backend";
+import { getEntraSessionUser } from "@/lib/auth/session";
 
 /**
  * Server-side Supabase client (Server Components / Actions / Route Handlers).
@@ -10,6 +12,7 @@ import { noStoreFetch } from "./fetch";
  * "configuration required" state instead of crashing.
  */
 export async function getServerSupabase() {
+  if (isAzureBackend()) return null;
   if (!isSupabaseConfigured()) return null;
   const cookieStore = await cookies();
   return createServerClient(
@@ -38,6 +41,7 @@ export async function getServerSupabase() {
 
 /** Current user id for the request, or null (signed out / unconfigured). */
 export async function getSessionUserId(): Promise<string | null> {
+  if (isAzureBackend()) return (await getEntraSessionUser())?.id ?? null;
   const supabase = await getServerSupabase();
   if (!supabase) return null;
   const {

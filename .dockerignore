@@ -1,0 +1,14 @@
+node_modules
+.next
+.git
+.env
+.env.*
+.azure-migration
+*.zip
+*.pem
+*.tsbuildinfo
+android
+capacitor-www
+soyl-forms
+.vercel
+.wrangler

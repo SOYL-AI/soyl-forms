@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { getAppContext } from "@/lib/app-context";
 import { getFormForOwner } from "@/lib/forms/actions";
 import { formSchemaV1 } from "@/lib/forms/schema";
@@ -16,12 +16,16 @@ import { ConfigRequired } from "@/components/app/ConfigRequired";
 import { FormSubnav } from "@/components/app/FormSubnav";
 import { Card } from "@/components/ui/card";
 import { formatDateTime } from "@/lib/utils";
+import { isAzureBackend } from "@/lib/backend";
+import { readResponse } from "@/lib/db/repositories/responses";
+import { readOwnedVersion } from "@/lib/db/repositories/forms";
+import { readWorkspaceRole } from "@/lib/db/repositories/workspaces";
 
 export const metadata: Metadata = { title: "Response", robots: { index: false } };
 
 export default async function ResponseDetailPage(props: { params: Promise<{ formId: string; submissionId: string }> }) {
   const params = await props.params;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="responses" />;
+  if (!isAzureBackend() && !isApplicationConfigured()) return <ConfigRequired area="responses" />;
   const res = await getAppContext();
   if (!res.ok) redirect("/login");
   const owned = await getFormForOwner(params.formId);
@@ -29,7 +33,7 @@ export default async function ResponseDetailPage(props: { params: Promise<{ form
   const form = owned.form;
   const admin = getServiceSupabase()!;
 
-  const { data: sub } = await admin
+  const { data: sub } = isAzureBackend() ? { data: await readResponse(res.ctx.userId,form.id,params.submissionId) } : await admin
     .from("submissions")
     .select("id, submitted_at, source, duration_ms, form_version_id, answers, hidden_fields, tags, edited_at")
     .eq("id", params.submissionId)
@@ -48,7 +52,7 @@ export default async function ResponseDetailPage(props: { params: Promise<{ form
     edited_at: string | null;
   } | null;
   if (!submission) notFound();
-  const { data: membership } = await admin
+  const { data: membership } = isAzureBackend() ? { data: { role: await readWorkspaceRole(res.ctx.userId,form.workspace_id) } } : await admin
     .from("workspace_members")
     .select("role")
     .eq("workspace_id", form.workspace_id)
@@ -58,7 +62,7 @@ export default async function ResponseDetailPage(props: { params: Promise<{ form
   const tags = Array.isArray(submission.tags) ? submission.tags.filter((t): t is string => typeof t === "string") : [];
 
   // The exact version this respondent answered (history never rewrites).
-  const { data: version } = await admin.from("form_versions").select("schema, settings, version_number").eq("id", submission.form_version_id).maybeSingle();
+  const { data: version } = isAzureBackend() ? { data: await readOwnedVersion(res.ctx.userId,form.id,submission.form_version_id) } : await admin.from("form_versions").select("schema, settings, version_number").eq("id", submission.form_version_id).maybeSingle();
   const parsed = formSchemaV1.safeParse((version as { schema: unknown } | null)?.schema);
   const blocks: Block[] = parsed.success ? parsed.data.blocks.filter((b) => isAnswerable(b.type)) : [];
   const quizOn = Boolean((version as { settings: { quizMode?: boolean } | null } | null)?.settings?.quizMode);

@@ -10,7 +10,7 @@ import { recallLabels } from "@/lib/forms/recall";
 import { AppShell } from "@/components/app/AppShell";
 import { Badge } from "@/components/ui/badge";
 import { getAppContext } from "@/lib/app-context";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { createFormFromTemplate } from "@/lib/forms/actions";
 import { getTemplate, TEMPLATES } from "@/lib/forms/templates";
 import { resolveTheme } from "@/lib/forms/themes";
@@ -40,7 +40,7 @@ export default async function TemplatePage(
   const template = getTemplate(params.id);
   if (!template) notFound();
 
-  const ctx = isSupabaseConfigured() ? await getAppContext() : null;
+  const ctx = isApplicationConfigured() ? await getAppContext() : null;
   const signedIn = Boolean(ctx?.ok);
 
   // Arriving from signup with intent: create immediately.

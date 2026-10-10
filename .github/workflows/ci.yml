@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_call:
   push:
     branches: [main]
   pull_request:
@@ -19,3 +20,34 @@ jobs:
       - run: npm run lint
       - run: npm run test
       - run: npm run build
+  azure-database:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: soyl_forms
+          POSTGRES_PASSWORD: ci-owner-only-fixture-password
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d soyl_forms"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      DATABASE_MIGRATION_URL: postgres://postgres:ci-owner-only-fixture-password@127.0.0.1:5432/soyl_forms
+      DATABASE_URL: postgres://soyl_runtime:ci-runtime-only-fixture-password@127.0.0.1:5432/soyl_forms
+      AZURE_DATABASE_TESTS: "true"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/azure/migrate.mjs
+      - run: node scripts/azure/migrate.mjs
+      - run: node scripts/azure/grant-auth-role.mjs
+      - run: npx vitest run tests/azure-auth-postgres.test.ts tests/azure-platform-postgres.test.ts
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_BACKEND: azure
+          NEXT_PUBLIC_APP_URL: https://staging.example.test

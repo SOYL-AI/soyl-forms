@@ -39,6 +39,11 @@ export function inAppPathFor(openedUrl: string, siteHost: string): string | null
     return null;
   }
   if (url.protocol === `${APP_SCHEME}:`) {
+    if (url.host === "auth" && url.pathname === "/entra-return" && !url.username && !url.password) {
+      const ticket = url.searchParams.get("ticket");
+      return ticket && /^[A-Za-z0-9_-]{43}$/.test(ticket)
+        ? `/auth/entra/native-return?ticket=${ticket}` : null;
+    }
     // com.soylai.forms://auth/callback?code=… → host "auth", pathname "/callback"
     return url.host === "auth" && url.pathname === "/callback" ? `/auth/callback${url.search}` : null;
   }

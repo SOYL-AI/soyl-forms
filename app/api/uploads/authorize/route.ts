@@ -9,6 +9,11 @@ import { getWorkspacePlan } from "@/lib/billing/plan";
 import { getUserWorkspaceId } from "@/lib/workspaces";
 import { getPlatformFlags } from "@/lib/platform";
 import { hasWorkspaceRole } from "@/lib/security/workspace";
+import { isAzureBackend } from "@/lib/backend";
+import { reserveFile } from "@/lib/db/repositories/uploads";
+import { readForm } from "@/lib/db/repositories/forms";
+import { readBrand } from "@/lib/db/repositories/brands";
+import { databaseResult } from "@/lib/db/result";
 
 /** Image types a creator may publish on their forms (served publicly). */
 const IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -75,7 +80,7 @@ export async function POST(req: Request) {
   const admin = getServiceSupabase();
 
   if (input.formId) {
-    const { data: form } = await admin!
+    const { data: form } = isAzureBackend() ? await databaseResult(readForm(userId,input.formId)) : await admin!
       .from("forms")
       .select("id, workspace_id")
       .eq("id", input.formId)
@@ -85,7 +90,7 @@ export async function POST(req: Request) {
     }
   }
   if (input.brandKitId) {
-    const { data: kit } = await admin!
+    const { data: kit } = isAzureBackend() ? await databaseResult(readBrand(userId,workspaceId,input.brandKitId)) : await admin!
       .from("brand_kits")
       .select("id, workspace_id")
       .eq("id", input.brandKitId)
@@ -102,7 +107,7 @@ export async function POST(req: Request) {
   if (!uploadUrl) return NextResponse.json({ error: "Upload service unavailable." }, { status: 503 });
 
   const safeName = input.fileName.replace(/[^\w.\-() ]+/g, "_").slice(0, 200);
-  const { data: reserved, error } = await admin!.rpc("reserve_upload", { p_storage_limit: PLANS[plan].entitlements.storageBytes, p_file: {
+  const file = {
     id: fileId,
     workspace_id: workspaceId,
     form_id: input.formId ?? null,
@@ -114,7 +119,10 @@ export async function POST(req: Request) {
     size_bytes: input.sizeBytes,
     status: "pending",
     kind: input.kind,
-  } });
+  };
+  const storageLimit=PLANS[plan].entitlements.storageBytes;
+  const {data:reserved,error}=isAzureBackend() ? await databaseResult(reserveFile(userId,file,storageLimit)) :
+    await admin!.rpc("reserve_upload",{p_storage_limit:storageLimit,p_file:file});
   if (error || !reserved) return NextResponse.json({ error: "Could not start upload." }, { status: 500 });
 
   return NextResponse.json({

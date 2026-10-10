@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getSessionUserId } from "@/lib/supabase/server";
 import { presignedGetUrl } from "@/lib/r2";
+import { isAzureBackend } from "@/lib/backend";
+import { readUpload } from "@/lib/db/repositories/uploads";
+import { databaseResult } from "@/lib/db/result";
 
 /** Owner-authorized download: verifies workspace membership, then redirects
  * to a 5-minute signed URL. Objects are never public. */
@@ -12,7 +15,7 @@ export async function GET(_req: Request, props: { params: Promise<{ fileId: stri
     return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   }
   const admin = getServiceSupabase();
-  const { data: file } = await admin!
+  const { data: file } = isAzureBackend() ? await databaseResult(readUpload(userId,params.fileId)) : await admin!
     .from("uploaded_files")
     .select("id, workspace_id, r2_key, status")
     .eq("id", params.fileId)
@@ -26,7 +29,7 @@ export async function GET(_req: Request, props: { params: Promise<{ fileId: stri
   if (!row || row.status !== "attached") {
     return NextResponse.json({ error: "File not found." }, { status: 404 });
   }
-  const { data: member } = await admin!
+  const { data: member } = isAzureBackend() ? {data:true} : await admin!
     .from("workspace_members")
     .select("user_id")
     .eq("workspace_id", row.workspace_id)

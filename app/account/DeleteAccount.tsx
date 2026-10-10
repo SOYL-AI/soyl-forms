@@ -45,7 +45,7 @@ export function DeleteAccount() {
                 setError(res.error);
                 return;
               }
-              window.location.assign("/delete-account?done=1");
+              window.location.assign(res.pending ? "/delete-account?pending=1" : "/delete-account?done=1");
             });
           }}
         >

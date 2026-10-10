@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { withUserTransaction } from "@/lib/db/pool";
 import { z } from "zod";
 import { AI_PROMPT_MAX_CHARS } from "@/lib/ai/limits";
 import { generateFormDraft, isAiConfigured } from "@/lib/ai/generate";
@@ -9,7 +11,7 @@ import { getPlatformFlags } from "@/lib/platform";
 import { formSchemaV1, formSettingsSchema } from "@/lib/forms/schema";
 import { resolvePublicForm } from "@/lib/forms/public";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { McpToolError, type RegisteredTool, type ToolResult } from "./protocol";
+import { McpToolError, type RegisteredTool, type ToolResult, type ToolContext } from "./protocol";
 
 function text(payload: unknown): ToolResult {
   return { content: [{ type: "text", text: JSON.stringify(payload) }] };
@@ -26,7 +28,12 @@ function agentSettings(settings: unknown) {
  * Same read as the brand studio's getBrandKit, minus the "use server"
  * module (which pulls next/headers and can't be unit-imported).
  */
-async function getWorkspaceBrandKit(workspaceId: string, kitId: string): Promise<BrandKit | null> {
+async function getWorkspaceBrandKit(workspaceId: string, kitId: string, trustedActorId?: string): Promise<BrandKit | null> {
+  if (isAzureBackend()) {
+    if (!trustedActorId) return null;
+    const row = await withUserTransaction(trustedActorId,async db => (await db.query("select * from brand_kits where workspace_id=$1 and id=$2",[workspaceId,kitId])).rows[0]);
+    return row ? rowToBrandKit(row) : null;
+  }
   const admin = getServiceSupabase();
   if (!admin) return null;
   const { data } = await admin
@@ -41,6 +48,11 @@ async function getWorkspaceBrandKit(workspaceId: string, kitId: string): Promise
   } catch {
     return null;
   }
+}
+
+async function azureRead(ctx: ToolContext, sql: string, values: unknown[]) {
+  if (!ctx.userId) throw new McpToolError("Invalid API credential.",-32603,"auth");
+  return withUserTransaction(ctx.userId,async db => (await db.query(sql,values)).rows);
 }
 
 // list_forms -----------------------------------------------------------------
@@ -65,6 +77,10 @@ const listFormsTool: RegisteredTool = {
   schema: listFormsInput,
   run: async (ctx, input) => {
     const { limit } = input as z.infer<typeof listFormsInput>;
+    if (isAzureBackend()) {
+      const rows = await azureRead(ctx,"select id,title,slug,status,updated_at::text from forms where workspace_id=$1 order by updated_at desc,id limit $2",[ctx.workspaceId,limit]);
+      return text({forms:rows.map(r=>({id:r.id,title:r.title,slug:r.slug,status:r.status,updatedAt:r.updated_at}))});
+    }
     const admin = getServiceSupabase();
     if (!admin) throw new McpToolError("Forms are temporarily unavailable.", -32603, "internal");
     const { data, error } = await admin
@@ -139,6 +155,13 @@ const getFormSchemaTool: RegisteredTool = {
         settings: agentSettings(f.settings),
       });
     }
+    if (isAzureBackend()) {
+      const row = (await azureRead(ctx,"select id,title,slug,status,draft_schema,theme,settings from forms where workspace_id=$1 and id=$2",[ctx.workspaceId,args.formId]))[0];
+      if (!row) throw new McpToolError("That form wasn't found.",-32602,"not_found");
+      const parsed=formSchemaV1.safeParse(row.draft_schema);
+      if(!parsed.success) throw new McpToolError("This draft can't be read right now.");
+      return text({id:row.id,title:row.title,slug:row.slug,status:row.status,schema:parsed.data,theme:row.theme,settings:agentSettings(row.settings)});
+    }
     const admin = getServiceSupabase();
     if (!admin) throw new McpToolError("Forms are temporarily unavailable.", -32603, "internal");
     const { data } = await admin
@@ -211,17 +234,17 @@ const draftFormTool: RegisteredTool = {
     if (!isAiConfigured()) {
       throw new McpToolError("AI drafting is temporarily unavailable.", -32603, "ai_unavailable");
     }
-    const plan = await getWorkspacePlan(ctx.workspaceId);
-    await ensureMonthlyCredits(ctx.workspaceId, plan);
-    const balance = await getAiBalance(ctx.workspaceId);
+    const plan = await (isAzureBackend() ? getWorkspacePlan(ctx.workspaceId,ctx.userId) : getWorkspacePlan(ctx.workspaceId));
+    await (isAzureBackend() ? ensureMonthlyCredits(ctx.workspaceId,plan,ctx.userId) : ensureMonthlyCredits(ctx.workspaceId,plan));
+    const balance = await (isAzureBackend() ? getAiBalance(ctx.workspaceId,ctx.userId) : getAiBalance(ctx.workspaceId));
     if (balance < AI_COST_PER_DRAFT) {
       throw new McpToolError("Out of AI credits for now. Top up or upgrade to keep generating.", -32002, "no_credits");
     }
-    const brand = args.brandKitId ? await getWorkspaceBrandKit(ctx.workspaceId, args.brandKitId) : null;
+    const brand = args.brandKitId ? await getWorkspaceBrandKit(ctx.workspaceId, args.brandKitId,ctx.userId) : null;
     if (args.brandKitId && !brand) {
       throw new McpToolError("That brand kit wasn't found.", -32602, "invalid_params");
     }
-    const spent = await spendCredits(ctx.workspaceId, AI_COST_PER_DRAFT, "draft");
+    const spent = await (isAzureBackend() ? spendCredits(ctx.workspaceId,AI_COST_PER_DRAFT,"draft",ctx.userId) : spendCredits(ctx.workspaceId,AI_COST_PER_DRAFT,"draft"));
     if (!spent) {
       throw new McpToolError("Out of AI credits for now. Top up or upgrade to keep generating.", -32002, "no_credits");
     }
@@ -239,10 +262,12 @@ const draftFormTool: RegisteredTool = {
         settings: draft.settings,
         logicDropped: draft.logicDropped,
         rationale: draft.rationale,
-        balance: await getAiBalance(ctx.workspaceId),
+        balance: await (isAzureBackend() ? getAiBalance(ctx.workspaceId,ctx.userId) : getAiBalance(ctx.workspaceId)),
       });
     } catch {
-      await refundCredits(ctx.workspaceId, AI_COST_PER_DRAFT, `mcp-draft-fail-${Date.now()}`);
+      const ref=`mcp-draft-fail-${Date.now()}`;
+      if(isAzureBackend()) await refundCredits(ctx.workspaceId,AI_COST_PER_DRAFT,ref,ctx.userId);
+      else await refundCredits(ctx.workspaceId,AI_COST_PER_DRAFT,ref);
       throw new McpToolError(
         "Generation failed. Please try again.",
         -32603,

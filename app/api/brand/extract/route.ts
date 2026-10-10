@@ -12,6 +12,9 @@ import { extractBrandProfile } from "@/lib/ai/brand";
 import { emptySignals, signalsFromPdf, signalsFromText, signalsFromWebsite, addColors } from "@/lib/brand/extract";
 import { presignedGetUrl } from "@/lib/r2";
 import { getPlatformFlags } from "@/lib/platform";
+import { isAzureBackend } from "@/lib/backend";
+import { brandSources } from "@/lib/db/repositories/uploads";
+import { databaseResult } from "@/lib/db/result";
 
 const schema = z.object({
   name: z.string().max(80).optional(),
@@ -57,7 +60,7 @@ export async function POST(req: Request) {
 
   // Guideline documents: verify ownership, download from private storage, parse.
   if (input.sourceFileIds?.length) {
-    const { data: files } = await admin
+    const { data: files } = isAzureBackend() ? await databaseResult(brandSources(userId,workspaceId,input.sourceFileIds)) : await admin
       .from("uploaded_files")
       .select("id, r2_key, mime_type, original_name, kind")
       .in("id", input.sourceFileIds)

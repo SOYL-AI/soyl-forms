@@ -6,8 +6,11 @@ import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { clientIp, formAcceptance, resolvePublicForm, resolveFormVersion } from "@/lib/forms/public";
 import { isR2Configured, newR2Key, presignedPutUrl } from "@/lib/r2";
 import { PLANS } from "@/lib/plans";
-import { getWorkspacePlan } from "@/lib/billing/plan";
+import { getPublicFormPlan } from "@/lib/billing/plan";
 import { getPlatformFlags } from "@/lib/platform";
+import { isAzureBackend } from "@/lib/backend";
+import { reserveFile } from "@/lib/db/repositories/uploads";
+import { databaseResult } from "@/lib/db/result";
 
 const DEFAULT_MIMES = [
   "image/jpeg",
@@ -111,7 +114,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   }
 
   const admin = getServiceSupabase();
-  const plan = await getWorkspacePlan(form.workspaceId);
+  const plan = await getPublicFormPlan(form);
 
   // Server-chosen random key: clients never pick storage paths, and no
   // respondent data (names/emails) goes into the key.
@@ -124,7 +127,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
 
   const safeName = body.data.fileName.replace(/[^\w.\-() ]+/g, "_").slice(0, 200);
   const uploadToken = randomBytes(32).toString("hex");
-  const { data: reserved, error } = await admin!.rpc("reserve_upload", { p_storage_limit: PLANS[plan].entitlements.storageBytes, p_file: {
+  const file = {
     id: fileId,
     workspace_id: form.workspaceId,
     form_id: form.id,
@@ -135,7 +138,10 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
     mime_type: mimeType,
     size_bytes: body.data.sizeBytes,
     upload_token_hash: createHash("sha256").update(uploadToken).digest("hex"),
-  } });
+  };
+  const storageLimit=PLANS[plan].entitlements.storageBytes;
+  const {data:reserved,error}=isAzureBackend() ? await databaseResult(reserveFile(null,file,storageLimit,body.data.formVersionId)) :
+    await admin!.rpc("reserve_upload", {p_storage_limit:storageLimit,p_file:file});
   if (error || !reserved) {
     return NextResponse.json({ error: "We couldn't start this upload. Please try again." }, { status: 500 });
   }

@@ -2,6 +2,10 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { decryptSecret } from "@/lib/security/secrets";
 import { signWebhook, submissionEventBody } from "./sign";
 import { publicFetch } from "@/lib/security/public-fetch";
+import { isAzureBackend } from "@/lib/backend";
+import { deliveryWebhook,recordDelivery } from "@/lib/db/repositories/webhooks";
+import { databaseResult } from "@/lib/db/result";
+import type { JobLease } from "@/lib/db/repositories/jobs";
 
 export interface DeliveryEvent {
   eventId: string;
@@ -34,11 +38,12 @@ export async function deliverToWebhook(
   webhookId: string,
   event: DeliveryEvent,
   attempt: number,
+  access?:{userId?:string;lease?:Pick<JobLease,'id'|'lease_token'>},
 ): Promise<{ ok: boolean; httpStatus: number | null; error?: string }> {
   const admin = getServiceSupabase();
-  if (!admin) return { ok: false, httpStatus: null, error: "Server misconfigured." };
+  if (!isAzureBackend() && !admin) return { ok: false, httpStatus: null, error: "Server misconfigured." };
 
-  const { data } = await admin
+  const { data } = isAzureBackend() ? await databaseResult(deliveryWebhook(access?.userId ?? null,webhookId,access?.lease)) : await admin!
     .from("webhooks")
     .select("id, url, secret_encrypted, is_active")
     .eq("id", webhookId)
@@ -83,7 +88,7 @@ export async function deliverToWebhook(
     error = e instanceof Error ? e.message.slice(0, 300) : "Network error.";
   }
 
-  await admin.from("webhook_deliveries").insert({
+  const saved=isAzureBackend() ? await databaseResult(recordDelivery(access?.userId ?? null,webhookId,event.eventId,attempt,status,error ?? null,access?.lease)) : await admin!.from("webhook_deliveries").insert({
     webhook_id: webhookId,
     event_type: "form.submission.completed",
     event_id: event.eventId,
@@ -92,6 +97,7 @@ export async function deliverToWebhook(
     delivered_at: error ? null : new Date().toISOString(),
     last_error: error ?? null,
   });
+  if(saved.error || (isAzureBackend() && !saved.data)) return {ok:false,httpStatus:status,error:'Could not record delivery state.'};
 
   return error ? { ok: false, httpStatus: status, error } : { ok: true, httpStatus: status };
 }

@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Field, Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import Link from "next/link";
+import { isAzureBackend } from "@/lib/backend";
 
 export function AccountForms({
   email,
@@ -99,7 +101,10 @@ export function AccountForms({
 
       <div className="flex flex-col gap-3 border-t border-line pt-5">
         <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-faint">Sign-in</p>
-        {pwOpen ? (
+        {isAzureBackend() ? <div className="flex flex-wrap items-center gap-3">
+          <Link href="/forgot" className="text-sm font-semibold underline underline-offset-2">Reset password</Link>
+          <form action={signOut}><Button type="submit" size="sm" variant="ghost">Sign out</Button></form>
+        </div> : pwOpen ? (
           <form onSubmit={changePassword} className="flex flex-col gap-3">
             <Field label="New password" htmlFor="new-pw" hint="At least 8 characters.">
               <Input id="new-pw" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} minLength={8} />

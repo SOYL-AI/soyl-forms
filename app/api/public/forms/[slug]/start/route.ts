@@ -3,6 +3,8 @@ import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { clientIp, resolvePublicForm, resolveFormVersion } from "@/lib/forms/public";
+import { isAzureBackend } from "@/lib/backend";
+import { startVisit } from "@/lib/db/repositories/respondents";
 
 const startSchema = z.object({
   sessionId: z.string().min(1).max(100),
@@ -30,7 +32,9 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   const admin = getServiceSupabase();
   const version = body.data.formVersionId ? await resolveFormVersion(resolved.form.id, body.data.formVersionId) : null;
   if (body.data.formVersionId && !version) return NextResponse.json({ error: "Invalid version." }, { status: 400 });
-  await admin!.from("form_visits").upsert({
+  if (isAzureBackend()) await startVisit(resolved.form.id, version?.versionId ?? resolved.form.versionId, body.data.sessionId,
+    body.data.source?.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20) || null);
+  else await admin!.from("form_visits").upsert({
     form_id: resolved.form.id,
     form_version_id: version?.versionId ?? resolved.form.versionId,
     session_id: body.data.sessionId,

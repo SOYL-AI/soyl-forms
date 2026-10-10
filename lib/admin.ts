@@ -1,6 +1,8 @@
 import { getServiceSupabase } from "./supabase/admin";
 import { getSessionUserId } from "./supabase/server";
 import type { PlanCode } from "./plans";
+import { isAzureBackend } from "./backend";
+import { withUserTransaction } from "./db/pool";
 
 export type AdminRole = "super_admin" | "support_admin";
 
@@ -16,6 +18,7 @@ export async function getAdminRole(
   userId: string,
   email?: string | null,
 ): Promise<AdminRole | null> {
+  if (isAzureBackend()) return withUserTransaction(userId, async db => (await db.query<{ role: AdminRole | null }>("select platform.admin_role() as role")).rows[0]?.role ?? null);
   if (email && bootstrapEmails().includes(email.toLowerCase())) {
     return "super_admin";
   }

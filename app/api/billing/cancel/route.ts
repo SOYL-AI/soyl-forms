@@ -3,6 +3,8 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getSessionUserId } from "@/lib/supabase/server";
 import { getRazorpay, isRazorpayConfigured } from "@/lib/billing/razorpay";
 import { getUserWorkspaceId } from "@/lib/workspaces";
+import { isAzureBackend } from "@/lib/backend";
+import { cancelSubscription } from "@/lib/billing/azure-checkout";
 
 /** Request cancellation; the webhook confirms and drives the downgrade. */
 export async function POST() {
@@ -17,6 +19,7 @@ export async function POST() {
   if (!workspaceId) {
     return NextResponse.json({ error: "No workspace yet." }, { status: 400 });
   }
+  if(isAzureBackend()) return cancelSubscription(userId,workspaceId);
   const admin = getServiceSupabase();
   const { data: sub } = await admin!
     .from("subscriptions")

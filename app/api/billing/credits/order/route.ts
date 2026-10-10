@@ -4,6 +4,8 @@ import { getSessionUserId } from "@/lib/supabase/server";
 import { AI_CREDIT_PACKS } from "@/lib/plans";
 import { getRazorpay, isRazorpayConfigured, razorpayKeyId } from "@/lib/billing/razorpay";
 import { getUserWorkspaceId } from "@/lib/workspaces";
+import { isAzureBackend } from "@/lib/backend";
+import { readWorkspaceRole } from "@/lib/db/repositories/workspaces";
 
 const orderSchema = z.object({ packId: z.string().min(1).max(50) });
 
@@ -32,6 +34,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No workspace yet." }, { status: 400 });
   }
 
+  if(isAzureBackend() && await readWorkspaceRole(userId,workspaceId)!=='owner') return NextResponse.json({error:'Only workspace owners manage billing.'},{status:403});
   const rzp = getRazorpay();
   try {
     const order = (await rzp!.orders.create({

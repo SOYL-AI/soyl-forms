@@ -10,6 +10,7 @@ next-env.d.ts
 # env — never commit real secrets
 .env
 .env*.local
+.azure-migration/
 
 # misc
 .DS_Store

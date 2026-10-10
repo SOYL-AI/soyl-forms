@@ -1,5 +1,8 @@
 import { getServiceSupabase } from "./supabase/admin";
 import { AI_WELCOME_CREDITS } from "./plans";
+import { isAzureBackend } from "./backend";
+import { getEntraSessionUser } from "./auth/session";
+import { ensureWorkspace, findWorkspaceId, readCreditBalance } from "./db/repositories/workspaces";
 
 /**
  * Resolve the caller's personal workspace, creating it exactly once.
@@ -11,6 +14,7 @@ export async function ensurePersonalWorkspace(
   userId: string,
   email?: string | null,
 ): Promise<{ workspaceId: string; created: boolean }> {
+  if (isAzureBackend()) return ensureWorkspace(userId);
   const admin = getServiceSupabase();
   if (!admin) {
     throw new Error(
@@ -92,6 +96,7 @@ export async function ensurePersonalWorkspace(
 
 /** First workspace id for a user (service-role read for server flows). */
 export async function getUserWorkspaceId(userId: string): Promise<string | null> {
+  if (isAzureBackend()) return findWorkspaceId(userId);
   const admin = getServiceSupabase();
   if (!admin) return null;
   const { data } = await admin
@@ -106,7 +111,11 @@ export async function getUserWorkspaceId(userId: string): Promise<string | null>
 }
 
 /** Current AI credit balance (0 when the ledger is unreachable). */
-export async function getAiBalance(workspaceId: string): Promise<number> {
+export async function getAiBalance(workspaceId: string, trustedActorId?: string): Promise<number> {
+  if (isAzureBackend()) {
+    const user = trustedActorId ? {id:trustedActorId} : await getEntraSessionUser();
+    return user ? readCreditBalance(user.id, workspaceId) : 0;
+  }
   const admin = getServiceSupabase();
   if (!admin) return 0;
   const { data } = await admin

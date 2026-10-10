@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getAppContext } from "@/lib/app-context";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { getFormForOwner, listWebhooks } from "@/lib/forms/actions";
 import { PLANS } from "@/lib/plans";
 import { AppShell } from "@/components/app/AppShell";
@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Integrations", robots: { index: fals
 
 export default async function WebhooksPage(props: { params: Promise<{ formId: string }> }) {
   const params = await props.params;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="webhooks" />;
+  if (!isApplicationConfigured()) return <ConfigRequired area="webhooks" />;
   const res = await getAppContext();
   if (!res.ok) redirect(`/login?next=/forms/${params.formId}/webhooks`);
   const owned = await getFormForOwner(params.formId);

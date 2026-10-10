@@ -6,6 +6,8 @@ import { getBrowserSupabase, isSupabaseConfigured } from "@/lib/supabase/client"
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
 import { Notice } from "@/components/ui/notice";
+import { isAzureBackend } from "@/lib/backend";
+import { EntraProofSignIn } from "@/components/auth/EntraProof";
 
 export function ForgotForm() {
   const [email, setEmail] = useState("");
@@ -31,6 +33,11 @@ export function ForgotForm() {
     setSent(true);
   }
 
+  if (isAzureBackend()) return <div className="flex flex-col gap-4">
+    <p className="text-sm text-ink-soft">Open secure sign-in, enter your email and choose Forgot password to reset it.</p>
+    <EntraProofSignIn next="/dashboard" label="Open secure sign-in" />
+    <Link href="/login" className="text-sm font-semibold underline underline-offset-2">Back to log in</Link>
+  </div>;
   if (sent) {
     return (
       <Notice tone="positive" title="Check your inbox">

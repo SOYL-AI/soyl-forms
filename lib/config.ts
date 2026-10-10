@@ -10,6 +10,7 @@ export function getSupportEmail(): string {
 
 export function getAppUrl(): string {
   const raw =
+    (typeof window === "undefined" ? process.env.APP_ORIGIN?.trim() || process.env.ENTRA_APP_ORIGIN?.trim() : undefined) ||
     process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000";
   return raw.replace(/\/+$/, "");
 }

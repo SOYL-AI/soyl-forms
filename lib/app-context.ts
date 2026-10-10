@@ -1,3 +1,4 @@
+import { unstable_rethrow } from "next/navigation";
 import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { ensurePersonalWorkspace, getUserWorkspaceId } from "@/lib/workspaces";
@@ -5,6 +6,9 @@ import { getWorkspacePlan } from "@/lib/billing/plan";
 import { getAdminRole } from "@/lib/admin";
 import { getPlatformFlags, type PlatformFlags } from "@/lib/platform";
 import { PLANS, type Entitlements, type PlanCode } from "@/lib/plans";
+import { isAzureBackend } from "@/lib/backend";
+import { getEntraSessionUser } from "@/lib/auth/session";
+import { ensureWorkspace, findWorkspaceId, readWorkspace, readWorkspacePlan } from "@/lib/db/repositories/workspaces";
 
 export interface AppContext {
   userId: string;
@@ -28,6 +32,28 @@ export type AppContextResult =
  * first visit unless registrations are paused.
  */
 export async function getAppContext(): Promise<AppContextResult> {
+  if (isAzureBackend()) {
+    try {
+      const user = await getEntraSessionUser();
+      if (!user) return { ok: false, reason: "signed-out" };
+      const flags = await getPlatformFlags();
+      let workspaceId = await findWorkspaceId(user.id);
+      if (!workspaceId) {
+        if (!flags.registrationsEnabled) return { ok: false, reason: "registrations-paused" };
+        ({ workspaceId } = await ensureWorkspace(user.id));
+      }
+      const [workspace, plan, role] = await Promise.all([
+        readWorkspace(user.id, workspaceId), readWorkspacePlan(user.id, workspaceId), getAdminRole(user.id),
+      ]);
+      if (!workspace || workspace.status !== "active") return { ok: false, reason: "error", message: "Workspace unavailable." };
+      return { ok: true, ctx: { userId: user.id, email: user.email, displayName: workspace.display_name,
+        workspaceId, workspaceName: workspace.name, plan, entitlements: PLANS[plan].entitlements, flags, isAdmin: role !== null } };
+    } catch (error) {
+      unstable_rethrow(error);
+      console.error(JSON.stringify({ event: "azure_app_context_failed" }));
+      return { ok: false, reason: "error", message: "Workspace temporarily unavailable." };
+    }
+  }
   const supabase = await getServerSupabase();
   if (!supabase) return { ok: false, reason: "error", message: "Service temporarily unavailable. Please try again." };
   const {

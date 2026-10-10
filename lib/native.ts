@@ -13,7 +13,8 @@
 export const APP_USER_AGENT = "SOYLFormsApp";
 
 /** Custom scheme the app registers (AndroidManifest.xml) for returning from the browser. */
-export const APP_SCHEME = "com.soylai.forms";
+export const APP_SCHEME = process.env.NEXT_PUBLIC_NATIVE_APP_SCHEME === "com.soylai.forms.authproof"
+  ? "com.soylai.forms.authproof" : "com.soylai.forms";
 
 export function isNativeUserAgent(userAgent: string | null | undefined): boolean {
   return Boolean(userAgent?.includes(APP_USER_AGENT));

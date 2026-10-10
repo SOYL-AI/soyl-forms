@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { userDetail } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
@@ -9,27 +11,10 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 
 export default async function AdminUserDetail(props: { params: Promise<{ id: string }> }) {
   const params = await props.params;
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   if (!/^[0-9a-f-]{36}$/i.test(params.id)) notFound();
-  const { data } = await admin.auth.admin.getUserById(params.id);
-  const user = data?.user;
-  if (!user) notFound();
-
-  const [{ data: profile }, { data: members }, { data: adminRow }, { data: audit }] = await Promise.all([
-    admin.from("profiles").select("display_name, created_at").eq("id", user.id).maybeSingle(),
-    admin.from("workspace_members").select("workspace_id, role").eq("user_id", user.id),
-    admin.from("admin_users").select("role").eq("user_id", user.id).maybeSingle(),
-    admin.from("audit_logs").select("id, action, target_type, target_id, created_at").eq("actor_user_id", user.id).order("created_at", { ascending: false }).limit(20),
-  ]);
-  const wsIds = ((members ?? []) as Array<{ workspace_id: string }>).map((m) => m.workspace_id);
-  const [{ data: spaces }, { data: subs }, { data: forms }] = wsIds.length
-    ? await Promise.all([
-        admin.from("workspaces").select("id, name, status, created_at").in("id", wsIds),
-        admin.from("subscriptions").select("workspace_id, plan_code, status").in("workspace_id", wsIds),
-        admin.from("forms").select("id, title, status, workspace_id, updated_at").in("workspace_id", wsIds).order("updated_at", { ascending: false }).limit(50),
-      ])
-    : [{ data: [] }, { data: [] }, { data: [] }];
+  const result=isAzureBackend() ? await userDetail(params.id) : await loadLegacyUser(params.id);
+  if(!result) notFound();
+  const {user,profile,members,adminRow,audit,spaces,subs,forms}=result;
   const subByWs = new Map(((subs ?? []) as Array<{ workspace_id: string; plan_code: string; status: string }>).map((s) => [s.workspace_id, s]));
   const roleByWs = new Map(((members ?? []) as Array<{ workspace_id: string; role: string }>).map((m) => [m.workspace_id, m.role]));
 
@@ -45,7 +30,7 @@ export default async function AdminUserDetail(props: { params: Promise<{ id: str
         </h1>
         <p className="mt-1 text-sm text-ink-soft">
           {(profile as { display_name: string | null } | null)?.display_name ?? "No display name"} · joined {formatDate(user.created_at)} · last sign-in{" "}
-          {user.last_sign_in_at ? formatDateTime(user.last_sign_in_at) : "never"} · {user.email_confirmed_at ? "email confirmed" : "email not confirmed"}
+          {user.last_sign_in_at ? formatDateTime(user.last_sign_in_at) : "not recorded"} · {("email_verified" in user ? user.email_verified : user.email_confirmed_at) ? "email confirmed" : "email not confirmed"}
         </p>
         <Mono>{user.id}</Mono>
         <p className="mt-1 text-xs text-ink-faint">Providers: {(user.identities ?? []).map((i) => i.provider).join(", ") || "email"}</p>
@@ -149,4 +134,29 @@ export default async function AdminUserDetail(props: { params: Promise<{ id: str
       </Card>
     </div>
   );
+}
+
+async function loadLegacyUser(id:string){
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+  if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
+  const { data } = await admin.auth.admin.getUserById(id);
+  const user = data?.user;
+  if (!user) notFound();
+
+  const [{ data: profile }, { data: members }, { data: adminRow }, { data: audit }] = await Promise.all([
+    admin.from("profiles").select("display_name, created_at").eq("id", user.id).maybeSingle(),
+    admin.from("workspace_members").select("workspace_id, role").eq("user_id", user.id),
+    admin.from("admin_users").select("role").eq("user_id", user.id).maybeSingle(),
+    admin.from("audit_logs").select("id, action, target_type, target_id, created_at").eq("actor_user_id", user.id).order("created_at", { ascending: false }).limit(20),
+  ]);
+  const wsIds = ((members ?? []) as Array<{ workspace_id: string }>).map((m) => m.workspace_id);
+  const [{ data: spaces }, { data: subs }, { data: forms }] = wsIds.length
+    ? await Promise.all([
+        admin.from("workspaces").select("id, name, status, created_at").in("id", wsIds),
+        admin.from("subscriptions").select("workspace_id, plan_code, status").in("workspace_id", wsIds),
+        admin.from("forms").select("id, title, status, workspace_id, updated_at").in("workspace_id", wsIds).order("updated_at", { ascending: false }).limit(50),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }];
+  return {user,profile,members,adminRow,audit,spaces,subs,forms};
 }

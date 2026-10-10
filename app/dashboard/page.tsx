@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { FileText, LayoutGrid, Sparkles } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { getAppContext } from "@/lib/app-context";
 import { ensureMonthlyCredits, getAiBalance } from "@/lib/ai/credits";
 import { AppShell } from "@/components/app/AppShell";
@@ -15,6 +15,8 @@ import { ButtonLink } from "@/components/ui/button";
 import { Notice } from "@/components/ui/notice";
 import { formatBytes } from "@/lib/utils";
 import { FormCard, NewFormButton } from "./FormActions";
+import { isAzureBackend } from "@/lib/backend";
+import { readDashboard } from "@/lib/db/repositories/dashboard";
 
 export const metadata: Metadata = { title: "Your forms", robots: { index: false } };
 
@@ -29,7 +31,7 @@ export interface FormSummary {
 }
 
 export default async function DashboardPage() {
-  if (!isSupabaseConfigured()) return <ConfigRequired area="your form list" />;
+  if (!isAzureBackend() && !isApplicationConfigured()) return <ConfigRequired area="your form list" />;
   const res = await getAppContext();
   if (!res.ok) {
     if (res.reason === "signed-out") redirect("/login?next=/dashboard");
@@ -51,35 +53,12 @@ export default async function DashboardPage() {
     );
   }
   const { ctx } = res;
-  const admin = getServiceSupabase()!;
-  const month = new Date().toISOString().slice(0, 7);
-
   await ensureMonthlyCredits(ctx.workspaceId, ctx.plan);
-  const [{ data: formRows }, { data: subs }, { data: usage }, { data: files }, credits] = await Promise.all([
-    admin
-      .from("forms")
-      .select("id, title, slug, status, updated_at, published_at, brand_kit_id")
-      .eq("workspace_id", ctx.workspaceId)
-      .order("updated_at", { ascending: false }),
-    admin.from("submissions").select("form_id, submitted_at").eq("workspace_id", ctx.workspaceId).is("deleted_at", null).limit(10000),
-    admin.from("usage_monthly").select("completed_submissions").eq("workspace_id", ctx.workspaceId).eq("month", `${month}-01`).maybeSingle(),
-    admin.from("uploaded_files").select("size_bytes").eq("workspace_id", ctx.workspaceId).neq("status", "deleted").limit(5000),
-    getAiBalance(ctx.workspaceId),
-  ]);
-
-  const all = (formRows ?? []) as FormSummary[];
+  const metrics = isAzureBackend() ? await readDashboard(ctx.userId, ctx.workspaceId) : await readLegacyDashboard(ctx.workspaceId);
+  const { forms: all, total, thisMonth, monthlyUsed, storageUsed, credits } = metrics;
   const forms = all.filter((f) => f.status !== "archived");
   const archived = all.filter((f) => f.status === "archived");
   const live = forms.filter((f) => f.status === "published").length;
-
-  const total = new Map<string, number>();
-  const thisMonth = new Map<string, number>();
-  for (const s of (subs ?? []) as Array<{ form_id: string; submitted_at: string }>) {
-    total.set(s.form_id, (total.get(s.form_id) ?? 0) + 1);
-    if (s.submitted_at.startsWith(month)) thisMonth.set(s.form_id, (thisMonth.get(s.form_id) ?? 0) + 1);
-  }
-  const monthlyUsed = (usage as { completed_submissions: number } | null)?.completed_submissions ?? 0;
-  const storageUsed = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
   const e = ctx.entitlements;
   const nearLimit = monthlyUsed / e.monthlySubmissions >= 0.8 || live / e.maxActiveForms >= 0.8;
 
@@ -164,4 +143,33 @@ export default async function DashboardPage() {
       )}
     </AppShell>
   );
+}
+
+async function readLegacyDashboard(workspaceId: string) {
+  const admin = getServiceSupabase()!;
+  const month = new Date().toISOString().slice(0, 7);
+
+  const [{ data: formRows }, { data: subs }, { data: usage }, { data: files }, credits] = await Promise.all([
+    admin
+      .from("forms")
+      .select("id, title, slug, status, updated_at, published_at, brand_kit_id")
+      .eq("workspace_id", workspaceId)
+      .order("updated_at", { ascending: false }),
+    admin.from("submissions").select("form_id, submitted_at").eq("workspace_id", workspaceId).is("deleted_at", null).limit(10000),
+    admin.from("usage_monthly").select("completed_submissions").eq("workspace_id", workspaceId).eq("month", `${month}-01`).maybeSingle(),
+    admin.from("uploaded_files").select("size_bytes").eq("workspace_id", workspaceId).neq("status", "deleted").limit(5000),
+    getAiBalance(workspaceId),
+  ]);
+
+  const all = (formRows ?? []) as FormSummary[];
+
+  const total = new Map<string, number>();
+  const thisMonth = new Map<string, number>();
+  for (const s of (subs ?? []) as Array<{ form_id: string; submitted_at: string }>) {
+    total.set(s.form_id, (total.get(s.form_id) ?? 0) + 1);
+    if (s.submitted_at.startsWith(month)) thisMonth.set(s.form_id, (thisMonth.get(s.form_id) ?? 0) + 1);
+  }
+  const monthlyUsed = (usage as { completed_submissions: number } | null)?.completed_submissions ?? 0;
+  const storageUsed = ((files ?? []) as Array<{ size_bytes: number }>).reduce((s, f) => s + f.size_bytes, 0);
+  return { forms: all, total, thisMonth, monthlyUsed, storageUsed, credits };
 }

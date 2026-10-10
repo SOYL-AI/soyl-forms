@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getAppContext } from "@/lib/app-context";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { AppShell } from "@/components/app/AppShell";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
 import { Card, PageHeader } from "@/components/ui/card";
@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Account", robots: { index: false } }
 
 export default async function AccountPage(props: { searchParams?: Promise<{ reset?: string }> }) {
   const searchParams = await props.searchParams;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="your account" />;
+  if (!isApplicationConfigured()) return <ConfigRequired area="your account" />;
   const res = await getAppContext();
   if (!res.ok) redirect("/login?next=/account");
   const { ctx } = res;

@@ -5,10 +5,13 @@ import { enforceRateLimit } from "@/lib/security/rateLimit";
 import { validateAnswers } from "@/lib/forms/answers";
 import { scoreAnswers } from "@/lib/forms/quiz";
 import { PLANS } from "@/lib/plans";
-import { getWorkspacePlan } from "@/lib/billing/plan";
+import { getPublicFormPlan } from "@/lib/billing/plan";
 import { clientIp, formAcceptance, resolveFormVersion, resolvePublicForm } from "@/lib/forms/public";
 import { expectedPaiseForBlock } from "@/lib/billing/payments-server";
 import { verifySubmissionFiles } from "@/lib/uploads/verify";
+import { isAzureBackend } from "@/lib/backend";
+import { databaseResult } from "@/lib/db/result";
+import { readReceipt, submitResponse } from "@/lib/db/repositories/respondents";
 
 const submitSchema = z.object({
   formVersionId: z.string().min(1).max(100),
@@ -47,7 +50,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   const form = resolved.form;
   const admin = getServiceSupabase();
   // Acknowledgement may have been lost, including after the form closed.
-  const { data: existing, error: existingError } = await admin!
+  const { data: existing, error: existingError } = isAzureBackend() ? await databaseResult(readReceipt(form.id, input.idempotencyKey)) : await admin!
     .from("submissions").select("id, form_version_id, answers").eq("form_id", form.id)
     .eq("idempotency_key", input.idempotencyKey).maybeSingle();
   if (existingError) return NextResponse.json({ error: "Please try again. Your answers are kept." }, { status: 503 });
@@ -118,10 +121,14 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   const durationMs = input.durationMs === undefined ? null : Math.min(Math.round(input.durationMs), 24 * 3600 * 1000);
 
   // Effective workspace plan → atomic insert + monthly gate in one transaction.
-  const plan = await getWorkspacePlan(form.workspaceId);
+  const plan = await getPublicFormPlan(form);
   const source = input.source?.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 20) || null;
 
-  const { data: result, error: rpcError } = await admin!.rpc("submit_form_safe", {
+  const { data: result, error: rpcError } = isAzureBackend() ? await databaseResult(submitResponse({
+    formId: form.id, workspaceId: form.workspaceId, versionId: answered.versionId, key: input.idempotencyKey,
+    answers: checked.value, hidden, source, durationMs, monthlyLimit: PLANS[plan].entitlements.monthlySubmissions,
+    sessionId: input.sessionId, resumeToken: input.resumeToken,
+  })) : await admin!.rpc("submit_form_safe", {
     p_form_id: form.id,
     p_workspace_id: form.workspaceId,
     p_version_id: answered.versionId,

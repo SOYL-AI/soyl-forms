@@ -1,12 +1,15 @@
 "use server";
 
-import Razorpay from "razorpay";
+import { createRazorpay } from "./razorpay";
 import { getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { decryptSecret, encryptSecret, isSecretEncryptionConfigured } from "@/lib/security/secrets";
+import { encryptSecret, isSecretEncryptionConfigured } from "@/lib/security/secrets";
 import { auditLog } from "@/lib/admin";
 import { getMyRole } from "@/lib/team-actions";
 import { isValidKeyId, isValidKeySecret, keyMode } from "./connect";
+import { isAzureBackend } from "@/lib/backend";
+import { providerStatus,saveProvider } from "@/lib/db/repositories/payments";
+import { databaseResult } from "@/lib/db/result";
 
 export type ProviderActionResult<T = object> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -17,40 +20,6 @@ export interface ProviderStatus {
   updatedAt: string | null;
 }
 
-const clientCache = new Map<string, { keyId: string; client: Razorpay }>();
-
-/** Decrypted workspace client, or null when not connected. Never leaves the server. */
-export async function getWorkspaceRazorpay(workspaceId: string): Promise<{
-  client: Razorpay;
-  keyId: string;
-  mode: "test" | "live";
-  keySecret: string;
-} | null> {
-  const admin = getServiceSupabase();
-  if (!admin) return null;
-  const { data } = await admin
-    .from("workspace_payment_providers")
-    .select("key_id, secret_encrypted, mode, status")
-    .eq("workspace_id", workspaceId)
-    .maybeSingle();
-  const row = data as { key_id: string; secret_encrypted: string; mode: string; status: string } | null;
-  if (!row || row.status !== "active") return null;
-  let secret: string;
-  try {
-    secret = decryptSecret(row.secret_encrypted);
-  } catch {
-    return null;
-  }
-  const mode = row.mode === "live" ? "live" : "test";
-  const cached = clientCache.get(workspaceId);
-  if (cached && cached.keyId === row.key_id) {
-    return { client: cached.client, keyId: row.key_id, mode, keySecret: secret };
-  }
-  const client = new Razorpay({ key_id: row.key_id, key_secret: secret });
-  clientCache.set(workspaceId, { keyId: row.key_id, client });
-  return { client, keyId: row.key_id, mode, keySecret: secret };
-}
-
 /** Connection status for the UI (secret never included). */
 export async function getProviderStatus(workspaceId: string): Promise<ProviderActionResult<ProviderStatus>> {
   const userId = await getSessionUserId();
@@ -58,8 +27,8 @@ export async function getProviderStatus(workspaceId: string): Promise<ProviderAc
   const role = await getMyRole(workspaceId, userId);
   if (role !== "owner" && role !== "admin") return { ok: false, error: "Only owners and admins manage payments." };
   const admin = getServiceSupabase();
-  if (!admin) return { ok: false, error: "Service temporarily unavailable. Please try again." };
-  const { data } = await admin
+  if (!isAzureBackend() && !admin) return { ok: false, error: "Service temporarily unavailable. Please try again." };
+  const { data } = isAzureBackend() ? await databaseResult(providerStatus(userId,workspaceId)) : await admin!
     .from("workspace_payment_providers")
     .select("key_id, mode, updated_at")
     .eq("workspace_id", workspaceId)
@@ -100,21 +69,21 @@ export async function connectProvider(args: {
 
   // Prove the pair with a read-only call before storing anything.
   try {
-    const probe = new Razorpay({ key_id: keyId, key_secret: args.keySecret });
+    const probe = createRazorpay(keyId,args.keySecret);
     await probe.orders.all({ count: 1 });
   } catch {
     return { ok: false, error: "Razorpay rejected these keys. Check them and try again." };
   }
 
   const admin = getServiceSupabase();
-  if (!admin) return { ok: false, error: "Service temporarily unavailable. Please try again." };
+  if (!isAzureBackend() && !admin) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   let encrypted: string;
   try {
     encrypted = encryptSecret(args.keySecret);
   } catch {
     return { ok: false, error: "Couldn't store the keys securely." };
   }
-  const { error } = await admin.from("workspace_payment_providers").upsert(
+  const { error } = isAzureBackend() ? await databaseResult(saveProvider(userId,args.workspaceId,keyId,encrypted,mode)) : await admin!.from("workspace_payment_providers").upsert(
     {
       workspace_id: args.workspaceId,
       provider: "razorpay",
@@ -128,8 +97,7 @@ export async function connectProvider(args: {
     { onConflict: "workspace_id" },
   );
   if (error) return { ok: false, error: "Couldn't save the connection." };
-  clientCache.delete(args.workspaceId);
-  await auditLog({
+  if(!isAzureBackend()) await auditLog({
     actorUserId: userId,
     actorType: "user",
     workspaceId: args.workspaceId,
@@ -147,11 +115,10 @@ export async function disconnectProvider(args: { workspaceId: string }): Promise
   const role = await getMyRole(args.workspaceId, userId);
   if (role !== "owner" && role !== "admin") return { ok: false, error: "Only owners and admins manage payments." };
   const admin = getServiceSupabase();
-  if (!admin) return { ok: false, error: "Service temporarily unavailable. Please try again." };
-  const { error } = await admin.from("workspace_payment_providers").delete().eq("workspace_id", args.workspaceId);
+  if (!isAzureBackend() && !admin) return { ok: false, error: "Service temporarily unavailable. Please try again." };
+  const { error } = isAzureBackend() ? await databaseResult(saveProvider(userId,args.workspaceId,null,null,null)) : await admin!.from("workspace_payment_providers").delete().eq("workspace_id", args.workspaceId);
   if (error) return { ok: false, error: "Couldn't disconnect." };
-  clientCache.delete(args.workspaceId);
-  await auditLog({
+  if(!isAzureBackend()) await auditLog({
     actorUserId: userId,
     actorType: "user",
     workspaceId: args.workspaceId,

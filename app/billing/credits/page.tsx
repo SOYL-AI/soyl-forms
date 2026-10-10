@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { getAppContext } from "@/lib/app-context";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { AI_COST_PER_BRAND_EXTRACTION, AI_COST_PER_DRAFT, AI_CREDIT_PACKS, PLANS } from "@/lib/plans";
 import { ensureMonthlyCredits, getAiBalance } from "@/lib/ai/credits";
 import { isRazorpayConfigured } from "@/lib/billing/razorpay";
@@ -15,7 +15,7 @@ import { BuyButtons } from "./BuyButtons";
 export const metadata: Metadata = { title: "AI credits", robots: { index: false } };
 
 export default async function CreditsPage() {
-  if (!isSupabaseConfigured()) return <ConfigRequired area="AI credits" />;
+  if (!isApplicationConfigured()) return <ConfigRequired area="AI credits" />;
   const res = await getAppContext();
   if (!res.ok) redirect("/login?next=/billing/credits");
   const { ctx } = res;
