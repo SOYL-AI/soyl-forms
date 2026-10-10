@@ -14,6 +14,8 @@ Planning workload: 100 monthly active creators and 10,000 completed responses pe
 
 The lean Azure allowance is INR 4,000-7,000 per month before taxes and credits, excluding AI and variable R2/email/payment charges. The owner subsequently selected Azure Communication Services Email instead of Resend. Its usage charges now appear in the Azure subscription budget; this is not evidence that every volume fits the original compute/database allowance. Temporary staging and dual-running can add cost. Credit eligibility, expiry, regional SKU availability, and actual resource costs must be checked before provisioning. No subscription prices or entitlements change as part of this migration.
 
+Service lifecycle update verified 11 October 2026: Microsoft has announced ACS Email retirement on 30 September 2028 and recommends avoiding new long-term workloads. Keep the requested Azure integration temporary; choose a successor by September 2027 and finish replacement acceptance by March 2028. See [the email runbook and official source](24_azure_email_and_dns.md#service-retirement-and-replacement-deadline). This does not change the app/PostgreSQL/Entra migration or justify switching providers for an uncertain existing email operation.
+
 ## Proposed architecture
 
 | Component | Initial configuration |
