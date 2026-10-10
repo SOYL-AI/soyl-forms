@@ -5,6 +5,7 @@ param vaultUri string
 param integrationSettings array
 param tenantId string = '47f0c7e0-77a5-4ae0-b3b4-b9b48269d014'
 param clientId string = 'bccc18ff-25c7-426e-827f-1ff928f98de9'
+param emailEndpoint string = 'https://soyl-forms-communication.india.communication.azure.com'
 
 resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = { name: 'soyl-forms-env' }
 resource runtimeIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = { name: 'soyl-forms-runtime' }
@@ -46,7 +47,11 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
           { name: 'DATABASE_URL', secretRef: 'database-url' }
           { name: 'ENTRA_CLIENT_SECRET', secretRef: 'entra-client-secret' }
           { name: 'AUTH_SESSION_SECRET', secretRef: 'session-secret' }
-        ],integrationEnv)
+        ],integrationEnv,empty(emailEndpoint) ? [] : [
+          {name:'EMAIL_PROVIDER',value:'azure'}
+          {name:'AZURE_EMAIL_ENDPOINT',value:emailEndpoint}
+          {name:'AZURE_CLIENT_ID',value:runtimeIdentity.properties.clientId}
+        ])
         probes: [
           { type: 'Startup', httpGet: { path: '/api/health/live', port: 3000 }, initialDelaySeconds: 1, periodSeconds: 6, timeoutSeconds: 2, failureThreshold: 10 }
           { type: 'Liveness', httpGet: { path: '/api/health/live', port: 3000 }, initialDelaySeconds: 10, periodSeconds: 30, timeoutSeconds: 2, failureThreshold: 3 }

@@ -12,7 +12,7 @@ Replace managed Supabase database/API/auth dependencies with Azure PostgreSQL, s
 
 Planning workload: 100 monthly active creators and 10,000 completed responses per month. This is not a concurrency specification or a measured capacity guarantee. Existing account/data preservation must be inventoried even though there are no customer accounts; operator accounts, forms, Razorpay references, and uploads may still exist.
 
-The lean Azure allowance is INR 4,000-7,000 per month before taxes and credits, excluding AI and third-party R2/Resend/payment charges. Temporary staging and dual-running can add cost. Credit eligibility, expiry, regional SKU availability, and actual resource costs must be checked before provisioning. No subscription prices or entitlements change as part of this migration.
+The lean Azure allowance is INR 4,000-7,000 per month before taxes and credits, excluding AI and variable R2/email/payment charges. The owner subsequently selected Azure Communication Services Email instead of Resend. Its usage charges now appear in the Azure subscription budget; this is not evidence that every volume fits the original compute/database allowance. Temporary staging and dual-running can add cost. Credit eligibility, expiry, regional SKU availability, and actual resource costs must be checked before provisioning. No subscription prices or entitlements change as part of this migration.
 
 ## Proposed architecture
 
@@ -24,7 +24,7 @@ The lean Azure allowance is INR 4,000-7,000 per month before taxes and credits, 
 | Database access | Typed server repositories using a bounded PostgreSQL connection pool; no browser database credentials or public PostgREST replacement |
 | Sessions | Maintained OIDC/session library, secure HttpOnly cookies, shared durable session state where required; never process-local session state |
 | Files | Existing private R2 bucket, verified-upload flow, signed downloads and staging lifecycle |
-| Billing/email/AI | Retain Razorpay, Resend and existing AI provider integrations; migrate their database dependencies |
+| Billing/email/AI | Retain Razorpay and the existing AI provider; use managed-identity Azure Communication Services Email as subsequently authorized; migrate database dependencies |
 | Background work | Scheduled Container Apps Jobs for notification/webhook outbox and cleanup, with expiring database claims and bounded job concurrency |
 | Delivery | Infrastructure as code, container registry, GitHub Actions with Azure workload identity, separate deployment and runtime identities |
 | Operations | Health/readiness probes, structured logs, external uptime check, Azure alerts/budget, database backups and tested restoration |
@@ -133,7 +133,7 @@ Annual billing lowers the monthly-equivalent contribution: a 70/30 blend yields 
 
 ## Prerequisites after approval
 
-Required provisioning inputs: Azure subscription/resource access, credit balance/expiry/eligible services, selected region and domain/DNS access; External ID tenant/app; existing R2, Resend and Razorpay test/live configuration; decision on retaining internal test/operator data. Google OAuth administration is needed only for the deferred enhancement. Supply secrets through local secret configuration or the cloud secret store, never chat or Git. Start implementation with the isolated auth proof, then database conversion, then infrastructure and staged verification. Production cutover remains the final reviewable release step.
+Required provisioning inputs: Azure subscription/resource access, credit balance/expiry/eligible services, selected region and domain/DNS access; External ID tenant/app; existing R2 and Razorpay test/live configuration; Azure email sender verification/quota; decision on retaining internal test/operator data. Google OAuth administration is needed only for the deferred enhancement. Supply secrets through local secret configuration or the cloud secret store, never chat or Git. The owner has authorized implementation, direct main pushes and completing cutover. Account/DNS access and actual acceptance evidence remain operational requirements, rather than another approval gate.
 
 ## Sources checked
 

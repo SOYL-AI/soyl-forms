@@ -1,8 +1,9 @@
-/**
- * Transactional email via Resend's HTTP API. Used for owner notifications on
- * new responses. Fail-soft: callers treat a false return as "not sent".
- */
+import { sendAzureEmail, validAzureEmailEndpoint, type EmailSendResult } from './azure';
+
+// Templates and the legacy import path remain shared by both backends.
 export function isEmailConfigured(): boolean {
+  if (process.env.EMAIL_PROVIDER === 'azure') return Boolean(validAzureEmailEndpoint(process.env.AZURE_EMAIL_ENDPOINT) && process.env.AZURE_CLIENT_ID && process.env.EMAIL_FROM);
+  if (process.env.EMAIL_PROVIDER && process.env.EMAIL_PROVIDER !== 'resend') return false;
   return Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 }
 
@@ -14,11 +15,19 @@ export async function sendEmail(args: {
   replyTo?: string;
   idempotencyKey?: string;
   from?: string;
-}): Promise<{ ok: boolean; error?: string }> {
-  if (!isEmailConfigured()) return { ok: false, error: "Email isn't configured." };
+  provider?: 'azure' | 'resend';
+  providerEndpoint?: string;
+  firstSentAt?: string;
+  providerOperationId?: string;
+}): Promise<EmailSendResult> {
+  const provider = args.provider ?? process.env.EMAIL_PROVIDER ?? 'resend';
+  if (provider === 'azure') return sendAzureEmail(args);
+  if (provider !== 'resend') return { ok:false,error:'Email provider is not configured.' };
+  if (!process.env.RESEND_API_KEY || !(args.from ?? process.env.EMAIL_FROM)) return { ok: false, error: "Email isn't configured." };
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
+      redirect: "error",
       headers: {
         authorization: `Bearer ${process.env.RESEND_API_KEY}`,
         "content-type": "application/json",
@@ -36,8 +45,8 @@ export async function sendEmail(args: {
     });
     if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
     return { ok: true };
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message.slice(0, 200) : "Network error." };
+  } catch {
+    return { ok: false, error: "Email is temporarily unavailable." };
   }
 }
 

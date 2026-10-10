@@ -18,7 +18,7 @@ describe("email retries", () => {
     state.send.mockResolvedValue({ ok: true });
     expect(await deliverEmail("event:owners", "workspace", 10, changed)).toBe("sent");
     expect(state.send.mock.calls.map(([mail]) => mail)).toEqual([
-      { ...frozen, idempotencyKey: "event:owners" }, { ...frozen, idempotencyKey: "event:owners" },
+      { ...frozen, provider: "resend", idempotencyKey: "event:owners" }, { ...frozen, provider: "resend", idempotencyKey: "event:owners" },
     ]);
     expect(state.save).toHaveBeenCalledWith({ status: "sent", request: {} });
   });

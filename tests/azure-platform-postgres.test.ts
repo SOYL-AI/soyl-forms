@@ -299,6 +299,19 @@ suite("Azure platform against real PostgreSQL and non-owner roles", () => {
     expect(first?.status).toBe('reserved');
     expect((await jobs.reserveEmail(job,key,1,1,{subject:'Changed'}))?.request).toEqual(request);
     expect((await jobs.reserveEmail(job,`${job.id}:respondent`,1,1,request))?.status).toBe('limited');
+    expect(await jobs.emailOperation(stale,key)).toBeNull();
+    const operation=(await jobs.emailOperation(job,key))!;
+    expect(operation.provider_operation_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect((await jobs.emailOperation(job,key))?.provider_first_sent_at).toBe(operation.provider_first_sent_at);
+    expect(await jobs.deferEmail(stale,key,operation.provider_operation_id!,60)).toBe(false);
+    expect(await jobs.deferEmail(job,key,randomUUID(),60)).toBe(false);
+    expect(await jobs.deferEmail(job,key,operation.provider_operation_id!,1200)).toBe(true);
+    const waiting=(await jobs.emailOperation(job,key))!;
+    expect(waiting.provider_first_sent_at).toBeNull();
+    expect(Date.parse(waiting.provider_retry_at!)).toBeGreaterThan(Date.now()+1100_000);
+    await admin.query("update email_reservations set provider_retry_at=now()-interval '1 second' where key=$1",[key]);
+    expect((await jobs.emailOperation(job,key))?.provider_operation_id).not.toBe(operation.provider_operation_id);
+    expect(await jobs.deferJob(stale,job.payload)).toBe(false);
     expect(await jobs.completeEmail(stale,key)).toBe(false);
     expect(await jobs.completeEmail(job,key)).toBe(true);
     await admin.query("update outbox_events set lease_until=now()-interval '1 second' where id=$1",[job.id]);
@@ -308,7 +321,11 @@ suite("Azure platform against real PostgreSQL and non-owner roles", () => {
     expect(reclaimed.lease_token).not.toBe(job.lease_token);
     expect(await hooks.recordDelivery(null,hookId,reclaimed.id,reclaimed.attempts,200,null,reclaimed)).toBe(true);
     expect((await jobs.jobContext(reclaimed))?.hooks).toContainEqual({id:hookId,delivered:true});
-    expect(await jobs.finishJob(reclaimed,{...reclaimed.payload,hooks:[hookId],owners:true,respondent:true},true,false)).toBe(true);
+    expect(await jobs.deferJob(reclaimed,reclaimed.payload)).toBe(true);
+    expect((await admin.query('select attempts,status from outbox_events where id=$1',[job.id])).rows[0]).toEqual({attempts:1,status:'pending'});
+    await admin.query("update outbox_events set available_at=now()-interval '100 years' where id=$1",[job.id]);
+    const finalLease=(await jobs.claimJob())!;
+    expect(await jobs.finishJob(finalLease,{...finalLease.payload,hooks:[hookId],owners:true,respondent:true},true,false)).toBe(true);
     await admin.query('delete from forms where id=$1',[id]);
   });
 

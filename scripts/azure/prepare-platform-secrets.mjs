@@ -17,4 +17,4 @@ add('CRON_SECRET',randomBytes(32).toString('hex'));
 await mkdir('.azure-migration',{recursive:true});
 await writeFile(target,JSON.stringify({$schema:'https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#',contentVersion:'1.0.0.0',parameters:{settings:{value:settings}}},null,2),{mode:0o600,flag:'wx'});
 await writeFile('.azure-migration/platform-settings-list.json',JSON.stringify(Object.entries(settings).map(([secretName,entry])=>({secretName,envName:entry.envName})),null,2),{mode:0o600});
-console.log(JSON.stringify({event:'platform_secret_parameters_prepared',count:Object.keys(settings).length,emailConfigured:Boolean(process.env.RESEND_API_KEY),webhookDashboardConfigurationRequired:!process.env.RAZORPAY_WEBHOOK_SECRET}));
+console.log(JSON.stringify({event:'platform_secret_parameters_prepared',count:Object.keys(settings).length,emailConfigured:process.env.EMAIL_PROVIDER==='azure' ? Boolean(process.env.AZURE_EMAIL_ENDPOINT && process.env.AZURE_CLIENT_ID) : Boolean(process.env.RESEND_API_KEY),webhookDashboardConfigurationRequired:!process.env.RAZORPAY_WEBHOOK_SECRET}));

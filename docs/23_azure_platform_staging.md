@@ -1,6 +1,6 @@
 # Azure platform staging and release runbook
 
-Updated 10 October 2026. Owner confirmed real hosted signup/sign-in and authorized the application/database migration. The full Azure application is deployed to staging. Production traffic has not moved, and launch acceptance is not complete.
+Updated 11 October 2026. Owner confirmed real hosted signup/sign-in and authorized the application/database migration, direct main pushes and replacing Resend with Azure email. The full Azure application is deployed to staging. Production traffic has not moved, and launch acceptance is not complete.
 
 Preview: https://soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azurecontainerapps.io/login
 
@@ -31,7 +31,7 @@ The migration covers creator/dashboard/builder operations, public submissions/pr
 
 | Check | Result and limit |
 | --- | --- |
-| Regular regression suite | 299 passed, 20 opt-in PostgreSQL tests skipped; typecheck and lint passed, including three directory-deletion regression tests |
+| Regular regression suite | 307 passed, 20 opt-in PostgreSQL tests skipped; typecheck and lint passed, including directory-deletion and Azure email retry regression tests |
 | Real PostgreSQL | All 20 auth/platform integration tests passed using the non-owner runtime role, including cross-workspace access, concurrent quotas/invitations, immutable publications, lease fencing, MCP, billing accounting and durable deletion. Fifty concurrent calls on a shared rate key admit exactly twenty |
 | CSV | More than 10,000 rows streamed and checked for complete output, tags and final row; repeatable-read snapshot, bounded cursor chunks and cancellation cleanup |
 | Azure image | Full Next.js production build passed in Docker; runtime runs as a non-root user |
@@ -70,7 +70,7 @@ Recovery procedure: pause application writes and scheduler calls, restore to a s
 
 ## Worker and deletion behavior
 
-The outbox claims one event with a lease, checkpoints each destination, freezes email provider requests/idempotency keys and caps retries. Default batch limit is 500, with a 30-second work budget; overridable from 1 to 1,000. This removed the old 25/minute ceiling. Provider timeouts still bound a last in-flight call beyond the budget. Free-response drain throughput does not establish Resend/webhook throughput.
+The outbox claims one event with a lease, checkpoints each destination, freezes email provider requests/idempotency keys and caps retries. Default batch limit is 500, with a 30-second work budget; overridable from 1 to 1,000. This removed the old 25/minute ceiling. Provider timeouts still bound a last in-flight call beyond the budget. Free-response drain throughput does not establish Azure email/webhook throughput. Azure email uses persisted operation IDs, five-minute repeatability and separate throttling deferrals; see [email setup and exact DNS records](24_azure_email_and_dns.md).
 
 Account deletion immediately disables application access and revokes sessions/API keys. A durable job cancels subscriptions, deletes private objects, removes the verified Entra directory object and then purges application PII. Completed stages survive retries. A Graph DELETE 404 is accepted only if a subsequent GET also confirms absence; real provider testing exposed a brief write/read replication inconsistency for newly created accounts. Existing sessions from before OID capture require signing out/in before deletion. Directory deletion is soft-retained by Microsoft's recovery policy; database backups expire on their retention schedule.
 
@@ -88,17 +88,17 @@ On an alert, inspect readiness, revision health, database CPU/connections/storag
 
 ## Delivery and remaining launch gates
 
-CI now runs the regular checks and a separate PostgreSQL 17 service job that applies migrations twice, creates the restricted role, executes the real database tests and builds the Azure target. `azure-staging.yml` provides a manual, serialized staging release after CI, using Azure OIDC rather than a stored password. Its identity is restricted to pushing the registry and updating the staging web/migration resources; it has no direct Key Vault read permission. The `azure-staging` GitHub environment restricts deployment to `migration/azure-lean-launch`; authorized staging work does not require another human approval. Migration success is required before changing the app; the workflow checks the new revision's readiness. The workflow has not yet been exercised from GitHub, and must exist on the default branch before normal manual dispatch is available. Production needs its own reviewed environment/identity/domain gate; this workflow cannot deploy production.
+CI now runs the regular checks and a separate PostgreSQL 17 service job that applies migrations twice, creates the restricted role, executes the real database tests and builds the Azure target. `azure-staging.yml` provides a manual, serialized staging release after CI, using Azure OIDC rather than a stored password. Its identity is restricted to pushing the registry and updating the staging web/migration resources; it has no direct Key Vault read permission. The `azure-staging` GitHub environment permits `main` and `migration/azure-lean-launch`; authorized migration work does not require another human approval. Migration success is required before changing the app; the workflow checks the new revision's readiness. The first main-branch release is being prepared; record its actual outcome before calling the release pipeline verified. Production still requires the correct origin/native build, DNS/certificate and provider configuration; this workflow targets the preview origin.
 
 Before production cutover:
 
 1. Resolve the old-data decision and validate any import, account mapping and final source snapshot.
-2. Supply Resend through local secret configuration/Key Vault, verify the sender domain, then test real owner/respondent email and retries. There is currently no configured Resend key.
+2. Azure Communication Services Email is provisioned in India with a verified Azure sender and a dedicated managed-identity grant. Finish the deployed provider check, verify the prepared custom sender domain in GoDaddy, request the required email quota, then test real owner/respondent/invitation receipt and retries. No Resend key is needed for the Azure target. Default managed-domain throughput is only 10 emails/hour; see docs/24.
 3. Complete password recovery, logout/re-login, explicit email verification observation, every interactive creator/form feature and real in-app deletion. The CLI operator lacks permission to inspect the Entra email OTP policy; a tenant administrator must verify/reset policy through the tenant's normal administration flow. Do not grant the runtime application policy-write permission for setup.
 4. Test Android signup/login/recovery/logout/system-browser return and actual device forms/files/payments. A separate QA APK is available locally; no store release has occurred.
 5. Complete real Razorpay test checkouts for subscriptions, cancellation, credit packs and form payments, plus duplicate/out-of-order events. Test webhook configuration alone is not payment acceptance. Configure production callbacks/webhook secret and perform controlled live-mode acceptance before public paid traffic.
 6. Sustained load, exact accounting/cleanup and a hot-form rate-limit burst passed. Complete worker restart recovery, real webhook/Sheets delivery and AI smoke; use geographically distributed hot-form tests when forecasting larger bursts. Capture the limits of each result.
-7. Verify alert delivery/external uptime, exercise the CI release, review dependency findings, credit expiry and actual costs, then produce the concrete production cutover for final review.
+7. Verify alert delivery/external uptime, exercise the CI release, review dependency findings, credit expiry and actual costs, then perform the authorized production cutover once DNS/data/provider requirements are resolved.
 
 Production runtime dependency audit currently reports zero vulnerabilities. Seven high findings remain in development/build tooling through the braces dependency; the available force changes would change major toolchains and are not a safe unattended fix. Do not classify the entire dependency tree as clean.
 

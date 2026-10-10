@@ -23,7 +23,7 @@ export async function runAzureOutbox() {
       if(!job) break;
       const payload={...job.payload,hooks:[...(job.payload.hooks ?? [])]};
       if(payload.notified){payload.owners=true;payload.respondent=true;}
-      let ok=true,uncertain=false;
+      let ok=true,uncertain=false,deferred=false;
       const checkpoint=async () => {if(!await jobs.checkpointJob(job,payload)) throw new Error('Outbox lease lost');};
       try {
         const context=await jobs.jobContext(job);
@@ -47,6 +47,7 @@ export async function runAzureOutbox() {
             const outcome=await deliverEmail(`${job.id}:${kind}`,job.workspace_id,ent.monthlyNotificationEmails,{to:recipients,...mail,...(kind==='respondent'?{replyTo:config.notifyEmails?.[0]}:{})},job);
             if(outcome==='sent') emails++;
             if(outcome==='failed') ok=false;
+            else if(outcome==='deferred') {ok=false;deferred=true;}
             else if(outcome==='uncertain') {ok=false;uncertain=true;}
             else {payload[kind]=true;await checkpoint();}
           };
@@ -60,8 +61,8 @@ export async function runAzureOutbox() {
           }
         }
       } catch {ok=false;console.error(JSON.stringify({event:'azure_outbox_processing_failed',eventId:job.id}));}
-      const terminal=!ok && (job.attempts>=5 || uncertain);
-      if(await jobs.finishJob(job,payload,ok,uncertain)) {if(ok) delivered++;else if(terminal) failed++;}
+      const terminal=!ok && (uncertain || (!deferred && job.attempts>=5));
+      if(await (deferred && !uncertain ? jobs.deferJob(job,payload) : jobs.finishJob(job,payload,ok,uncertain))) {if(ok) delivered++;else if(terminal) failed++;}
       else console.error(JSON.stringify({event:'azure_outbox_lease_lost',eventId:job.id}));
     }
     return NextResponse.json({ok:true,delivered,failed,emails,queue:await jobs.queueStatus()});

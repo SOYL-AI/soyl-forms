@@ -32,7 +32,7 @@ async function notifyOwners(
   submission: { id: string; form_id: string; submitted_at: string; answers: unknown; form_version_id: string },
   workspaceId: string,
   eventId: string,
-): Promise<"sent" | "skipped" | "failed" | "uncertain"> {
+): Promise<Awaited<ReturnType<typeof deliverEmail>>> {
   const { data: form } = await admin.from("form_versions").select("schema, settings").eq("id", submission.form_version_id).maybeSingle();
   const settings = formSettingsSchema.safeParse((form as { settings: unknown } | null)?.settings ?? {});
   const recipients = settings.success ? settings.data.notifyEmails ?? [] : [];
@@ -72,7 +72,7 @@ async function notifyRespondent(
   submission: { id: string; form_id: string; submitted_at: string; answers: unknown; form_version_id: string },
   workspaceId: string,
   eventId: string,
-): Promise<"sent" | "skipped" | "failed" | "uncertain"> {
+): Promise<Awaited<ReturnType<typeof deliverEmail>>> {
   const { data: form } = await admin.from("form_versions").select("schema, settings").eq("id", submission.form_version_id).maybeSingle();
   const settings = formSettingsSchema.safeParse((form as { settings: unknown } | null)?.settings ?? {});
   if (!settings.success || settings.data.responderEnabled !== true) return "skipped";
@@ -148,7 +148,7 @@ export async function POST(req: Request) {
           await checkpoint();
           const outcome = await notifyOwners(admin, submission, evt.workspace_id, evt.id);
           if (outcome === "sent") emails++;
-          if (outcome === "failed") ok = false;
+          if (outcome === "failed" || outcome === "deferred") ok = false;
           else if (outcome === "uncertain") { ok = false; uncertain = true; }
           else { payload.owners = true; await checkpoint(); }
         }
@@ -156,7 +156,7 @@ export async function POST(req: Request) {
           await checkpoint();
           const outcome = await notifyRespondent(admin, submission, evt.workspace_id, evt.id);
           if (outcome === "sent") emails++;
-          if (outcome === "failed") ok = false;
+          if (outcome === "failed" || outcome === "deferred") ok = false;
           else if (outcome === "uncertain") { ok = false; uncertain = true; }
           else { payload.respondent = true; await checkpoint(); }
         }

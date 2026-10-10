@@ -1,0 +1,5 @@
+ARG APP_IMAGE
+FROM ${APP_IMAGE}
+COPY --chown=nextjs:nextjs lib/email/azure.ts ./scripts/azure/email-provider.ts
+COPY --chown=nextjs:nextjs scripts/azure/verify-email.mjs ./scripts/azure/
+CMD ["node", "scripts/azure/verify-email.mjs"]
