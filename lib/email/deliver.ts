@@ -22,7 +22,7 @@ export async function deliverEmail(key: string, workspaceId: string, monthlyLimi
   const operation = provider === 'azure' && isAzureBackend() ? await emailOperation(lease!,key) : null;
   if (provider === 'azure' && isAzureBackend() && !operation) return 'failed' as const;
   if (operation?.provider_retry_at && Date.parse(operation.provider_retry_at)>Date.now()) return 'deferred' as const;
-  const result = await sendEmail({ ...request,provider, ...(provider === 'azure' ? {firstSentAt:operation?.provider_first_sent_at ?? data.created_at,providerOperationId:operation?.provider_operation_id ?? undefined} : {}), idempotencyKey: key });
+  const result = await sendEmail({ ...request,provider, ...(provider === 'azure' ? {firstSentAt:operation?.provider_first_sent_at ?? data.created_at,providerOperationId:operation?.provider_operation_id ?? undefined,providerOperationFresh:operation?.provider_operation_fresh === true} : {}), idempotencyKey: key });
   if (result.uncertain) return 'uncertain' as const;
   if (result.deferred && isAzureBackend()) {
     if (result.rejected && (!operation?.provider_operation_id || !await deferEmail(lease!,key,operation.provider_operation_id,result.retryAfterSeconds ?? 60))) return 'failed' as const;

@@ -9,7 +9,7 @@ export function claimJob():Promise<JobLease|null> {return call('select platform.
 export function jobContext(job:JobLease):Promise<JobContext|null> {return call('select platform.job_context($1,$2) as data',[job.id,job.lease_token]);}
 export function checkpointJob(job:JobLease,payload:JobPayload):Promise<boolean> {return call('select platform.checkpoint_job($1,$2,$3) as data',[job.id,job.lease_token,JSON.stringify(payload)]);}
 export function finishJob(job:JobLease,payload:JobPayload,ok:boolean,uncertain:boolean):Promise<boolean> {return call('select platform.finish_job($1,$2,$3,$4,$5) as data',[job.id,job.lease_token,JSON.stringify(payload),ok,uncertain]);}
-export interface EmailReservation {status:string;created_at:string;request:unknown;provider_operation_id?:string|null;provider_first_sent_at?:string|null;provider_retry_at?:string|null}
+export interface EmailReservation {status:string;created_at:string;request:unknown;provider_operation_id?:string|null;provider_first_sent_at?:string|null;provider_retry_at?:string|null;provider_operation_fresh?:boolean}
 export function reserveEmail(job:Pick<JobLease,'id'|'lease_token'>,key:string,limit:number,quantity:number,mail:unknown):Promise<EmailReservation|null> {
   return call('select platform.reserve_email($1,$2,$3,$4,$5,$6) as data',[job.id,job.lease_token,key,limit,quantity,JSON.stringify(mail)]);
 }

@@ -5,6 +5,7 @@ export interface AzureEmailRequest {
   to: string[]; subject: string; html: string; text: string;
   replyTo?: string; from?: string; idempotencyKey?: string;
   firstSentAt?: string; providerEndpoint?: string; providerOperationId?: string;
+  providerOperationFresh?: boolean;
 }
 export interface EmailSendResult { ok: boolean; error?: string; uncertain?: boolean; deferred?: boolean; rejected?: boolean; retryAfterSeconds?: number }
 
@@ -54,7 +55,10 @@ export async function sendAzureEmail(mail: AzureEmailRequest): Promise<EmailSend
     };
     // Recover a successful send even if the worker died before saving its SQL checkpoint.
     // Never use an operation-location supplied by the provider as a fetch destination.
-    if (mail.idempotencyKey) {
+    // SQL marks an operation fresh only for the call that creates its UUID.
+    // ACS can gateway-timeout when polling a UUID that has never been sent.
+    // All subsequent attempts still recover the persisted provider operation.
+    if (mail.idempotencyKey && !mail.providerOperationFresh) {
       const existing = await check();
       if (existing) return existing;
     }

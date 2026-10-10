@@ -19,6 +19,7 @@ export async function sendEmail(args: {
   providerEndpoint?: string;
   firstSentAt?: string;
   providerOperationId?: string;
+  providerOperationFresh?: boolean;
 }): Promise<EmailSendResult> {
   const provider = args.provider ?? process.env.EMAIL_PROVIDER ?? 'resend';
   if (provider === 'azure') return sendAzureEmail(args);

@@ -13,6 +13,16 @@ beforeEach(()=>{
 });
 afterEach(()=>{vi.unstubAllEnvs();vi.unstubAllGlobals();vi.clearAllMocks();});
 describe('Azure email retry safety',()=>{
+  it('sends a newly persisted operation before polling it, then requires provider success',async()=>{
+    fetcher.mockResolvedValueOnce(new Response('{}',{status:202})).mockResolvedValueOnce(result('Succeeded'));
+    expect(await sendAzureEmail({...mail,providerOperationFresh:true})).toEqual({ok:true});
+    expect(fetcher.mock.calls.map(([,options])=>options.method ?? 'GET')).toEqual(['POST','GET']);
+    expect(fetcher.mock.calls[0][1].headers['Operation-Id']).toBe(id);
+  });
+  it('does not send even a fresh operation after its repeatability window',async()=>{
+    expect(await sendAzureEmail({...mail,providerOperationFresh:true,firstSentAt:new Date(Date.now()-300_000).toISOString()})).toMatchObject({ok:false,uncertain:true});
+    expect(fetcher).not.toHaveBeenCalled();
+  });
   it('checks the persisted operation and recovers a send after the SQL checkpoint was lost',async()=>{
     fetcher.mockResolvedValue(result('Succeeded'));
     expect(await sendAzureEmail({...mail,firstSentAt:new Date(Date.now()-3600_000).toISOString()})).toEqual({ok:true});

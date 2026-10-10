@@ -10,11 +10,11 @@ Preview: https://soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azureconta
 | --- | --- |
 | Resource group | `soyl-forms-staging-rg`, Central India |
 | Web application | `soyl-forms-web`, Container Apps Consumption, 0.5 CPU/1 GiB, min 1/max 3 replicas, HTTP concurrency 20 |
-| Application image | `soylformsn4nsiocbpshei.azurecr.io/soyl-forms@sha256:9df7e57fa8705374d16b56f987b83049227d3bd270f4f4845853a68b741f0415` |
-| Current revision | `soyl-forms-web--0000004` |
+| Application image | `soylformsn4nsiocbpshei.azurecr.io/soyl-forms@sha256:c1336851acefcc211ff1ba20682b699758da5e91d3d330fa3504d329a0287f29` |
+| Current revision | `soyl-forms-web--0000006` |
 | PostgreSQL | `soyl-forms-pg-n4nsiocbpshei`, PostgreSQL 17, B1ms, 32 GiB, private network only, 7-day PITR, no HA |
-| Schema | Azure migrations `0001` through `0024`; immutable SHA-256 migration history and advisory locking |
-| Migration image | `soylformsn4nsiocbpshei.azurecr.io/soyl-forms-migrations@sha256:74a9f03069ca3cd71e710deebc59778ce0da5c423c06cafeb6875c4b5b976f69` |
+| Schema | Azure migrations `0001` through `0026`; immutable SHA-256 migration history and advisory locking |
+| Migration image | Same immutable digest as the application; migration command runs before web rollout |
 | Database credentials | Separate migration owner and restricted runtime role; verified TLS; runtime pool max 3/process |
 | Jobs | Outbox every minute; cleanup at minute 7 each hour, UTC. Separate scheduler identity, CRON secret only |
 | Provider storage | Existing private R2 bucket; staging CORS added while preserving existing production origins |
@@ -23,7 +23,7 @@ Preview: https://soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azureconta
 | Secrets | Key Vault references with per-secret managed identity grants. No owner database URL in the web application |
 | Logs and budget | 30-day Log Analytics retention, 0.1 GiB/day ingestion cap; INR 7,000/month budget with actual/forecast alerts, including managed environment RG |
 
-Migration execution `soyl-forms-migrate-xmjza15` applied migration 0024 and verified all 24 file checksums. Readiness refuses to serve this application against an older schema. Source Supabase migrations remain unchanged. Azure builds select `NEXT_PUBLIC_BACKEND=azure`; the legacy production build still defaults to Supabase.
+Migration execution `soyl-forms-migrate-x8wb02j` succeeded with all 26 immutable migration checksums. Main-branch release `38082919986` at commit `63050e3` passed both CI jobs, applied migrations before rollout, and verified revision 6 readiness and login on 10 October at 20:20 UTC. Readiness refuses to serve this application against an older schema. Source Supabase migrations remain unchanged. Azure builds select `NEXT_PUBLIC_BACKEND=azure`; the legacy production build still defaults to Supabase.
 
 The migration covers creator/dashboard/builder operations, public submissions/progress/resume/uploads, responses/CSV, brands, team permissions, operator tools, subscriptions/payment collection/credit packs, AI credit accounting, MCP, outbox and cleanup. Typed repositories use parameterized queries and transaction-local user context. Published versions remain immutable. Sensitive public/worker operations use narrowly granted SQL functions; ordinary runtime queries do not bypass RLS.
 
@@ -42,7 +42,7 @@ The migration covers creator/dashboard/builder operations, public submissions/pr
 | Sustained load | Execution `soyl-forms-verification-oa9qzp2`: steady 9,000/9,000 accepted, p95 34 ms/p99 101 ms; burst 3,000/3,000 accepted, p95 34 ms/p99 90 ms. Zero unexpected errors or rate-limit rejections in these phases |
 | Load accounting | 10,000 seed + 12,052 unique acknowledged responses = 22,052 rows = 22,052 usage; checked at `16:45:31Z`. Outbox drained by `16:47:21Z` in scheduler logs and confirmed by the runner at `16:47:31Z`; all 100 synthetic users/workspaces and the test R2 object were removed at `16:47:32Z` |
 | Billing plans | All four real Razorpay test plan IDs match application amount, INR currency and interval: Starter 199/month or 1,990/year; Pro 499/month or 4,990/year. No charge was made by this read-only check |
-| GitHub CI | Both regular and PostgreSQL jobs passed on code commit `d095c5b` (run `38068836404`), including clean legacy and Azure builds |
+| GitHub CI and release | Main commit `63050e3`, run `38082919986`: both CI jobs and the OIDC deployment succeeded, including clean legacy/Azure builds, all 20 real PostgreSQL tests, strict cloud migrations, and new-revision readiness/login |
 | Isolated hot-form check | Execution `soyl-forms-hot-form-verification-onijwl7` passed: 50 simultaneous requests to one form, 40 accepted/10 intentional 429s over two real source buckets, completed in 674 ms. Exact database/usage accounting, outbox drain and removal of two users/workspaces plus the R2 object passed |
 
 The load runner seeds 100 labelled synthetic creator workspaces and 10,000 responses, exercises 50 simultaneous submissions, 5 submissions/second for 30 minutes and 10/second for five minutes, plus public page reads. It uses the actual deployed API and rate limiter. Requests originate in Azure Central India and are spread over 100 forms. This measures regional API throughput, not end-user browser latency or geographically distributed traffic to one hot form. The smoke test separately exercises ten concurrent submissions in the same workspace. Payment/provider and paid email throughput are outside the measured submission latency.
@@ -88,7 +88,7 @@ On an alert, inspect readiness, revision health, database CPU/connections/storag
 
 ## Delivery and remaining launch gates
 
-CI now runs the regular checks and a separate PostgreSQL 17 service job that applies migrations twice, creates the restricted role, executes the real database tests and builds the Azure target. `azure-staging.yml` provides a manual, serialized staging release after CI, using Azure OIDC rather than a stored password. Its identity is restricted to pushing the registry and updating the staging web/migration resources; it has no direct Key Vault read permission. The `azure-staging` GitHub environment permits `main` and `migration/azure-lean-launch`; authorized migration work does not require another human approval. Migration success is required before changing the app; the workflow checks the new revision's readiness. The first main-branch release is being prepared; record its actual outcome before calling the release pipeline verified. Production still requires the correct origin/native build, DNS/certificate and provider configuration; this workflow targets the preview origin.
+CI now runs the regular checks and a separate PostgreSQL 17 service job that applies migrations twice, creates the restricted role, executes the real database tests and builds the Azure target. `azure-staging.yml` provides a manual, serialized staging release after CI, using Azure OIDC rather than a stored password. Its identity is restricted to pushing the registry and updating the staging web/migration resources; it has no direct Key Vault read permission. The `azure-staging` GitHub environment permits `main` and `migration/azure-lean-launch`; authorized migration work does not require another human approval. Migration success is required before changing the app; the workflow checks the new revision's readiness. The main-branch release pipeline passed in run 38082919986; its actual deployment evidence is recorded above. Production still requires the correct origin/native build, DNS/certificate and provider configuration; this workflow targets the preview origin.
 
 Before production cutover:
 

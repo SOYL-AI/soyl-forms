@@ -6,7 +6,7 @@ resource environment 'Microsoft.App/managedEnvironments@2024-03-01' existing = {
 resource migration 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {name:'soyl-forms-migrations'}
 resource vault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {name:'sfkvn4nsiocbpshei'}
 resource job 'Microsoft.App/jobs@2024-03-01' = {
-  name:'soyl-forms-email-outbox-verification'
+  name:'soyl-forms-email-outbox-verify'
   location:location
   tags:{project:'soyl-forms',environment:'verification',temporary:'true'}
   identity:{type:'UserAssigned',userAssignedIdentities:{'${migration.id}':{}}}

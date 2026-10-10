@@ -2,6 +2,12 @@
 
 Updated 11 October 2026. Azure Communication Services Email replaces Resend in the Azure deployment. Microsoft Entra continues to handle signup/recovery messages separately. No email provider key is required: the web app uses its SOYL Forms user-assigned managed identity, granted a custom role on this communication service only.
 
+## Service retirement and replacement deadline
+
+Microsoft announced on 23 September 2026 that **ACS Email retires on 30 September 2028**. The current resource can be used during the transition, but Microsoft recommends against onboarding new long-term workloads. New-resource availability can change; email quota increases are reviewed case by case. See the [official retirement guide and email FAQ](https://learn.microsoft.com/en-us/azure/communication-services/acs-retirement-and-breaking-changes-guide#acs-email).
+
+Treat this implementation as a temporary provider integration. Select a successor by 30 September 2027 and complete provider/DNS/delivery acceptance by 31 March 2028, leaving six months before retirement. Keep the provider boundary, frozen reservation metadata and retry rules; never replay an uncertain Azure operation through a replacement provider. The app, PostgreSQL and Entra architecture does not depend on ACS Email. Microsoft 365 HVE currently serves internal recipients and is not a replacement for external customer notifications; Exchange Online has mailbox and tenant limits. Evaluate an external transactional provider or an appropriate Azure Marketplace offering before replacement, including whether shared credits cover it.
+
 ## Provisioned service
 
 - Resource group: `soyl-forms-staging-rg`.
@@ -18,11 +24,11 @@ The Azure-managed domain is suitable for testing: its current fixed send limits 
 
 ## Retry behavior
 
-Migrations 0025/0026 persist the provider operation UUID and first-send timestamp before contacting ACS. Retries poll that operation; a successful operation can recover a lost SQL checkpoint. Both ACS repeatability headers remain unchanged when retrying the original POST. ACS tracks repeatable requests for five minutes; after a conservative 4.5-minute boundary the worker only polls, never blindly sends again. A missing operation then becomes an operator-visible terminal uncertainty.
+Migrations 0025–0027 persist the provider operation UUID and first-send timestamp before contacting ACS. Only the SQL call that creates that UUID returns a fresh-operation flag, allowing the initial POST before any status lookup. Every subsequent call polls the persisted operation; a successful operation can recover a lost SQL checkpoint. This matters because actual authenticated lookups of never-sent UUIDs returned HTTP 504 after about 30 seconds, while an invalid send payload returned HTTP 400 in under a second. A worker crash after UUID creation never grants another fresh flag. Both ACS repeatability headers remain unchanged when retrying the original POST. ACS tracks repeatable requests for five minutes; after a conservative 4.5-minute boundary the worker only polls, never blindly sends again. A missing operation then becomes an operator-visible terminal uncertainty.
 
 Only an explicit send HTTP 429 permits a new operation after the persisted retry time; a status-poll 429 preserves the original operation. Running operations and throttling defer processing without spending the ordinary error-attempt budget. Request, sender and provider endpoint remain frozen. Legacy reservations retain Resend semantics instead of being silently sent through the new provider.
 
-`Dockerfile.email-verification` and `azure/email-verification-job.bicep` run the real provider module using the application identity. Default verification authenticates and polls an expired nonexistent operation, and sends no email. Explicit `--send` additionally requires an authorized `EMAIL_TEST_RECIPIENT`; provider success does not prove inbox receipt. Real creator/respondent notifications, invitation receipt and bounce/delivery monitoring still require acceptance.
+`Dockerfile.email-verification` and `azure/email-verification-job.bicep` run the real provider module using the application identity. Default verification authenticates and submits an empty invalid payload without a sender or recipients; the expected validation rejection creates no email. It also checks that the module refuses an expired fresh operation. Explicit `--send` additionally requires an authorized `EMAIL_TEST_RECIPIENT`; provider success does not prove inbox receipt. The outbox verification job instead creates one labelled temporary paid-entitlement/form fixture, submits through the deployed API and checks provider success, job completion and exact submission/email accounting before deleting its fixtures. Run only one sending test per authorization. Real creator/respondent notifications, invitation receipt and bounce/delivery monitoring still require acceptance.
 
 ## GoDaddy DNS records
 
