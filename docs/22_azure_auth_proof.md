@@ -2,6 +2,8 @@
 
 Status: implemented in isolation; real-provider/browser and Android acceptance are pending. The production platform still uses Supabase. Do not enable the new identity as the platform's primary auth until the proof passes and the application/database migration is complete.
 
+Owner decision, 10 October 2026: Google sign-in is deferred until after launch. Google credentials and tests are not prerequisites for continuing this migration. Required launch acceptance covers Entra-hosted email/password on web and Android.
+
 ## Dedicated resources
 
 - Azure subscription: `f51e344a-8bea-45cb-a18b-506a27c7a031`.
@@ -50,7 +52,9 @@ Current immutable images:
 - Web: `soylformsn4nsiocbpshei.azurecr.io/soyl-forms@sha256:47f671c2e74be4b51ce29ef84e37a3b28bed5df218a35d3656eb8ee44e25173b`.
 - Migration job: `soylformsn4nsiocbpshei.azurecr.io/soyl-forms-migrations@sha256:9242fea89039d8e03c9ec428fd45e0e90535be21e0389413a173776fa349b45d`.
 
-## Google configuration
+## Google configuration (deferred until after launch)
+
+The following configuration is retained for future implementation. Do not configure Google or wait for Google OAuth credentials as part of the current launch scope.
 
 In the chosen Google Cloud project, create a **Web application** OAuth client for this tenant. Set the consent audience and publishing/test-user settings appropriately. The current [Microsoft Google federation instructions](https://learn.microsoft.com/en-us/entra/external-id/customers/how-to-google-federation-customers) list these callback variants for this tenant:
 
@@ -94,9 +98,9 @@ Interactive acceptance remains unexecuted. Open the [hosted proof](https://soyl-
 | Signup and email verification | Verified hosted signup returns to the proof with the expected identity | Pending |
 | Password login and recovery | Existing account signs in; recovery email and password reset work | Pending |
 | Logout and re-login | Local session is revoked; subsequent login is successful | Pending |
-| Google login and cancellation | Configured Google identity works; cancellation has a safe retry path | Awaiting Google OAuth client |
+| Google login and cancellation | Configured Google identity works; cancellation has a safe retry path | Deferred after launch; not a launch gate |
 | Disabled account and session expiry | Existing sessions are denied after disablement/expiry | Database tests pass; hosted acceptance pending |
-| Android password and Google login | System browser returns to the originating preview WebView with a session | Pending |
+| Android password login | System browser returns to the originating preview WebView with a session | Pending |
 | Native replay/interception/cold start | Ticket cannot be reused or redeemed without verifier; lost verifier requires restart | Database tests pass; device acceptance pending |
 
 ```powershell
@@ -105,4 +109,15 @@ $env:AZURE_DATABASE_TESTS = 'true'
 try { npm run azure:test:db } finally { Remove-Item Env:AZURE_DATABASE_TESTS }
 ```
 
-Before phase 2 starts, record actual results for hosted signup/email verification, email/password login, recovery, logout/re-login, Google sign-in and Google denial/cancellation, expiry/disabled accounts, Android browser return, intercepted-ticket rejection and WebView/cold-start behavior. Browser automation currently has no connected browser; unit fixtures and live OIDC discovery are not substitutes for this acceptance gate. A connected browser or operator-assisted test and a real Google OAuth client are needed.
+Before phase 2 starts, record actual results for hosted signup/email verification, email/password login, recovery, logout/re-login, expiry/disabled accounts, Android browser return, intercepted-ticket rejection and WebView/cold-start behavior. Browser automation currently has no connected browser; unit fixtures and live OIDC discovery are not substitutes for this acceptance gate. A connected browser or operator-assisted test is needed. Google sign-in and Google denial/cancellation will be tested separately after launch.
+
+## Operator signup check
+
+1. Open the hosted proof above in a private/incognito browser window. Click **Continue to secure sign-in**.
+2. Choose the sign-up/create-account option on the Microsoft-hosted customer page. Use a new email address whose inbox you can access; a Microsoft account is not required.
+3. Complete the email verification prompts, choose a password and fill in any requested profile fields.
+4. Confirm the browser returns to the proof and displays **You are signed in as ...** with a **Sign out** button. A generic customer label is allowed when the provider omits name/email claims. This proof does not open the platform dashboard or create a workspace yet.
+5. Refresh: the page should remain signed in. Sign out, then sign in again with the same email/password; no new signup should be needed.
+6. Test the password-recovery option separately and confirm the replacement password works.
+
+Record the steps that passed and the exact visible error if a step fails. Do not share passwords, verification codes, or callback URLs containing authorization codes. A browser UI success alone does not mark the remaining Android and security acceptance complete.

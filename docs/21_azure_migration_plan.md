@@ -2,6 +2,8 @@
 
 Date: 10 October 2026. Status: approved; phase 1 implementation in progress on `migration/azure-lean-launch`. Production cutover has not happened.
 
+Launch scope updated by the owner on 10 October 2026: Google sign-in is deferred until after launch. Email/password through Entra External ID is the launch method; Google configuration and acceptance do not block this migration. Web and Android email/password authentication acceptance remain required.
+
 Owner confirmed a dedicated SOYL Forms identity tenant and USD 4,600 of Azure credits shared across company projects. Credit expiry remains unconfirmed. Isolated resource group: `soyl-forms-staging-rg` (Central India). External ID tenant: `soylforms.onmicrosoft.com`, tenant ID `47f0c7e0-77a5-4ae0-b3b4-b9b48269d014` (Asia Pacific identity geography). Existing company resources are outside this migration's scope.
 
 ## Objective and boundaries
@@ -18,7 +20,7 @@ The lean Azure allowance is INR 4,000-7,000 per month before taxes and credits, 
 | --- | --- |
 | Application | Next.js container, Node 22+, Azure Container Apps Consumption, 0.5 vCPU/1 GiB, minimum 1 replica, maximum 3 |
 | Database | Azure Database for PostgreSQL Flexible Server, B1ms, 32 GiB storage; same region as application, provisionally Central India |
-| Customer auth | Entra External ID external tenant; browser-delegated email/password and Google flows |
+| Customer auth | Entra External ID external tenant; browser-delegated email/password for launch; Google deferred |
 | Database access | Typed server repositories using a bounded PostgreSQL connection pool; no browser database credentials or public PostgREST replacement |
 | Sessions | Maintained OIDC/session library, secure HttpOnly cookies, shared durable session state where required; never process-local session state |
 | Files | Existing private R2 bucket, verified-upload flow, signed downloads and staging lifecycle |
@@ -32,12 +34,12 @@ No AKS, Redis, Service Bus, Front Door, private endpoints, or permanent second s
 ## Phase 1: inventory and authentication proof
 
 1. Capture the current platform flow matrix, baseline test/build results, Supabase call sites, database policies/functions, operational data and external integration configuration. Back up existing data and document what is preserved.
-2. Validate Azure subscription/credits, region availability and resource budget. Create a dedicated External ID customer tenant/application and Google federation configuration when account access is available.
-3. Prove signup, email verification, email/password login, Google login, recovery, logout, expiration, disabled-account behavior, and Android system-browser return before rewriting the rest of the platform.
+2. Validate Azure subscription/credits, region availability and resource budget. Create a dedicated External ID customer tenant/application. Google federation is a post-launch enhancement.
+3. Prove signup, email verification, email/password login, recovery, logout, expiration, disabled-account behavior, and Android system-browser return before rewriting the rest of the platform.
 4. Use authorization-code flow with PKCE, state/nonce checks, verified issuer/audience/signatures, allowlisted callbacks and a maintained library. Never collect Google credentials or implement password storage ourselves.
 5. Use the Microsoft-hosted, branded customer login flow for launch. This changes the current inline password UI; Google federation requires browser-delegated authentication. Do not promise the exact existing password screen will remain.
 6. Create application users with an internal UUID and a unique provider identity mapping keyed by verified issuer/subject. Account links require proof of ownership; never join accounts using an unverified email address alone. Provision a personal workspace once, transactionally. Invitations and super-admin access remain explicitly authorized.
-7. For Android, use a tested HTTPS callback and a short-lived, single-use handoff where necessary to establish the WebView's cookie session. Do not put reusable session/access tokens in deep links. Retest Google sign-in on a device.
+7. For Android, use a tested HTTPS callback and a short-lived, single-use handoff where necessary to establish the WebView's cookie session. Do not put reusable session/access tokens in deep links. Device acceptance covers email/password for launch; test Google separately when it is added.
 
 Exit: real-provider web and Android authentication works in the proof environment, including negative/security cases. If it does not, resolve the failure before the broader migration.
 
@@ -55,7 +57,7 @@ Exit: migrated functionality and adversarial cross-workspace tests pass; there i
 ## Phase 3: infrastructure and background processing
 
 1. Add a reproducible production container and infrastructure/deployment definitions. Use secrets through Azure secret references/managed identity where supported; keep credentials out of Git and client bundles.
-2. Configure TLS/domain, OIDC callbacks, Google redirects, Android app links, Razorpay webhooks, R2 CORS, verified-upload lifecycle and email sender configuration for the new environment.
+2. Configure TLS/domain, OIDC callbacks, Android app links, Razorpay webhooks, R2 CORS, verified-upload lifecycle and email sender configuration for the new environment. Google redirects are deferred with Google sign-in.
 3. Implement Azure-specific trusted-proxy client-IP handling from documented ingress behavior and test forged forwarding headers. Existing `TRUSTED_PROXY` choices do not yet include Azure. Remove the rate-limiter's dependency on a Supabase key by requiring a dedicated rate-limit HMAC secret.
 4. Separate lightweight liveness from readiness. Readiness checks PostgreSQL with a timeout and confirms the expected migration version without exposing secrets.
 5. Run outbox processing every minute and cleanup hourly. Preserve frozen email payload/provider keys, destination-level delivery state, bounded retries, expiring claims and failure visibility. Adapt batch sizes/time budgets to measured throughput rather than carrying forward a fixed 25-event HTTP-worker ceiling. Scheduled jobs use UTC cron expressions and dedicated job timeouts; overlapping executions cannot double-claim events.
@@ -66,7 +68,7 @@ Exit: migrated functionality and adversarial cross-workspace tests pass; there i
 
 The release is accepted only after all current features are exercised against Azure and the real integration providers:
 
-- Auth/session/recovery/Google/Android; workspace invitations and all four membership roles; super-admin audit and suspension.
+- Email/password auth/session/recovery/Android; workspace invitations and all four membership roles; super-admin audit and suspension. Google sign-in is outside launch acceptance.
 - Form creation, templates, builder autosave/revision conflicts, every current question type, validation, logic/formulas/recall, themes/brand assets, localization, quizzes, versioned publication, closure and quotas.
 - Public desktop/mobile forms, QR links, embeds, refresh recovery and cross-device resume; existing sessions complete against their original version.
 - Free and paid submissions, files, answer validation and atomic quota boundaries. Repeated/network-retried submissions save one response and consume each payment once.
@@ -131,7 +133,7 @@ Annual billing lowers the monthly-equivalent contribution: a 70/30 blend yields 
 
 ## Prerequisites after approval
 
-Required provisioning inputs: Azure subscription/resource access, credit balance/expiry/eligible services, selected region and domain/DNS access; External ID tenant/app and Google OAuth administration; existing R2, Resend and Razorpay test/live configuration; decision on retaining internal test/operator data. Supply secrets through local secret configuration or the cloud secret store, never chat or Git. Start implementation with the isolated auth proof, then database conversion, then infrastructure and staged verification. Production cutover remains the final reviewable release step.
+Required provisioning inputs: Azure subscription/resource access, credit balance/expiry/eligible services, selected region and domain/DNS access; External ID tenant/app; existing R2, Resend and Razorpay test/live configuration; decision on retaining internal test/operator data. Google OAuth administration is needed only for the deferred enhancement. Supply secrets through local secret configuration or the cloud secret store, never chat or Git. Start implementation with the isolated auth proof, then database conversion, then infrastructure and staged verification. Production cutover remains the final reviewable release step.
 
 ## Sources checked
 
