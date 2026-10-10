@@ -3,6 +3,8 @@
 import { auditLog, requireAdmin, validateOverride } from "@/lib/admin";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { platformFlagsSchema, setPlatformFlags, type PlatformFlags } from "@/lib/platform";
+import { isAzureBackend } from "@/lib/backend";
+import * as azureAdmin from "@/lib/azure-admin-actions";
 
 export type AdminResult = { ok: true } | { ok: false; error: string };
 
@@ -21,6 +23,7 @@ export async function setWorkspaceStatus(args: {
   status: "active" | "suspended";
   reason?: string;
 }): Promise<AdminResult> {
+  if(isAzureBackend()) return azureAdmin.workspace(args);
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
   const { error } = await g.admin.from("workspaces").update({ status: args.status }).eq("id", args.workspaceId);
@@ -37,6 +40,7 @@ export async function setWorkspaceStatus(args: {
 }
 
 export async function setFormStatus(args: { formId: string; suspend: boolean; reason?: string }): Promise<AdminResult> {
+  if(isAzureBackend()) return azureAdmin.form(args);
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
   const { data: form } = await g.admin.from("forms").select("id, workspace_id, published_version_id").eq("id", args.formId).single();
@@ -57,6 +61,7 @@ export async function setFormStatus(args: { formId: string; suspend: boolean; re
 }
 
 export async function setPlanOverride(args: { workspaceId: string; plan: string; reason: string; expiresAt: string }): Promise<AdminResult> {
+  if(isAzureBackend()) return azureAdmin.override(args);
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
   if (g.role !== "super_admin") return { ok: false, error: "Only super admins can change entitlements." };
@@ -84,6 +89,7 @@ export async function setPlanOverride(args: { workspaceId: string; plan: string;
 }
 
 export async function clearPlanOverride(args: { workspaceId: string }): Promise<AdminResult> {
+  if(isAzureBackend()) return azureAdmin.clearOverride(args);
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
   if (g.role !== "super_admin") return { ok: false, error: "Only super admins can change entitlements." };
@@ -100,6 +106,7 @@ export async function clearPlanOverride(args: { workspaceId: string }): Promise<
 }
 
 export async function updatePlatformFlags(args: { flags: PlatformFlags }): Promise<AdminResult> {
+  if(isAzureBackend()) return azureAdmin.flags(args);
   const g = await adminOnly();
   if ("error" in g) return { ok: false, error: g.error };
   if (g.role !== "super_admin") return { ok: false, error: "Only super admins can change platform settings." };

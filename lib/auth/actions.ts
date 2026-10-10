@@ -3,8 +3,21 @@
 import { redirect } from "next/navigation";
 import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
+import { isAzureBackend } from "@/lib/backend";
+import { getAuthSessionCookie } from "./session";
+import { revokeDurableSession } from "./store";
+import { providerLogoutUrl } from "./provider";
+import * as workspaces from "@/lib/db/repositories/workspaces";
+import { databaseResult } from "@/lib/db/result";
 
 export async function signOut(): Promise<void> {
+  if (isAzureBackend()) {
+    const session = await getAuthSessionCookie();
+    if (session.token) await revokeDurableSession(session.token);
+    session.destroy();
+    const providerUrl = await providerLogoutUrl().catch(() => null);
+    redirect(providerUrl?.href ?? "/");
+  }
   const supabase = await getServerSupabase();
   if (supabase) await supabase.auth.signOut();
   redirect("/");
@@ -17,6 +30,10 @@ export async function updateProfile(args: {
   if (!userId) return { ok: false, error: "Sign in first." };
   const name = args.displayName.trim().slice(0, 80);
   if (!name) return { ok: false, error: "Enter a name." };
+  if (isAzureBackend()) {
+    const result = await databaseResult(workspaces.updateProfile(userId, name));
+    return result.data ? { ok: true } : { ok: false, error: result.error?.message ?? "Profile unavailable." };
+  }
   const admin = getServiceSupabase();
   if (!admin) return { ok: false, error: "Server misconfigured." };
   const { error } = await admin
@@ -33,6 +50,10 @@ export async function renameWorkspace(args: {
   if (!userId) return { ok: false, error: "Sign in first." };
   const name = args.name.trim().slice(0, 80);
   if (!name) return { ok: false, error: "Enter a workspace name." };
+  if (isAzureBackend()) {
+    const result = await databaseResult(workspaces.renameWorkspace(userId, args.workspaceId, name));
+    return result.data ? { ok: true } : { ok: false, error: result.error?.message ?? "Only owners and admins can rename the workspace." };
+  }
   const admin = getServiceSupabase();
   if (!admin) return { ok: false, error: "Server misconfigured." };
   const { data: member } = await admin

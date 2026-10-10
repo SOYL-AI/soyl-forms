@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { formSchemaV1 } from "@/lib/forms/schema";
 import { getWorkspacePlan } from "@/lib/billing/plan";
 import { listBrandKitSummaries } from "@/lib/brand/actions";
@@ -10,17 +10,19 @@ import { hasWorkspaceRole } from "@/lib/security/workspace";
 import type { FormSettings, FormTheme } from "@/types/forms";
 import { ConfigRequired } from "@/components/app/ConfigRequired";
 import BuilderClient from "./BuilderClient";
+import { isAzureBackend } from "@/lib/backend";
+import { readForm, readOwnedVersion } from "@/lib/db/repositories/forms";
 
 export const metadata: Metadata = { title: "Builder", robots: { index: false } };
 
 export default async function BuilderPage(props: { params: Promise<{ formId: string }> }) {
   const params = await props.params;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="the builder" />;
+  if (!isAzureBackend() && !isApplicationConfigured()) return <ConfigRequired area="the builder" />;
   const userId = await getSessionUserId();
   if (!userId) redirect(`/login?next=/builder/${params.formId}`);
 
   const supabase = await getServerSupabase();
-  const { data } = await supabase!
+  const { data } = isAzureBackend() ? { data: await readForm(userId, params.formId) } : await supabase!
     .from("forms")
     .select("id, workspace_id, title, slug, status, draft_schema, draft_revision, theme, settings, published_version_id")
     .eq("id", params.formId)
@@ -57,7 +59,7 @@ export default async function BuilderPage(props: { params: Promise<{ formId: str
     getWorkspacePlan(row.workspace_id),
     listBrandKitSummaries(row.workspace_id),
     row.published_version_id
-      ? getServiceSupabase()!
+      ? isAzureBackend() ? readOwnedVersion(userId, row.id, row.published_version_id).then(data => ({ data })) : getServiceSupabase()!
           .from("form_versions")
           .select("version_number")
           .eq("id", row.published_version_id)

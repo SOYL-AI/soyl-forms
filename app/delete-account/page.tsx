@@ -8,7 +8,7 @@ import { getProductName, getSupportEmail } from "@/lib/config";
 export const metadata: Metadata = { title: "Delete your account" };
 
 /** Public account-deletion page (the URL Google Play's Data safety form asks for). */
-export default async function DeleteAccountPage(props: { searchParams?: Promise<{ done?: string }> }) {
+export default async function DeleteAccountPage(props: { searchParams?: Promise<{ done?: string; pending?: string }> }) {
   const searchParams = await props.searchParams;
   const name = getProductName();
   const email = getSupportEmail();
@@ -23,6 +23,9 @@ export default async function DeleteAccountPage(props: { searchParams?: Promise<
             Your account, workspace and data have been removed. Thanks for trying {name}.
           </Notice>
         )}
+        {searchParams?.pending === "1" && <Notice tone="positive" className="mt-6" title="Account deletion requested">
+          Access is disabled. We are cancelling billing and removing your account, workspace and files. Provider failures retry automatically; contact {email} if you need help.
+        </Notice>}
         <div className="prose-legal mt-8">
           <h2>In the app or on the website</h2>
           <ol className="list-decimal pl-5">
@@ -40,7 +43,7 @@ export default async function DeleteAccountPage(props: { searchParams?: Promise<
               Type <strong>DELETE</strong> and confirm.
             </li>
           </ol>
-          <p>Your account is deleted immediately and any paid plan is cancelled.</p>
+          <p>Your access is disabled when we accept the request. We then cancel paid subscriptions and remove your data. Provider outages can delay completion; contact support if deletion has not finished within 30 days.</p>
 
           <h2>Can’t sign in?</h2>
           <p>

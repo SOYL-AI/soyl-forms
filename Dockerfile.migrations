@@ -1,0 +1,7 @@
+# Reuse the tested application's exact dependencies while allowing SQL/bootstrap
+# updates without recompiling the web application. Always pass an immutable digest.
+ARG APP_IMAGE
+FROM ${APP_IMAGE}
+COPY --chown=nextjs:nextjs azure/migrations ./azure/migrations
+COPY --chown=nextjs:nextjs scripts/azure/migrate.mjs scripts/azure/bootstrap-database.mjs ./scripts/azure/
+CMD ["node", "scripts/azure/bootstrap-database.mjs"]

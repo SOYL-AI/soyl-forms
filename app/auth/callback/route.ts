@@ -4,11 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { authCookieOptions } from "@/lib/supabase/cookies";
 import { getAppUrl } from "@/lib/config";
-
-function safeNext(raw: string | null): string {
-  if (!raw || !raw.startsWith("/") || raw.startsWith("//")) return "/dashboard";
-  return raw;
-}
+import { safeAuthNext } from "@/lib/auth/redirect";
 
 /**
  * OAuth + email-link landing: exchanges the PKCE code for a session, sets the
@@ -17,7 +13,7 @@ function safeNext(raw: string | null): string {
 export async function GET(req: Request) {
   const url = new URL(req.url);
   const code = url.searchParams.get("code");
-  const next = safeNext(url.searchParams.get("next"));
+  const next = safeAuthNext(url.searchParams.get("next"));
   const base = getAppUrl();
 
   if (!code || !isSupabaseConfigured()) {
@@ -41,7 +37,7 @@ export async function GET(req: Request) {
   );
   const { error } = await supabase.auth.exchangeCodeForSession(code);
   if (error) {
-    return NextResponse.redirect(`${base}/login?error=${encodeURIComponent(error.message.slice(0, 80))}`);
+    return NextResponse.redirect(`${base}/login?error=auth`);
   }
   return NextResponse.redirect(`${base}${next}`);
 }

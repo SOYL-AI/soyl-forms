@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { billingList } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { Card } from "@/components/ui/card";
@@ -7,24 +9,7 @@ import { formatDate, formatDateTime } from "@/lib/utils";
 import { paise, revenueSnapshot } from "../stats";
 
 export default async function AdminBillingPage() {
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
-
-  const [{ data }, { data: events }] = await Promise.all([
-    admin
-      .from("subscriptions")
-      .select("workspace_id, plan_code, status, provider_subscription_id, provider_plan_id, billing_interval, current_period_end, cancel_at_period_end, override_reason, override_expires_at, updated_at")
-      .neq("status", "free")
-      .order("updated_at", { ascending: false })
-      .limit(200),
-    admin.from("razorpay_webhook_events").select("event_id, event_type, status, received_at, processed_at").order("received_at", { ascending: false }).limit(30),
-  ]);
-  const subs = (data ?? []) as Array<Record<string, string | boolean | null>>;
-  const revenue = revenueSnapshot(subs as Array<{ plan_code: string; status: string; billing_interval: string | null }>);
-  const wsIds = [...new Set(subs.map((s) => s.workspace_id as string))];
-  const { data: spaces } = wsIds.length ? await admin.from("workspaces").select("id, name").in("id", wsIds) : { data: [] };
-  const nameById = new Map(((spaces ?? []) as Array<{ id: string; name: string }>).map((w) => [w.id, w.name]));
-
+  const {subs,events,revenue,nameById}=isAzureBackend() ? await billingList() : await loadLegacyBilling();
   return (
     <div className="space-y-6">
       <div>
@@ -122,4 +107,26 @@ export default async function AdminBillingPage() {
       </Card>
     </div>
   );
+}
+
+async function loadLegacyBilling(){
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+
+  const [{ data }, { data: events }] = await Promise.all([
+    admin
+      .from("subscriptions")
+      .select("workspace_id, plan_code, status, provider_subscription_id, provider_plan_id, billing_interval, current_period_end, cancel_at_period_end, override_reason, override_expires_at, updated_at")
+      .neq("status", "free")
+      .order("updated_at", { ascending: false })
+      .limit(200),
+    admin.from("razorpay_webhook_events").select("event_id, event_type, status, received_at, processed_at").order("received_at", { ascending: false }).limit(30),
+  ]);
+  const subs = (data ?? []) as Array<Record<string, string | boolean | null>>;
+  const revenue = revenueSnapshot(subs as Array<{ plan_code: string; status: string; billing_interval: string | null }>);
+  const wsIds = [...new Set(subs.map((s) => s.workspace_id as string))];
+  const { data: spaces } = wsIds.length ? await admin.from("workspaces").select("id, name").in("id", wsIds) : { data: [] };
+  const nameById = new Map(((spaces ?? []) as Array<{ id: string; name: string }>).map((w) => [w.id, w.name]));
+
+  return {subs,events,revenue,nameById};
 }

@@ -7,6 +7,8 @@ import { razorpayPlanIdFor } from "@/lib/billing/subscriptions";
 import { getUserWorkspaceId } from "@/lib/workspaces";
 import type { BillingInterval, PlanCode } from "@/lib/plans";
 import { getPlatformFlags } from "@/lib/platform";
+import { isAzureBackend } from "@/lib/backend";
+import { startCheckout } from "@/lib/billing/azure-checkout";
 
 const subscribeSchema = z.object({
   plan: z.enum(["starter", "pro"]),
@@ -53,6 +55,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No workspace yet." }, { status: 400 });
   }
 
+  if(isAzureBackend()) return startCheckout(userId,workspaceId,plan,interval,providerPlanId);
   const rzp = getRazorpay();
   try {
     const subscription = (await rzp!.subscriptions.create({

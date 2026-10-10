@@ -4,6 +4,9 @@ import { getServerSupabase, getSessionUserId } from "@/lib/supabase/server";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getAppUrl } from "@/lib/config";
 import { isEmailConfigured, sendEmail } from "@/lib/email/resend";
+import { isAzureBackend } from "@/lib/backend";
+import * as azureTeam from "@/lib/azure-team-actions";
+import { readWorkspaceRole } from "@/lib/db/repositories/workspaces";
 import {
   MAX_TEAM_MEMBERS,
   canChangeRole,
@@ -36,6 +39,11 @@ export interface TeamInvite {
 
 /** Caller's role in the workspace, or null when not a member. */
 export async function getMyRole(workspaceId: string, userId: string): Promise<MemberRole | null> {
+  if(isAzureBackend()) {
+    if(await getSessionUserId()!==userId) return null;
+    const role=await readWorkspaceRole(userId,workspaceId);
+    return isMemberRole(role) ? role : null;
+  }
   const admin = getServiceSupabase();
   if (!admin) return null;
   const { data } = await admin
@@ -63,6 +71,7 @@ async function memberCount(workspaceId: string): Promise<{ members: number; owne
 
 /** Members + pending invites. Any member may read; management is gated per action. */
 export async function listTeam(workspaceId: string): Promise<TeamActionResult<{ members: TeamMember[]; invites: TeamInvite[]; myRole: MemberRole }>> {
+  if(isAzureBackend()) return azureTeam.list(workspaceId);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const admin = getServiceSupabase();
@@ -124,6 +133,7 @@ export async function inviteMember(args: {
   email: string;
   role: MemberRole;
 }): Promise<TeamActionResult<{ link: string; emailed: boolean }>> {
+  if(isAzureBackend()) return azureTeam.invite(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const admin = getServiceSupabase();
@@ -176,6 +186,7 @@ export async function inviteMember(args: {
 }
 
 export async function revokeInvite(args: { workspaceId: string; inviteId: string }): Promise<TeamActionResult> {
+  if(isAzureBackend()) return azureTeam.revoke(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const admin = getServiceSupabase();
@@ -198,6 +209,7 @@ export async function revokeInvite(args: { workspaceId: string; inviteId: string
  * invitee leaves (or is removed from) their current workspace first.
  */
 export async function acceptInvite(args: { inviteId: string }): Promise<TeamActionResult<{ workspaceId: string }>> {
+  if(isAzureBackend()) return azureTeam.accept(args);
   const supabase = await getServerSupabase();
   if (!supabase) return { ok: false, error: "Service temporarily unavailable. Please try again." };
   const {
@@ -268,6 +280,7 @@ export async function changeMemberRole(args: {
   userId: string;
   role: MemberRole;
 }): Promise<TeamActionResult> {
+  if(isAzureBackend()) return azureTeam.change(args);
   const actorId = await getSessionUserId();
   if (!actorId) return { ok: false, error: "Sign in first." };
   const admin = getServiceSupabase();
@@ -301,6 +314,7 @@ export async function changeMemberRole(args: {
 }
 
 export async function removeMember(args: { workspaceId: string; userId: string }): Promise<TeamActionResult> {
+  if(isAzureBackend()) return azureTeam.remove(args);
   const actorId = await getSessionUserId();
   if (!actorId) return { ok: false, error: "Sign in first." };
   const admin = getServiceSupabase();
@@ -334,6 +348,7 @@ export async function removeMember(args: { workspaceId: string; userId: string }
 
 /** Exit a workspace yourself. The last owner must promote a successor first. */
 export async function leaveWorkspace(args: { workspaceId: string }): Promise<TeamActionResult> {
+  if(isAzureBackend()) return azureTeam.leave(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const admin = getServiceSupabase();

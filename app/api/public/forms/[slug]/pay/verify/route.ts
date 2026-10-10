@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { enforceRateLimit } from "@/lib/security/rateLimit";
-import { getWorkspaceRazorpay } from "@/lib/billing/connect-actions";
+import { getWorkspaceRazorpay } from "@/lib/billing/workspace-provider";
 import { verifyPaymentSignature } from "@/lib/billing/signature-server";
 import { clientIp, resolvePublicForm } from "@/lib/forms/public";
+import { isAzureBackend } from "@/lib/backend";
+import { readPayment,confirmPayment } from "@/lib/db/repositories/payments";
+import { databaseResult } from "@/lib/db/result";
 
 const verifySchema = z.object({
   orderId: z.string().min(1).max(100),
@@ -29,7 +32,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   if ("error" in resolved) {
     return NextResponse.json({ error: resolved.error }, { status: resolved.status });
   }
-  const provider = await getWorkspaceRazorpay(resolved.form.workspaceId);
+  const provider = await getWorkspaceRazorpay(resolved.form.workspaceId,resolved.form.id);
   if (!provider) return NextResponse.json({ error: "Payments aren't connected for this form." }, { status: 409 });
 
   if (!verifyPaymentSignature({ orderId: body.data.orderId, paymentId: body.data.paymentId, signature: body.data.signature, keySecret: provider.keySecret })) {
@@ -37,7 +40,7 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
   }
 
   const admin = getServiceSupabase();
-  const { data: row } = await admin!
+  const { data: row } = isAzureBackend() ? await databaseResult(readPayment(resolved.form.id,body.data.orderId)) : await admin!
     .from("form_payments")
     .select("id, status, amount_paise, payment_id")
     .eq("form_id", resolved.form.id)
@@ -70,7 +73,8 @@ export async function POST(req: Request, props: { params: Promise<{ slug: string
     return NextResponse.json({ error: "Razorpay hasn't captured this payment." }, { status: 402 });
   }
 
-  const { error: saveError } = await admin!
+  const confirmed=isAzureBackend() ? await databaseResult(confirmPayment(resolved.form.id,body.data.orderId,body.data.paymentId)) : null;
+  const { error: saveError } = confirmed ? {error:confirmed.error || (!confirmed.data ? {message:'Payment state changed'} : null)} : await admin!
     .from("form_payments")
     .update({ status: "paid", payment_id: body.data.paymentId, paid_at: new Date().toISOString() })
     .eq("id", payment!.id)

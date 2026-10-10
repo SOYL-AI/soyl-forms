@@ -1,10 +1,14 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual, createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { getSessionUserId } from "@/lib/supabase/server";
 import { getUserWorkspaceId } from "@/lib/workspaces";
 import { auditLog } from "@/lib/admin";
+import { isAzureBackend } from "@/lib/backend";
+import { subscription } from "@/lib/db/repositories/billing";
+import { readWorkspaceRole } from "@/lib/db/repositories/workspaces";
+import { reconcileBillingEvent } from "@/lib/billing/azure-checkout";
 
 const schema = z.object({
   paymentId: z.string().min(1).max(100),
@@ -35,6 +39,16 @@ export async function POST(req: Request) {
 
   const workspaceId = await getUserWorkspaceId(userId);
   if (!workspaceId) return NextResponse.json({ error: "No workspace yet." }, { status: 400 });
+  if(isAzureBackend()) {
+    if(await readWorkspaceRole(userId,workspaceId)!=='owner') return NextResponse.json({error:'Only workspace owners manage billing.'},{status:403});
+    const stored=await subscription(userId,workspaceId);
+    if(stored?.provider_subscription_id!==body.data.subscriptionId) return NextResponse.json({error:'Subscription not found.'},{status:404});
+    try {
+      await reconcileBillingEvent({id:`checkout:${body.data.paymentId}`,event:'checkout.verified',hash:createHash('sha256').update(`${body.data.subscriptionId}:${body.data.paymentId}`).digest('hex'),providerId:body.data.subscriptionId});
+      const updated=await subscription(userId,workspaceId);
+      return NextResponse.json({ok:true,applied:updated?.status==='active'||updated?.status==='authenticated'});
+    } catch {return NextResponse.json({error:'Could not confirm the subscription with Razorpay. Please retry.'},{status:502});}
+  }
   const admin = getServiceSupabase()!;
   const { data } = await admin
     .from("subscriptions")

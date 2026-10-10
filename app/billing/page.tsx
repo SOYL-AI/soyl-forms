@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { getAppContext } from "@/lib/app-context";
 import { PLANS, formatINR, isPlanCode, type BillingInterval, type PlanCode } from "@/lib/plans";
 import { resolveEffectivePlan, type StoredSubscription } from "@/lib/billing/subscriptions";
@@ -16,6 +16,9 @@ import { Badge, StatusBadge } from "@/components/ui/badge";
 import { formatBytes, formatDate } from "@/lib/utils";
 import { SubscribeButtons } from "./SubscribeButtons";
 import { CancelButton } from "./CancelButton";
+import { isAzureBackend } from "@/lib/backend";
+import { subscription,readUsage } from "@/lib/db/repositories/billing";
+import { databaseResult } from "@/lib/db/result";
 
 export const metadata: Metadata = { title: "Billing & usage", robots: { index: false } };
 
@@ -25,13 +28,13 @@ export default async function BillingPage(
   }
 ) {
   const searchParams = await props.searchParams;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="billing" />;
+  if (!isApplicationConfigured()) return <ConfigRequired area="billing" />;
   const res = await getAppContext();
   if (!res.ok) redirect("/login?next=/billing");
   const { ctx } = res;
   const admin = getServiceSupabase()!;
 
-  const { data: sub } = await admin
+  const { data: sub } = isAzureBackend() ? await databaseResult(subscription(ctx.userId,ctx.workspaceId)) : await admin
     .from("subscriptions")
     .select("plan_code, status, billing_interval, current_period_end, cancel_at_period_end, override_reason, override_expires_at")
     .eq("workspace_id", ctx.workspaceId)
@@ -45,7 +48,10 @@ export default async function BillingPage(
   const plan = PLANS[effective.plan];
 
   const month = new Date().toISOString().slice(0, 7);
-  const [{ data: usage }, { count: activeForms }, { data: files }, credits] = await Promise.all([
+  const azureUsage=isAzureBackend() ? await readUsage(ctx.userId,ctx.workspaceId) : null;
+  const [{ data: usage }, { count: activeForms }, { data: files }, credits] = azureUsage ? [
+    {data:azureUsage.usage},{count:azureUsage.activeForms},{data:[{size_bytes:azureUsage.storage}]},await getAiBalance(ctx.workspaceId),
+  ] as const : await Promise.all([
     admin.from("usage_monthly").select("completed_submissions, notification_emails").eq("workspace_id", ctx.workspaceId).eq("month", `${month}-01`).maybeSingle(),
     admin.from("forms").select("id", { count: "exact", head: true }).eq("workspace_id", ctx.workspaceId).eq("status", "published"),
     admin.from("uploaded_files").select("size_bytes").eq("workspace_id", ctx.workspaceId).neq("status", "deleted").limit(5000),

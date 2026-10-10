@@ -17,14 +17,20 @@ export function NativeBridge() {
 
     void (async () => {
       const [{ App }, { Browser }] = await Promise.all([import("@capacitor/app"), import("@capacitor/browser")]);
-      const handle = await App.addListener("appUrlOpen", ({ url }) => {
+      const openInApp = (url: string) => {
         const path = inAppPathFor(url, window.location.host);
         if (!path) return;
+        sessionStorage.setItem("soyl.native.last-launch-url", url);
         void Browser.close().catch(() => {});
+        if (`${window.location.pathname}${window.location.search}${window.location.hash}` === path) return;
         window.location.assign(path);
-      });
-      if (cancelled) void handle.remove();
-      else remove = () => void handle.remove();
+      };
+      const handle = await App.addListener("appUrlOpen", ({ url }) => openInApp(url));
+      if (cancelled) { void handle.remove(); return; }
+      remove = () => void handle.remove();
+      // A process killed while the browser was open receives a cold-start URL.
+      const launch = await App.getLaunchUrl().catch(() => undefined);
+      if (!cancelled && launch?.url && sessionStorage.getItem("soyl.native.last-launch-url") !== launch.url) openInApp(launch.url);
     })();
 
     return () => {

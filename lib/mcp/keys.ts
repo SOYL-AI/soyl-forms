@@ -1,6 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 
+import { isAzureBackend } from "@/lib/backend";
+import { getDatabasePool } from "@/lib/db/pool";
+
 export const MCP_KEY_PREFIX = "soyl_sk_";
 const SECRET_BYTES = 32;
 
@@ -30,6 +33,7 @@ export function parseBearer(header: string | null): string | null {
 export interface VerifiedKey {
   workspaceId: string;
   keyId: string;
+  userId?: string;
   prefix: string;
 }
 
@@ -38,6 +42,13 @@ export interface VerifiedKey {
  * DB/config problem. Touches last_used_at on success (best-effort).
  */
 export async function verifyMcpKey(secret: string): Promise<VerifiedKey | null> {
+  if (isAzureBackend()) {
+    try {
+      const row = (await getDatabasePool().query<{workspace_id:string;key_id:string;key_prefix:string;user_id:string}>(
+        "select * from platform.verify_api_key($1)", [hashMcpKey(secret)])).rows[0];
+      return row ? {workspaceId:row.workspace_id,keyId:row.key_id,prefix:row.key_prefix,userId:row.user_id} : null;
+    } catch { return null; }
+  }
   const admin = getServiceSupabase();
   if (!admin) return null;
   const { data } = await admin

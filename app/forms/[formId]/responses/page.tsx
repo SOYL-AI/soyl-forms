@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Inbox } from "lucide-react";
 import { getServiceSupabase } from "@/lib/supabase/admin";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isApplicationConfigured } from "@/lib/backend";
 import { getAppContext } from "@/lib/app-context";
 import { getFormForOwner } from "@/lib/forms/actions";
 import { formSchemaV1 } from "@/lib/forms/schema";
@@ -30,6 +30,11 @@ import { formatDateTime, pct } from "@/lib/utils";
 import { hasWorkspaceRole } from "@/lib/security/workspace";
 import { StateActions } from "./StateActions";
 import { ExportCsvButton } from "@/components/app/ExportCsvButton";
+import { isAzureBackend } from "@/lib/backend";
+import { getSessionUserId } from "@/lib/supabase/server";
+import { readForm, readOwnedVersion } from "@/lib/db/repositories/forms";
+import { analytics, searchResponses } from "@/lib/db/repositories/responses";
+import { databaseResult } from "@/lib/db/result";
 
 export const metadata: Metadata = { title: "Responses", robots: { index: false } };
 
@@ -70,10 +75,10 @@ function Bars({ rows, max }: { rows: Array<{ label: string; count: number }>; ma
 
 async function Analytics({ formId, blocks, quiz }: { formId: string; blocks: Block[] | null; quiz: boolean }) {
   const admin = getServiceSupabase();
-  if (!admin) return null;
+  if (!isAzureBackend() && !admin) return null;
 
   const analytical = (blocks ?? []).filter((b) => ["yes_no", "single_choice", "multiple_choice", "dropdown", "rating", "opinion_scale", "number", "slider", "nps", "matrix", "ranking"].includes(b.type) || Boolean(b.quiz));
-  const { data: raw, error } = await admin.rpc("form_analytics", { p_form_id: formId, p_question_ids: analytical.map((b) => b.id) });
+  const { data: raw, error } = isAzureBackend() ? await databaseResult(analytics((await getSessionUserId())!, formId, analytical.map(b => b.id))) : await admin!.rpc("form_analytics", { p_form_id: formId, p_question_ids: analytical.map((b) => b.id) });
   if (error || !raw) return <p role="alert" className="mt-6 text-sm">Analytics are temporarily unavailable. Please try again.</p>;
   const stats = raw as { views: number; completions: number; completedVisits: number; avgSecs: number | null; fromQr: number;
     days: Record<string, number>; answers: Record<string, Array<{ answer: AnswerValue; count: number }>>;
@@ -287,7 +292,7 @@ export default async function ResponsesPage(
 ) {
   const searchParams = await props.searchParams;
   const params = await props.params;
-  if (!isSupabaseConfigured()) return <ConfigRequired area="responses" />;
+  if (!isAzureBackend() && !isApplicationConfigured()) return <ConfigRequired area="responses" />;
   const res = await getAppContext();
   if (!res.ok) redirect(`/login?next=/forms/${params.formId}/responses`);
   const owned = await getFormForOwner(params.formId);
@@ -296,12 +301,12 @@ export default async function ResponsesPage(
   const canEdit = await hasWorkspaceRole(form.workspace_id, "editor");
   const admin = getServiceSupabase()!;
 
-  const { data: formRow } = await admin.from("forms").select("published_version_id").eq("id", form.id).single();
+  const { data: formRow } = isAzureBackend() ? { data: await readForm(res.ctx.userId,form.id) } : await admin.from("forms").select("published_version_id").eq("id", form.id).single();
   const publishedId = (formRow as { published_version_id: string | null } | null)?.published_version_id;
   let blocks: Block[] | null = null;
   let versionSettings: FormSettings = {};
   if (publishedId) {
-    const { data: version } = await admin.from("form_versions").select("schema, settings").eq("id", publishedId).single();
+    const { data: version } = isAzureBackend() ? { data: await readOwnedVersion(res.ctx.userId,form.id,publishedId) } : await admin.from("form_versions").select("schema, settings").eq("id", publishedId).single();
     const v = version as { schema: unknown; settings: FormSettings | null } | null;
     const parsed = formSchemaV1.safeParse(v?.schema);
     if (parsed.success) blocks = parsed.data.blocks;
@@ -315,7 +320,9 @@ export default async function ResponsesPage(
   const to = date(searchParams?.to);
   const q = searchParams?.q?.trim().slice(0, 200) ?? "";
   const activeTag = searchParams?.tag?.trim().toLowerCase().slice(0, 30) ?? "";
-  const { data, error: searchError } = await admin.rpc("search_form_responses", {
+  const { data, error: searchError } = isAzureBackend() ? await databaseResult(searchResponses(res.ctx.userId,form.id, {
+    q,tag:activeTag,from:from ? `${from}T00:00:00Z` : null,to:to ? new Date(Date.parse(to)+86400_000).toISOString() : null,offset:(page-1)*100,
+  })) : await admin.rpc("search_form_responses", {
     p_form_id: form.id, p_query: q, p_tag: activeTag,
     p_from: from ? `${from}T00:00:00Z` : null,
     p_to: to ? new Date(Date.parse(to) + 86400_000).toISOString() : null,

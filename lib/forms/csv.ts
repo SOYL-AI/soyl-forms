@@ -23,15 +23,16 @@ function escape(value: string): string {
  * labels for choices. Matches the on-screen response data — the export
  * test pins this.
  */
-export function submissionsToCsv(blocks: Block[], rows: CsvRow[]): string {
+export function submissionsToCsv(blocks: Block[], rows: CsvRow[], layout?: { hiddenKeys: string[]; hasTags: boolean; includeHeader: boolean }): string {
   const { headers: questionHeaders, columns } = answerColumns(blocks);
   // Hidden-field columns: union of keys present in any row, sorted. Rows
   // without hidden values keep identical output to before.
-  const hiddenKeys = [...new Set(rows.flatMap((r) => Object.keys(r.hidden ?? {})))].sort();
-  const hasTags = rows.some((r) => (r.tags ?? []).length > 0);
+  const hiddenKeys = layout?.hiddenKeys ?? [...new Set(rows.flatMap((r) => Object.keys(r.hidden ?? {})))].sort();
+  const hasTags = layout?.hasTags ?? rows.some((r) => (r.tags ?? []).length > 0);
   const headers = ["submission_id", "submitted_at", ...questionHeaders, ...hiddenKeys, ...(hasTags ? ["tags"] : [])];
 
-  const lines = [headers.map(escape).join(",")];
+  const includeHeader = layout?.includeHeader ?? true;
+  const lines = includeHeader ? [headers.map(escape).join(",")] : [];
   for (const row of rows) {
     const cols = [
       row.id,
@@ -43,7 +44,7 @@ export function submissionsToCsv(blocks: Block[], rows: CsvRow[]): string {
     lines.push(cols.map(escape).join(","));
   }
   // BOM so Excel opens UTF-8 correctly.
-  return `﻿${lines.join("\n")}\n`;
+  return `${includeHeader ? "\uFEFF" : ""}${lines.join("\n")}\n`;
 }
 
 /**

@@ -2,6 +2,8 @@ import { getServiceSupabase } from "@/lib/supabase/admin";
 import { formSchemaV1 } from "./schema";
 import type { FormSchemaV1, FormSettings } from "@/types/forms";
 import { isIP } from "node:net";
+import { isAzureBackend } from "@/lib/backend";
+import { readPublicForm, readPublicVersion } from "@/lib/db/repositories/forms";
 
 export interface PublicForm {
   id: string;
@@ -20,6 +22,14 @@ export interface PublicForm {
 export async function resolvePublicForm(
   slug: string,
 ): Promise<{ form: PublicForm } | { error: string; status: number }> {
+  if (isAzureBackend()) {
+    const row = await readPublicForm(slug);
+    if (!row) return { error: "This form isn't available.", status: 404 };
+    const parsed = formSchemaV1.safeParse(row.schema);
+    if (!parsed.success) return { error: "This form isn't available right now.", status: 410 };
+    return { form: { id: row.id, workspaceId: row.workspace_id, title: parsed.data.title, slug: row.slug, status: row.status,
+      versionId: row.version_id, versionNumber: row.version_number, schema: parsed.data, settings: row.settings, theme: row.theme } };
+  }
   const admin = getServiceSupabase();
   if (!admin) return { error: "Forms are temporarily unavailable.", status: 503 };
 
@@ -85,6 +95,11 @@ export async function resolveFormVersion(
   formId: string,
   versionId: string,
 ): Promise<{ versionId: string; schema: FormSchemaV1; settings: FormSettings; theme: Record<string, unknown> } | null> {
+  if (isAzureBackend()) {
+    const row = await readPublicVersion(formId, versionId);
+    const parsed = formSchemaV1.safeParse(row?.schema);
+    return row && parsed.success ? { versionId: row.id, schema: parsed.data, settings: row.settings, theme: row.theme } : null;
+  }
   const admin = getServiceSupabase();
   if (!admin) return null;
   const { data } = await admin
@@ -125,7 +140,7 @@ export function clientIp(headers: Headers): string {
   // Only opt in behind a proxy that overwrites this header and prevents origin bypass.
   const proxy = process.env.TRUSTED_PROXY;
   const raw = proxy === "cloudflare" ? headers.get("cf-connecting-ip") :
-    proxy === "vercel" ? headers.get("x-forwarded-for")?.split(",").at(-1) :
+    (proxy === "vercel" || proxy === "azure") ? headers.get("x-forwarded-for")?.split(",").at(-1) :
     proxy === "custom" ? headers.get("x-real-ip") : null;
   const address = raw?.trim() ?? "";
   return isIP(address) ? address : "unknown";

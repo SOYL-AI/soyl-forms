@@ -12,6 +12,8 @@ import { confirmationEmail, isEmailConfigured, resolveResponderRecipient, respon
 import { getAppUrl, getProductName } from "@/lib/config";
 import { deliverEmail } from "@/lib/email/deliver";
 import type { AnswerValue } from "@/types/forms";
+import { isAzureBackend } from "@/lib/backend";
+import { runAzureOutbox } from "@/lib/azure-outbox";
 
 function authorized(req: Request): boolean {
   const secret = process.env.CRON_SECRET;
@@ -111,6 +113,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "CRON_SECRET is not configured; scheduler disabled." }, { status: 503 });
   }
   if (!authorized(req)) return NextResponse.json({ error: "Unauthorized." }, { status: 401 });
+  if(isAzureBackend()) return runAzureOutbox();
   const admin = getServiceSupabase();
   if (!admin) return NextResponse.json({ error: "Server misconfigured." }, { status: 500 });
 

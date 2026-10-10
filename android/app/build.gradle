@@ -24,7 +24,7 @@ android {
         // Bump for every Play upload: ./gradlew bundleRelease -PversionCode=2 -PversionName=1.0.1
         versionCode((project.findProperty('versionCode') ?: '1') as int)
         versionName((project.findProperty('versionName') ?: '1.0.0') as String)
-        manifestPlaceholders = [appHost: appHost]
+        manifestPlaceholders = [appHost: appHost, appAuthScheme: 'com.soylai.forms']
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -43,6 +43,14 @@ android {
         }
     }
     buildTypes {
+        authProof {
+            initWith debug
+            matchingFallbacks = ['debug']
+            applicationIdSuffix '.authproof'
+            manifestPlaceholders.appAuthScheme = 'com.soylai.forms.authproof'
+            resValue 'string', 'app_name', 'SOYL Forms Auth Preview'
+            resValue 'string', 'title_activity_main', 'SOYL Forms Auth Preview'
+        }
         release {
             if (keystorePropertiesFile.exists()) {
                 signingConfig signingConfigs.release

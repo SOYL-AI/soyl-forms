@@ -20,6 +20,8 @@ export interface ToolDefinition {
 }
 
 export interface ToolContext {
+  /** Set by the API key verifier only; never read from request parameters. */
+  userId?: string;
   workspaceId: string;
 }
 
@@ -133,13 +135,13 @@ async function dispatchOne(msg: unknown, ctx: DispatchContext): Promise<RpcRespo
       });
     }
     try {
-      const result = await tool.run({ workspaceId: ctx.workspaceId }, parsed.data);
+      const result = await tool.run({ workspaceId: ctx.workspaceId, userId:ctx.userId }, parsed.data);
       return ok(rpcId, result);
     } catch (e) {
       if (e instanceof McpToolError) {
         return err(rpcId, e.rpcCode, e.message, { code: e.hint });
       }
-      console.error(`[mcp] tools/call ${p.name} failed:`, e);
+      console.error(JSON.stringify({event:"mcp_tool_failed",tool:p.name}));
       return err(rpcId, -32603, "Something went wrong.", { code: "internal" });
     }
   }

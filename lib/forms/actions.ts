@@ -16,6 +16,11 @@ import { deliverToWebhook } from "@/lib/webhooks/deliver";
 import { applyEditedAnswer, normalizeTags } from "@/lib/forms/submissions";
 import { isMemberRole, roleAtLeast } from "@/lib/teams";
 import { validatePublicUrl } from "@/lib/security/public-fetch";
+import { isAzureBackend } from "@/lib/backend";
+import * as azure from "./azure-actions";
+import { editAnswer, setTags } from "@/lib/db/repositories/responses";
+import { databaseResult } from "@/lib/db/result";
+import * as hookRepository from "@/lib/db/repositories/webhooks";
 
 export type ActionResult<T = object> =
   | ({ ok: true } & T)
@@ -73,6 +78,7 @@ async function getOwnedForm(
 export async function createForm(args: {
   title: string;
 }): Promise<ActionResult<{ id: string }>> {
+  if (isAzureBackend()) return azure.createForm(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in to create a form." };
   const supabase = await getServerSupabase();
@@ -115,6 +121,7 @@ export async function saveDraft(args: {
   theme?: unknown;
   settings?: unknown;
 }): Promise<ActionResult<{ revision: number }>> {
+  if (isAzureBackend()) return azure.saveDraft(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in to save." };
   const supabase = await getServerSupabase();
@@ -181,6 +188,7 @@ export async function renameForm(args: {
   formId: string;
   title: string;
 }): Promise<ActionResult> {
+  if (isAzureBackend()) return azure.renameForm(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = await getServerSupabase();
@@ -199,6 +207,7 @@ export async function renameForm(args: {
 export async function duplicateForm(args: {
   formId: string;
 }): Promise<ActionResult<{ id: string }>> {
+  if (isAzureBackend()) return azure.duplicateForm(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = await getServerSupabase();
@@ -246,6 +255,7 @@ export async function setFormArchived(args: {
   formId: string;
   archived: boolean;
 }): Promise<ActionResult> {
+  if (isAzureBackend()) return azure.changeStatus(args.formId, args.archived ? "archived" : "draft");
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = await getServerSupabase();
@@ -272,6 +282,7 @@ export interface OwnerForm {
 export async function getFormForOwner(
   formId: string,
 ): Promise<{ form: OwnerForm } | { error: string }> {
+  if (isAzureBackend()) return azure.getFormForOwner(formId);
   const userId = await getSessionUserId();
   if (!userId) return { error: "Sign in first." };
   const owned = await getOwnedForm(formId, userId, "viewer");
@@ -305,6 +316,7 @@ async function countActiveForms(workspaceId: string, excludeId?: string): Promis
 export async function publishForm(args: {
   formId: string;
 }): Promise<ActionResult<{ url: string; version: number }>> {
+  if (isAzureBackend()) return azure.publishForm(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const owned = await getOwnedForm(args.formId, userId);
@@ -380,6 +392,7 @@ export async function publishForm(args: {
 }
 
 export async function closeForm(args: { formId: string }): Promise<ActionResult> {
+  if (isAzureBackend()) return azure.changeStatus(args.formId, "closed");
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = await getServerSupabase();
@@ -410,7 +423,7 @@ export async function listWebhooks(args: {
   const owned = await getOwnedForm(args.formId, userId, "viewer");
   if ("error" in owned) return { error: owned.error };
   const admin = getServiceSupabase();
-  const { data } = await admin!
+  const { data } = isAzureBackend() ? await databaseResult(hookRepository.listWebhooks(userId,args.formId)) : await admin!
     .from("webhooks")
     .select("id, url, is_active, events, created_at")
     .eq("form_id", args.formId)
@@ -430,7 +443,7 @@ async function getOwnedWebhook(
   userId: string,
 ): Promise<{ hook: OwnedHook } | { error: string }> {
   const admin = getServiceSupabase();
-  const { data } = await admin!
+  const { data } = isAzureBackend() ? await databaseResult(hookRepository.readWebhook(userId,webhookId)) : await admin!
     .from("webhooks")
     .select("id, form_id, url, is_active")
     .eq("id", webhookId)
@@ -467,6 +480,11 @@ export async function createWebhook(args: {
 
   const admin = getServiceSupabase();
   const plan = await getWorkspacePlan(owned.form.workspace_id);
+  if(isAzureBackend()) {
+    const secret=newWebhookSecret();
+    const result=await databaseResult(hookRepository.createWebhook(userId,args.formId,parsed.toString(),encryptSecret(secret),PLANS[plan].entitlements.maxWebhooksPerForm));
+    return result.error ? {ok:false,error:'Could not add the webhook. Check your plan limit and permissions.'} : {ok:true,id:result.data!,secret};
+  }
   const { count } = await admin!
     .from("webhooks")
     .select("id", { count: "exact", head: true })
@@ -501,7 +519,7 @@ export async function deleteWebhook(args: { webhookId: string }): Promise<Action
   const found = await getOwnedWebhook(args.webhookId, userId);
   if ("error" in found) return { ok: false, error: found.error };
   const admin = getServiceSupabase();
-  const { error } = await admin!.from("webhooks").delete().eq("id", args.webhookId);
+  const { error } = isAzureBackend() ? await databaseResult(hookRepository.changeWebhook(userId,args.webhookId,null)) : await admin!.from("webhooks").delete().eq("id", args.webhookId);
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
@@ -514,7 +532,7 @@ export async function setWebhookActive(args: {
   const found = await getOwnedWebhook(args.webhookId, userId);
   if ("error" in found) return { ok: false, error: found.error };
   const admin = getServiceSupabase();
-  const { error } = await admin!
+  const { error } = isAzureBackend() ? await databaseResult(hookRepository.changeWebhook(userId,args.webhookId,args.active)) : await admin!
     .from("webhooks")
     .update({ is_active: args.active })
     .eq("id", args.webhookId);
@@ -532,13 +550,14 @@ export async function testWebhook(args: {
   const res = await deliverToWebhook(
     args.webhookId,
     {
-      eventId: `test-${Date.now()}`,
+      eventId: crypto.randomUUID(),
       formId: found.hook.form_id,
       submissionId: "test",
       submittedAt: new Date().toISOString(),
       answers: { note: "This is a test delivery." },
     },
     1,
+    {userId},
   );
   if (!res.ok) {
     return { ok: false, error: `Delivery failed${res.httpStatus ? ` (HTTP ${res.httpStatus})` : ""}: ${res.error ?? "check the URL"}` };
@@ -548,6 +567,7 @@ export async function testWebhook(args: {
 
 /** Reopen a closed form (re-checks the active-form entitlement). */
 export async function reopenForm(args: { formId: string }): Promise<ActionResult> {
+  if (isAzureBackend()) return azure.reopenForm(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
   const supabase = await getServerSupabase();
@@ -601,6 +621,7 @@ export async function createFormFromDraft(args: {
   theme?: unknown;
   settings?: unknown;
 }): Promise<ActionResult<{ id: string }>> {
+  if (isAzureBackend()) return azure.createFormFromDraft(args);
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in to create a form." };
   const supabase = await getServerSupabase();
@@ -720,6 +741,10 @@ export async function updateSubmissionAnswer(args: {
 }): Promise<ActionResult> {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
+  if (isAzureBackend()) {
+    const result = await databaseResult(editAnswer(userId,args.formId,args.submissionId,args.blockId,args.value));
+    return result.data?.ok ? { ok: true } : { ok: false, error: result.error?.message ?? result.data?.error ?? "Could not save the edit." };
+  }
   const ctx = await getEditableSubmission(args.formId, args.submissionId, userId);
   if ("error" in ctx) return { ok: false, error: ctx.error };
   const applied = applyEditedAnswer(ctx.schema, ctx.answers, args.blockId, args.value);
@@ -749,6 +774,10 @@ export async function setSubmissionTags(args: {
 }): Promise<ActionResult> {
   const userId = await getSessionUserId();
   if (!userId) return { ok: false, error: "Sign in first." };
+  if (isAzureBackend()) {
+    const result = await databaseResult(setTags(userId,args.formId,args.submissionId,args.tags));
+    return result.data ? { ok: true } : { ok: false, error: result.error?.message ?? "Edit access is required." };
+  }
   const ctx = await getEditableSubmission(args.formId, args.submissionId, userId);
   if ("error" in ctx) return { ok: false, error: ctx.error };
   const tags = normalizeTags(args.tags);

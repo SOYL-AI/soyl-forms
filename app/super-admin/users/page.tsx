@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { userList } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { Table, Td, Th, Mono } from "@/components/ui/table";
@@ -7,27 +9,8 @@ import { SearchForm } from "../Controls";
 
 export default async function AdminUsersPage(props: { searchParams?: Promise<{ q?: string }> }) {
   const searchParams = await props.searchParams;
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
-  const q = searchParams?.q?.trim().toLowerCase() ?? "";
-
-  // Auth admin list (paginated scan; V1 scale) for email search.
-  const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 500 });
-  const users = (list?.users ?? [])
-    .filter((u) => !q || u.email?.toLowerCase().includes(q) || u.id.toLowerCase().includes(q))
-    .sort((a, b) => (b.created_at > a.created_at ? 1 : -1))
-    .slice(0, 100);
-
-  const ids = users.map((u) => u.id);
-  const [{ data: members }, { data: profiles }, { data: admins }] = ids.length
-    ? await Promise.all([
-        admin.from("workspace_members").select("user_id, workspace_id, role").in("user_id", ids),
-        admin.from("profiles").select("id, display_name").in("id", ids),
-        admin.from("admin_users").select("user_id, role").in("user_id", ids),
-      ])
-    : [{ data: [] }, { data: [] }, { data: [] }];
-  const wsIds = [...new Set(((members ?? []) as Array<{ workspace_id: string }>).map((m) => m.workspace_id))];
-  const { data: spaces } = wsIds.length ? await admin.from("workspaces").select("id, name, status").in("id", wsIds) : { data: [] };
+  const q=searchParams?.q?.trim().toLowerCase() ?? "";
+  const {users,members,profiles,admins,spaces}=isAzureBackend() ? await userList(q) : await loadLegacyUsers(q);
   const spaceById = new Map(((spaces ?? []) as Array<{ id: string; name: string; status: string }>).map((w) => [w.id, w]));
   const membersByUser = new Map<string, Array<{ workspace_id: string; role: string }>>();
   for (const m of (members ?? []) as Array<{ user_id: string; workspace_id: string; role: string }>) {
@@ -62,7 +45,7 @@ export default async function AdminUsersPage(props: { searchParams?: Promise<{ q
                 <p className="flex items-center gap-2 font-medium">
                   {u.email ?? "(no email)"}
                   {adminById.get(u.id) && <Badge tone="accent">{adminById.get(u.id)}</Badge>}
-                  {!u.email_confirmed_at && <Badge tone="warn">unconfirmed</Badge>}
+                  {!("email_verified" in u ? u.email_verified : u.email_confirmed_at) && <Badge tone="warn">unconfirmed</Badge>}
                 </p>
                 <p className="text-xs text-ink-faint">{nameById.get(u.id) ?? ""}</p>
                 <Mono>{u.id}</Mono>
@@ -81,7 +64,7 @@ export default async function AdminUsersPage(props: { searchParams?: Promise<{ q
                 </div>
               </Td>
               <Td className="text-xs text-ink-soft">{formatDate(u.created_at)}</Td>
-              <Td className="text-xs text-ink-soft">{u.last_sign_in_at ? timeAgo(u.last_sign_in_at) : "never"}</Td>
+              <Td className="text-xs text-ink-soft">{u.last_sign_in_at ? timeAgo(u.last_sign_in_at) : "not recorded"}</Td>
               <Td className="text-right">
                 <Link href={`/super-admin/users/${u.id}`} className="text-xs font-semibold underline underline-offset-2">
                   Details
@@ -100,4 +83,28 @@ export default async function AdminUsersPage(props: { searchParams?: Promise<{ q
       </Table>
     </div>
   );
+}
+
+async function loadLegacyUsers(q:string){
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+
+  // Auth admin list (paginated scan; V1 scale) for email search.
+  const { data: list } = await admin.auth.admin.listUsers({ page: 1, perPage: 500 });
+  const users = (list?.users ?? [])
+    .filter((u) => !q || u.email?.toLowerCase().includes(q) || u.id.toLowerCase().includes(q))
+    .sort((a, b) => (b.created_at > a.created_at ? 1 : -1))
+    .slice(0, 100);
+
+  const ids = users.map((u) => u.id);
+  const [{ data: members }, { data: profiles }, { data: admins }] = ids.length
+    ? await Promise.all([
+        admin.from("workspace_members").select("user_id, workspace_id, role").in("user_id", ids),
+        admin.from("profiles").select("id, display_name").in("id", ids),
+        admin.from("admin_users").select("user_id, role").in("user_id", ids),
+      ])
+    : [{ data: [] }, { data: [] }, { data: [] }];
+  const wsIds = [...new Set(((members ?? []) as Array<{ workspace_id: string }>).map((m) => m.workspace_id))];
+  const { data: spaces } = wsIds.length ? await admin.from("workspaces").select("id, name, status").in("id", wsIds) : { data: [] };
+  return {users,members,profiles,admins,spaces};
 }

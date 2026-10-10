@@ -1,3 +1,5 @@
+import { isAzureBackend } from "@/lib/backend";
+import { formList } from "@/lib/db/repositories/operators";
 import Link from "next/link";
 import { getServiceSupabase } from "@/lib/supabase/admin";
 import { Table, Td, Th, Mono } from "@/components/ui/table";
@@ -7,28 +9,8 @@ import { FormStatusButton, SearchForm } from "../Controls";
 
 export default async function AdminFormsPage(props: { searchParams?: Promise<{ q?: string }> }) {
   const searchParams = await props.searchParams;
-  const admin = getServiceSupabase();
-  if (!admin) return <p className="text-sm">Server misconfigured.</p>;
   const q = searchParams?.q?.trim() ?? "";
-
-  let query = admin.from("forms").select("id, workspace_id, title, slug, status, published_at, updated_at").order("updated_at", { ascending: false }).limit(100);
-  if (q) {
-    query = /^[0-9a-f-]{36}$/i.test(q) ? query.or(`id.eq.${q},workspace_id.eq.${q}`) : query.or(`title.ilike.%${q}%,slug.eq.${q.replace(/^\/?f\//, "")}`);
-  }
-  const { data } = await query;
-  const forms = (data ?? []) as Array<{ id: string; workspace_id: string; title: string; slug: string; status: string; published_at: string | null; updated_at: string }>;
-  const ids = forms.map((f) => f.id);
-  const wsIds = [...new Set(forms.map((f) => f.workspace_id))];
-  const [{ data: spaces }, { data: subs }] = ids.length
-    ? await Promise.all([
-        admin.from("workspaces").select("id, name, status").in("id", wsIds),
-        admin.from("submissions").select("form_id").in("form_id", ids).is("deleted_at", null).limit(20000),
-      ])
-    : [{ data: [] }, { data: [] }];
-  const spaceById = new Map(((spaces ?? []) as Array<{ id: string; name: string; status: string }>).map((w) => [w.id, w]));
-  const counts = new Map<string, number>();
-  for (const s of (subs ?? []) as Array<{ form_id: string }>) counts.set(s.form_id, (counts.get(s.form_id) ?? 0) + 1);
-
+  const {forms,spaceById,counts} = isAzureBackend() ? await formList(q) : await loadLegacyForms(q);
   return (
     <div className="space-y-6">
       <div>
@@ -93,4 +75,29 @@ export default async function AdminFormsPage(props: { searchParams?: Promise<{ q
       </Table>
     </div>
   );
+}
+
+async function loadLegacyForms(q:string) {
+  const admin = getServiceSupabase();
+  if (!admin) throw new Error("Server misconfigured");
+
+  let query = admin.from("forms").select("id, workspace_id, title, slug, status, published_at, updated_at").order("updated_at", { ascending: false }).limit(100);
+  if (q) {
+    query = /^[0-9a-f-]{36}$/i.test(q) ? query.or(`id.eq.${q},workspace_id.eq.${q}`) : query.or(`title.ilike.%${q}%,slug.eq.${q.replace(/^\/?f\//, "")}`);
+  }
+  const { data } = await query;
+  const forms = (data ?? []) as Array<{ id: string; workspace_id: string; title: string; slug: string; status: string; published_at: string | null; updated_at: string }>;
+  const ids = forms.map((f) => f.id);
+  const wsIds = [...new Set(forms.map((f) => f.workspace_id))];
+  const [{ data: spaces }, { data: subs }] = ids.length
+    ? await Promise.all([
+        admin.from("workspaces").select("id, name, status").in("id", wsIds),
+        admin.from("submissions").select("form_id").in("form_id", ids).is("deleted_at", null).limit(20000),
+      ])
+    : [{ data: [] }, { data: [] }];
+  const spaceById = new Map(((spaces ?? []) as Array<{ id: string; name: string; status: string }>).map((w) => [w.id, w]));
+  const counts = new Map<string, number>();
+  for (const s of (subs ?? []) as Array<{ form_id: string }>) counts.set(s.form_id, (counts.get(s.form_id) ?? 0) + 1);
+
+  return {forms,spaceById,counts};
 }
