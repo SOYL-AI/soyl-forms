@@ -14,8 +14,13 @@ if ($UseCustomDomain) {
 $custom=if($UseCustomDomain){'true'}else{'false'}
 $outputs=az deployment group create -g $group -n platform-email -f azure/platform-email.bicep --parameters "useCustomDomain=$custom" --query properties.outputs -o json | ConvertFrom-Json
 if ($LASTEXITCODE -ne 0) {throw 'Azure email provisioning failed.'}
-az keyvault secret set --vault-name sfkvn4nsiocbpshei --name email-from --value $outputs.sender.value --output none
+$senderVersion=az keyvault secret set --vault-name sfkvn4nsiocbpshei --name email-from --value $outputs.sender.value --query id -o tsv
 if ($LASTEXITCODE -ne 0) {throw 'Sender configuration could not be saved.'}
+# Pin the new secret version and roll a revision instead of relying on the
+# asynchronous refresh of an unversioned Key Vault reference.
+$runtimeIdentity="/subscriptions/$subscription/resourceGroups/$group/providers/Microsoft.ManagedIdentity/userAssignedIdentities/soyl-forms-runtime"
+az containerapp secret set -g $group -n soyl-forms-web --secrets "email-from=keyvaultref:$senderVersion,identityref:$runtimeIdentity" --output none
+if ($LASTEXITCODE -ne 0) {throw 'Application sender reference could not be refreshed.'}
 # Keep the ignored local parameter file consistent with the deployed sender.
 # Otherwise a later secret deployment could restore the former Resend address.
 $parametersPath=Join-Path (Get-Location) '.azure-migration/platform-secrets-parameters.json'
@@ -24,6 +29,7 @@ if(Test-Path -LiteralPath $parametersPath) {
   $parameters.parameters.settings.value.'email-from'.value=$outputs.sender.value
   [System.IO.File]::WriteAllText($parametersPath,($parameters | ConvertTo-Json -Depth 30),(New-Object System.Text.UTF8Encoding($false)))
 }
-az containerapp update -g $group -n soyl-forms-web --set-env-vars 'EMAIL_PROVIDER=azure' "AZURE_EMAIL_ENDPOINT=$($outputs.endpoint.value)" "AZURE_CLIENT_ID=$($outputs.runtimeClientId.value)" --output none
+$revisionSuffix='email-'+[DateTime]::UtcNow.ToString('yyyyMMddHHmmss')
+az containerapp update -g $group -n soyl-forms-web --revision-suffix $revisionSuffix --set-env-vars 'EMAIL_PROVIDER=azure' "AZURE_EMAIL_ENDPOINT=$($outputs.endpoint.value)" "AZURE_CLIENT_ID=$($outputs.runtimeClientId.value)" --output none
 if ($LASTEXITCODE -ne 0) {throw 'Application email configuration failed.'}
 @{provider='azure';endpoint=$outputs.endpoint.value;sender=$outputs.sender.value;customDomain=[bool]$UseCustomDomain} | ConvertTo-Json -Compress

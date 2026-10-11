@@ -15,10 +15,10 @@ Treat this implementation as a temporary provider integration. Select a successo
 - Data location: India. Engagement tracking disabled.
 - Endpoint: `https://soyl-forms-communication.india.communication.azure.com`.
 - Initial verified sender: `DoNotReply@38e8f081-bf10-4d27-8975-cab4f8627740.azurecomm.net`.
-- Custom sender prepared: `notifications@mail.forms.soylai.com`, display name SOYL Forms. Verification pending DNS.
+- Custom sender configured: `notifications@mail.forms.soylai.com`, display name SOYL Forms. Domain, SPF, DKIM and DKIM2 verified on 11 October 2026.
 - Provider send/status diagnostics target the existing 30-day Log Analytics workspace. These logs can contain recipient addresses; restrict access and apply the documented retention policy. Engagement-event logging remains disabled.
 
-Deploy/configure with `powershell -File scripts/azure/configure-email.ps1`. Once all custom-domain records are verified, run it with `-UseCustomDomain`. The script refuses to switch to an unverified domain. `azure/platform-app.bicep` accepts `emailEndpoint` to retain managed-identity email configuration during infrastructure deployments.
+Deploy/configure with `powershell -File scripts/azure/configure-email.ps1`. Once all custom-domain records are verified, run it with `-UseCustomDomain`. The script refuses to switch to an unverified domain, pins the new sender secret version and rolls a fresh application revision rather than waiting for asynchronous Key Vault refresh. Check that the new revision becomes ready afterward. `azure/platform-app.bicep` accepts `emailEndpoint` to retain managed-identity email configuration during infrastructure deployments.
 
 The Azure-managed domain is suitable for testing: its current fixed send limits are **5/minute and 10/hour**. Verified custom domains initially allow **30/minute and 100/hour**, subject to subscription quotas. Request increased custom-domain limits before launching notification volume beyond these limits; another resource does not bypass subscription quotas. Provider throttling defers queued mail rather than exhausting five failure attempts. A 24-hour ceiling bounds deferred jobs. Submission acknowledgments do not wait for email delivery.
 
@@ -50,6 +50,10 @@ Do not create a second SPF policy at the same host if one already exists: reconc
 
 After propagation, initiate ACS verification for Domain, SPF, DKIM and DKIM2, check each reaches Verified, then enable the custom sender. Re-read verification records from Azure if the domain is recreated; verification tokens can change.
 
+On 11 October 2026 all six email/ownership DNS records were visible publicly and matched the configured Azure values. The four required ACS checks reached Verified; `configure-email.ps1 -UseCustomDomain` linked the customer domain and configured the custom sender. Revision `soyl-forms-web--email-20261011125343` became the latest ready revision, with HTTP 200 readiness on the generated hostname. No additional test email was sent; custom-sender receipt remains untested. The DMARC TXT record is publicly correct, but the 2023-03-31 verification endpoint rejected DMARC as an unsupported verification type; do not report it as ACS-verified.
+
+At this check, both GoDaddy authoritative nameservers and public resolvers returned no CNAME for `forms.soylai.com`, rather than the previous Vercel target. The owner was asked to add the Azure CNAME below. Ownership TXT is correct; no app domain/certificate binding or production release has run. Public CAA lookups advertised no restriction for `forms.soylai.com` or `soylai.com`. The production Entra callback was present; the missing production proof/logout-return URI was registered through `set-identity-origin.ps1 -RegisterOnly` without changing the local preview origin.
+
 Production app records, to apply as part of coordinated cutover:
 
 | Type | Host | Value |
@@ -57,7 +61,7 @@ Production app records, to apply as part of coordinated cutover:
 | TXT | `asuid.forms` | `F4B43839CE331F2AB2B7A495A0BA61E2442268916A50C4643893CFF8C43B8EF5` |
 | CNAME | `forms` | `soyl-forms-web.wonderfuldesert-0fe0498b.centralindia.azurecontainerapps.io` |
 
-The TXT ownership record can be added beforehand. **Do not switch the existing forms CNAME until the production application configuration, data decision, Entra callbacks and domain/certificate procedure are ready.** It currently targets `1feabb4b68b07b2a.vercel-dns-017.com`. Preserve that value for the pre-write rollback window. Azure managed certificate issuance requires correct public DNS and compatible CAA records. Once Azure accepts new writes, do not revert to stale Supabase without reconciliation.
+The TXT ownership record can be added beforehand. **Do not switch the forms CNAME until the production application configuration, data decision, Entra callbacks and domain/certificate procedure are ready.** Its former target was `1feabb4b68b07b2a.vercel-dns-017.com`; the latest check found the record absent. Preserve the former value for the pre-write rollback window. Azure managed certificate issuance requires correct public DNS and compatible CAA records. Once Azure accepts new writes, do not revert to stale Supabase without reconciliation.
 
 ## Production release procedure
 
