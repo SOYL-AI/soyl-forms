@@ -39,7 +39,7 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
         {name:'DATABASE_MIGRATION_URL',secretRef:'migration-url'}
         {name:'DATABASE_RUNTIME_PASSWORD',secretRef:'runtime-password'}
         {name:'SUPERADMIN_EMAIL',secretRef:'target-email'}
-        {name:'SUPERADMIN_APPLY',value:string(applyGrant)}
+        {name:'SUPERADMIN_APPLY',value:applyGrant ? 'true' : 'false'}
         {name:'SUPERADMIN_EXPECTED_USER_ID',value:expectedUserId}
         {name:'SUPERADMIN_EXPECTED_OBJECT_ID',value:expectedObjectId}
       ]

@@ -2,7 +2,13 @@
 
 The owner selected a fresh database launch on 11 October 2026 and explicitly designated the initial superadmin account. Do not import legacy Supabase data or automatically join old identities. The Azure database already has the current platform schema; preserve its configuration and real signed-in account instead of dropping it.
 
-Initial inspection `soyl-forms-admin-bootstrap-sbkq4fw` found one application user, zero forms, zero responses and zero administrators. The designated address did not match an application account or a local email/password identity in the dedicated Entra tenant. The grant is pending account registration/sign-in; inspection made no database changes.
+Initial inspection `soyl-forms-admin-bootstrap-sbkq4fw` found one application user, zero forms, zero responses and zero administrators. The designated address initially did not match an application account or a local email/password identity in the dedicated Entra tenant; inspection made no database changes.
+
+After the owner confirmed registration on 11 October 2026, inspection `soyl-forms-admin-bootstrap-wnivbmk` found exactly one active application account for the designated address and one identity from the dedicated tenant. An independent Graph lookup matched its object ID to the enabled registered email identity. Before the grant the database contained two real users, zero forms, zero responses and zero administrators; no old data was imported.
+
+Grant execution `soyl-forms-admin-bootstrap-sksjqpy` succeeded at `2026-10-11T06:09:50Z`: `superadmin_grant_verified` reported `role=super_admin`, `changed=true`, `runtimeGateVerified=true` and `anonymousDenied=true`. The real restricted application database role recognized the grant and an anonymous transaction context had no admin role. Account IDs and operational evidence are retained in ignored storage. The owner still needs to open `/super-admin` in the signed-in browser to confirm interactive access; production DNS has not moved.
+
+An earlier grant attempt remained read-only because ARM converted `string(applyGrant)` to `True` while the script accepts only lowercase `true`. The Bicep now emits explicit lowercase literals; the deployed value was checked before the successful execution. No authorization guard was relaxed. After saving evidence and confirming every execution was terminal, the temporary bootstrap job was deleted; the app, scheduler and migration job were retained.
 
 ## Procedure
 
