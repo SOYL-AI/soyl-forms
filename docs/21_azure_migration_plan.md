@@ -1,6 +1,6 @@
 # Azure lean launch migration proposal
 
-Date: 10 October 2026. Status: approved; owner confirmed hosted signup/sign-in and authorized phase 2 to proceed on `migration/azure-lean-launch`. The converted application/database and workers are deployed to Azure staging; operational evidence and outstanding gates are recorded in [the staging runbook](23_azure_platform_staging.md). Recovery, logout/re-login, Android and real-provider feature acceptance remain production cutover gates. Production cutover has not happened.
+Date: 10 October 2026; status updated 11 October. Approved migration and production domain cutover completed: `https://forms.soylai.com` now serves the Azure build with a managed HTTPS certificate. Production release `38141513869` succeeded at commit `9aa48cc`, with migrations verified before revision 8 became ready. Operational evidence and outstanding gates are recorded in [the release runbook](23_azure_platform_staging.md). Signed-in browser acceptance, recovery, Android and real-provider feature acceptance remain required before a broad paid/store launch; the domain cutover does not establish those results.
 
 Launch scope updated by the owner on 10 October 2026: Google sign-in is deferred until after launch. Email/password through Entra External ID is the launch method; Google configuration and acceptance do not block this migration. Web and Android email/password authentication acceptance remain required.
 
