@@ -19,6 +19,22 @@ export function aiProvider(): AiProvider {
   return "openai";
 }
 
+/** The company that processes AI requests, for the privacy policy's processor list. */
+export function aiProcessorName(): string {
+  const provider = aiProvider();
+  if (provider === "anthropic") return "Anthropic";
+  if (provider === "azure-foundry" || provider === "azure-openai") return "Microsoft Azure AI";
+  let host = "";
+  try {
+    host = new URL(process.env.AI_BASE_URL ?? "https://api.openai.com/v1").hostname;
+  } catch {
+    /* fall through to a generic name */
+  }
+  if (host === "api.openai.com") return "OpenAI";
+  if (host.endsWith(".azure.com")) return "Microsoft Azure AI";
+  return "Our AI model provider";
+}
+
 /** True when an AI provider is configured. */
 export function isAiConfigured(): boolean {
   if (aiProvider() === "anthropic") {
@@ -71,6 +87,33 @@ export class AiProviderError extends Error {
   }
 }
 
+/**
+ * Reasoning models (o-series, GPT-5 and later, including GPT-6) reject a custom
+ * temperature and `max_tokens`; they take `max_completion_tokens` and a
+ * reasoning effort instead. AI_REASONING_EFFORT (none|low|medium|high) forces
+ * reasoning mode for deployments whose name doesn't reveal the model.
+ */
+export function isReasoningModel(model: string): boolean {
+  return Boolean(process.env.AI_REASONING_EFFORT) || /^(o\d|gpt-([5-9]|\d{2}))/i.test(model);
+}
+
+function requestBody(model: string, req: ChatJsonRequest, json: boolean): Record<string, unknown> {
+  const reasoning = isReasoningModel(model);
+  return {
+    model,
+    // Supported by every current chat model; reasoning tokens count against it.
+    max_completion_tokens: req.maxTokens ?? 4000,
+    ...(reasoning
+      ? { reasoning_effort: process.env.AI_REASONING_EFFORT || "low" }
+      : { temperature: req.temperature ?? 0.4 }),
+    ...(json ? { response_format: { type: "json_object" } } : {}),
+    messages: [
+      { role: "system", content: req.system },
+      { role: "user", content: req.user },
+    ],
+  };
+}
+
 /** One completion that should contain a JSON object. Returns the raw text. */
 export async function chatJson(req: ChatJsonRequest): Promise<string> {
   if (!isAiConfigured()) {
@@ -86,16 +129,7 @@ export async function chatJson(req: ChatJsonRequest): Promise<string> {
     res = await fetch(endpointUrl(model), {
       method: "POST",
       headers: { "content-type": "application/json", ...authHeaders() },
-      body: JSON.stringify({
-        model,
-        temperature: req.temperature ?? 0.4,
-        max_tokens: req.maxTokens ?? 4000,
-        response_format: { type: "json_object" },
-        messages: [
-          { role: "system", content: req.system },
-          { role: "user", content: req.user },
-        ],
-      }),
+      body: JSON.stringify(requestBody(model, req, true)),
       signal: AbortSignal.timeout(req.timeoutMs ?? 60_000),
     });
   } catch (e) {
@@ -111,15 +145,7 @@ export async function chatJson(req: ChatJsonRequest): Promise<string> {
       const retry = await fetch(endpointUrl(model), {
         method: "POST",
         headers: { "content-type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          model,
-          temperature: req.temperature ?? 0.4,
-          max_tokens: req.maxTokens ?? 4000,
-          messages: [
-            { role: "system", content: req.system },
-            { role: "user", content: req.user },
-          ],
-        }),
+        body: JSON.stringify(requestBody(model, req, false)),
         signal: AbortSignal.timeout(req.timeoutMs ?? 60_000),
       }).catch(() => null);
       if (retry?.ok) return contentOf(await retry.json());
