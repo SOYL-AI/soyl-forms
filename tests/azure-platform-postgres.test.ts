@@ -19,6 +19,7 @@ import * as billing from "@/lib/db/repositories/billing";
 import * as jobs from "@/lib/db/repositories/jobs";
 import * as hooks from "@/lib/db/repositories/webhooks";
 import * as operators from "@/lib/db/repositories/operators";
+import * as brands from "@/lib/db/repositories/brands";
 import { readWorkspacePlan } from "@/lib/db/repositories/workspaces";
 import { hashMcpKey,newMcpKey,verifyMcpKey } from "@/lib/mcp/keys";
 import { MCP_TOOLS } from "@/lib/mcp/tools";
@@ -63,6 +64,15 @@ suite("Azure platform against real PostgreSQL and non-owner roles", () => {
     expect((await admin.query("select balance from ai_credits where workspace_id=$1", [workspace])).rows[0].balance).toBe("10");
     expect((await admin.query("select count(*) from subscriptions where workspace_id=$1", [workspace])).rows[0].count).toBe("1");
     expect((await admin.query("select count(*) from ai_credit_ledger where workspace_id=$1", [workspace])).rows[0].count).toBe("1");
+  });
+  it("lists brand kits with text timestamps (the /create and brand pages)", async () => {
+    expect(await brands.listBrands(ownerId, workspace)).toEqual([]);
+    const id = await brands.saveBrand(ownerId, workspace, undefined, { name: "Kit", colors: {}, fonts: {}, voice: {}, style: {}, sources: [] }, 5);
+    try {
+      const listed = await brands.listBrands(ownerId, workspace);
+      expect(listed.map(k => k.id)).toEqual([id]);
+      expect(typeof listed[0].updated_at).toBe("string");
+    } finally { await admin.query("delete from brand_kits where id=$1", [id]); }
   });
 
   it('shares an atomic rate limit across concurrent runtime connections',async()=>{

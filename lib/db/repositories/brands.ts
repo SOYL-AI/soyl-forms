@@ -1,7 +1,7 @@
 import { withUserTransaction } from "@/lib/db/pool";
 import type { BrandKitRow } from "@/lib/brand/types";
 export async function listBrands(userId: string, workspaceId: string): Promise<BrandKitRow[]> {
-  return withUserTransaction(userId, async db => (await db.query<BrandKitRow>("select b.*,created_at::text,updated_at::text from brand_kits b where workspace_id=$1 order by is_default desc,updated_at desc,id", [workspaceId])).rows);
+  return withUserTransaction(userId, async db => (await db.query<BrandKitRow>("select b.*,created_at::text,updated_at::text from brand_kits b where b.workspace_id=$1 order by b.is_default desc,b.updated_at desc,b.id", [workspaceId])).rows);
 }
 export async function readBrand(userId: string, workspaceId: string, id: string): Promise<BrandKitRow | null> {
   return withUserTransaction(userId, async db => (await db.query<BrandKitRow>("select b.*,created_at::text,updated_at::text from brand_kits b where workspace_id=$1 and id=$2", [workspaceId, id])).rows[0] ?? null);
